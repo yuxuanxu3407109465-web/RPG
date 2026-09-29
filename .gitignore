@@ -59,6 +59,9 @@ saves/
 text_adventure/saves/
 *.sav
 
+# 界面预览图只是本地对布局的截图，每次改界面都会重出，不用进版本库
+text_adventure/layout_preview.png
+
 # ---------- 环境变量与密钥（绝不能推） ----------
 .env
 .env.*

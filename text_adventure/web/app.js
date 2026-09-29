@@ -1,6 +1,11 @@
 /* 封城第七天 · 按钮版前端
    所有按钮最终都翻译成一句玩家指令（data-cmd），发给 /api/command 由引擎处理。
-   角色创建走 /api/new → /api/answer 的一问一答。 */
+   角色创建走 /api/new → /api/answer 的一问一答。
+
+   界面区域命名（写代码/改布局时按名字找，约定见 ../界面区域.md）：
+     左侧栏 / 文字栏 / 移动栏 / 快捷区域1 / 快捷区域2 / 右侧栏
+   本文件里 左侧栏 = #char-body，文字栏 = #log，移动栏 = #move-body，
+   右侧栏 = #action-body，快捷区域1/2 = #quick-zone-1 / #quick-zone-2（暂时留空）。 */
 (function () {
   'use strict';
 
@@ -8,6 +13,11 @@
     menu: document.getElementById('screen-menu'),
     create: document.getElementById('screen-create'),
     play: document.getElementById('screen-play'),
+    exit: document.getElementById('screen-exit'),
+    exitText: document.getElementById('exit-text'),
+    exitHint: document.getElementById('exit-hint'),
+    exitClose: document.getElementById('exit-close'),
+    menuExit: document.getElementById('menu-exit'),
     menuHint: document.getElementById('menu-hint'),
     createLog: document.getElementById('create-log'),
     createPrompt: document.getElementById('create-prompt'),
@@ -17,8 +27,12 @@
     roomSub: document.getElementById('room-sub'),
     clockText: document.getElementById('clock-text'),
     clockTurns: document.getElementById('clock-turns'),
-    charBody: document.getElementById('char-body'),
-    actionBody: document.getElementById('action-body'),
+    charBody: document.getElementById('char-body'),   // 左侧栏
+    moveBody: document.getElementById('move-body'),    // 移动栏
+    actionBody: document.getElementById('action-body'),  // 右侧栏
+    // 快捷区域1 / 快捷区域2：留空的预留位，以后往里塞东西时直接渲染到这两个容器
+    quickZone1: document.getElementById('quick-zone-1'),
+    quickZone2: document.getElementById('quick-zone-2'),
     cmdForm: document.getElementById('cmd-form'),
     cmdInput: document.getElementById('cmd-input'),
     modal: document.getElementById('modal'),
@@ -32,8 +46,10 @@
   var currentMode = 'menu';
   var lastChoices = 0;  // 当前问题有几个选项（用来支持按数字键快速选择）
   var toastTimer = null;
-  var modalKind = null;  // 'skills' / 'confirm' / null
+  var modalKind = null;  // 'skills' / 'bag' / 'confirm' / null
   var lastState = null;
+  var saveMode = null;   // 存档盘上选中的动作：'save' / 'load' / 'clear'
+  var restMinutes = 60;  // 休息滑条当前选的分钟数（重绘界面后要保留）
 
   // 界面用到的图标名，集中列在这里，方便和 web/icons.svg 对照检查
   var USED_ICONS = [
@@ -90,6 +106,7 @@
     el.menu.classList.toggle('hidden', name !== 'menu');
     el.create.classList.toggle('hidden', name !== 'create');
     el.play.classList.toggle('hidden', name !== 'play');
+    el.exit.classList.toggle('hidden', name !== 'exit');
   }
 
   function clear(node) {
@@ -118,8 +135,12 @@
 
   function setBusy(flag) {
     busy = flag;
-    el.actionBody.style.pointerEvents = flag ? 'none' : '';
-    el.actionBody.style.opacity = flag ? '.6' : '';
+    // 移动块和右侧栏是两块面板，请求中都要点不动
+    [el.actionBody, el.moveBody].forEach(function (node) {
+      if (!node) return;
+      node.style.pointerEvents = flag ? 'none' : '';
+      node.style.opacity = flag ? '.6' : '';
+    });
   }
 
   // 走不通、体力不够这类提示：直接浮在页面上，不用去日志里找
@@ -225,32 +246,136 @@
     el.modalBody.innerHTML = html;
   }
 
+  /* ---------- 背包：弹层 + 右侧 3 格快捷栏 ---------- */
+
+  var QUICK_KEY = 'fengcheng.quick';
+  var QUICK_MAX = 3;
+  var pinned = loadPinned();  // 玩家钉在快捷栏上的物品 id
+
+  function loadPinned() {
+    try {
+      var list = JSON.parse(window.localStorage.getItem(QUICK_KEY) || '[]');
+      return Object.prototype.toString.call(list) === '[object Array]' ? list : [];
+    } catch (err) {
+      return [];
+    }
+  }
+
+  function savePinned() {
+    try { window.localStorage.setItem(QUICK_KEY, JSON.stringify(pinned)); } catch (err) { /* 无痕模式就算了 */ }
+  }
+
+  function isPinned(id) { return pinned.indexOf(id) >= 0; }
+
+  function togglePin(id) {
+    var at = pinned.indexOf(id);
+    if (at >= 0) pinned.splice(at, 1);
+    else pinned.unshift(id);
+    savePinned();
+    if (lastState) {
+      renderActions(lastState);
+      if (modalKind === 'bag') renderBagModal(lastState);
+    }
+  }
+
+  // 快捷栏里放哪三件：先放玩家钉过的，剩下用背包顺序补齐
+  function quickItems(state) {
+    var inv = (state && state.inventory) || [];
+    var picked = [];
+    pinned.forEach(function (id) {
+      if (picked.length >= QUICK_MAX) return;
+      var hit = inv.filter(function (x) { return x.id === id; })[0];
+      if (hit && picked.indexOf(hit) < 0) picked.push(hit);
+    });
+    inv.forEach(function (item) {
+      if (picked.length < QUICK_MAX && picked.indexOf(item) < 0) picked.push(item);
+    });
+    return picked;
+  }
+
+  function quickBar(state) {
+    var items = quickItems(state);
+    var html = '<div class="quick-grid">';
+    for (var i = 0; i < QUICK_MAX; i++) {
+      var item = items[i];
+      if (!item) {
+        html += '<span class="quick quick-empty"><span class="quick-name">空</span></span>';
+        continue;
+      }
+      var quick = item.quick || { cmd: '查看 ' + item.name, label: '查看' };
+      html += '<button type="button" class="quick" data-cmd="' + esc(quick.cmd) + '" title="' +
+        esc(item.name + '：点一下就是「' + quick.label + '」；在背包里点 ★ 可以换快捷物品') + '">' +
+        itemIcon(item.id) + '<span class="quick-name">' + esc(item.name) + '</span>' +
+        '<span class="quick-act">' + esc(quick.label) + '</span></button>';
+    }
+    return html + '</div>';
+  }
+
+  function bagRow(item) {
+    var acts = '';
+    if (item.usable) acts += btn('使用 ' + item.name, '使用', 'use', 'small');
+    acts += btn('查看 ' + item.name, '查看', 'look', 'small');
+    acts += btn('装备 ' + item.name, '装备', 'equip', 'small');
+    acts += btn('卸下 ' + item.name, '卸下', 'unequip', 'small');
+    acts += btn('放下 ' + item.name, '放下', 'drop', 'small');
+    var pin = isPinned(item.id);
+    return '<div class="entry bag-entry">' +
+      '<div class="entry-top">' + itemIcon(item.id) +
+      '<span class="entry-name">' + esc(item.name) + '</span>' +
+      (item.where ? '<span class="tag">' + esc(item.where) + '</span>' : '') +
+      '<span class="tag">' + esc(item.weight) + ' kg</span>' +
+      '<button type="button" class="btn small pin' + (pin ? ' pinned' : '') + '" data-pin="' +
+      esc(item.id) + '" title="放进 / 移出右边的快捷栏">★</button>' +
+      '</div>' +
+      (item.desc ? '<div class="entry-desc">' + esc(item.desc) + '</div>' : '') +
+      (item.use_hint ? '<div class="entry-desc">' + esc(item.use_hint) + '</div>' : '') +
+      '<div class="entry-actions">' + acts + '</div></div>';
+  }
+
+  function renderBagModal(state) {
+    var inv = (state && state.inventory) || [];
+    var carry = state && state.carry;
+    var html = '<p class="modal-note">背包里一共 ' + inv.length + ' 件，负重 ' +
+      esc(carry ? carry.weight : '?') + ' / ' + esc(carry ? carry.capacity : '?') +
+      ' kg。点 ★ 可以把物品钉到右边那 3 格快捷栏上。</p>';
+    if (!inv.length) html += '<span class="empty">背包是空的。</span>';
+    inv.forEach(function (item) { html += bagRow(item); });
+    el.modalBody.innerHTML = html;
+  }
+
+  // 浮层里要显示什么，由 modalKind 决定
+  function renderModal(state) {
+    if (!state) return;
+    if (modalKind === 'skills') renderSkillsModal(state);
+    else if (modalKind === 'bag') renderBagModal(state);
+  }
+
   /* ---------- 存档槽位 ---------- */
 
-  function slotRow(slot, inGame) {
+  // 主菜单里的存档行：完整的描述 + 读档 / 清空
+  function slotRow(slot) {
     var cls = 'slot' + (slot.exists ? '' : ' slot-empty') + (slot.current ? ' slot-current' : '');
     var info;
     if (slot.exists && !slot.broken) {
       info = '<div class="slot-name">' + esc(slot.name) + '</div>' +
         '<div class="slot-meta">' + esc(slot.level) + ' 级' +
         (slot.background ? ' · ' + esc(slot.background) : '') +
-        ' · ' + esc(slot.room) + ' · ' + esc(slot.time) + '</div>';
+        ' · ' + esc(slot.room) + ' · ' + esc(slot.time) + '</div>' +
+        (slot.saved_at ? '<div class="slot-saved-at">最后保存：' + esc(slot.saved_at) + '</div>' : '');
     } else if (slot.broken) {
-      info = '<div class="slot-name">存档损坏</div><div class="slot-meta">可以存新档覆盖它</div>';
+      info = '<div class="slot-name">存档损坏</div>' +
+        '<div class="slot-meta">读不了，可以清空它，或者进游戏直接存新档覆盖</div>';
     } else {
       info = '<div class="slot-name">空存档位</div><div class="slot-meta">还没有存过</div>';
     }
     var actions = '';
-    if (inGame) {
-      actions += '<button type="button" class="btn small" data-save="' + slot.slot + '">' +
-        icon('save') + '<span>存档</span></button>';
+    if (slot.exists && !slot.broken) {
+      actions += '<button type="button" class="btn small" data-load="' + slot.slot + '">' +
+        icon('load') + '<span>读档</span></button>';
     }
     if (slot.exists) {
-      actions += '<button type="button" class="btn small" data-load="' + slot.slot + '">' +
-        icon('load') + '<span>' + (inGame ? '读档' : '读取') + '</span></button>';
-    } else if (!inGame) {
-      actions += '<button type="button" class="btn small" disabled>' + icon('load') +
-        '<span>空</span></button>';
+      actions += '<button type="button" class="btn small danger" data-clear="' + slot.slot + '">' +
+        icon('x') + '<span>清空</span></button>';
     }
     return '<div class="' + cls + '"><div class="slot-no">' + slot.slot + ' 号</div>' +
       '<div class="slot-info">' + info + '</div>' +
@@ -261,9 +386,69 @@
     var box = document.getElementById('menu-slots');
     if (!box) return;
     var slots = (state && state.slots) || [];
-    box.innerHTML = slots.map(function (s) { return slotRow(s, false); }).join('');
-    var any = slots.some(function (s) { return s.exists; });
+    box.innerHTML = slots.map(function (s) { return slotRow(s); }).join('');
+    var any = slots.some(function (s) { return s.exists && !s.broken; });
     el.menuHint.textContent = any ? '选一个存档读进来，或者开始新游戏。' : '还没有存档，先开始一局新游戏。';
+  }
+
+  /* ---------- 游戏里的存档盘：两排按钮 ---------- */
+
+  var SAVE_MODE_LABEL = { save: '存档', load: '读档', clear: '清空' };
+
+  function savePad(state) {
+    var slots = (state && state.slots) || [];
+    var html = '<div class="save-pad"><div class="save-row">';
+    ['save', 'load', 'clear'].forEach(function (mode) {
+      var on = saveMode === mode ? ' active' : '';
+      var ico = mode === 'save' ? 'save' : (mode === 'load' ? 'load' : 'x');
+      html += '<button type="button" class="btn small save-mode' + on + '" data-save-mode="' + mode +
+        '">' + icon(ico) + '<span>' + SAVE_MODE_LABEL[mode] + '</span></button>';
+    });
+    html += '</div><div class="save-row">';
+    for (var n = 1; n <= 3; n++) {
+      var slot = slots.filter(function (x) { return x.slot === n; })[0] || { slot: n, exists: false };
+      var cls = 'btn small slot-no-btn';
+      if (slot.exists) cls += ' has-save';
+      if (slot.current) cls += ' current';
+      var sub = slot.broken ? '损坏' : (slot.exists ? '有档' : '空');
+      var title = !slot.exists ? (n + ' 号：空存档位')
+        : (slot.broken ? (n + ' 号：存档损坏')
+          : (n + ' 号：' + slot.name + ' · ' + slot.level + ' 级 · ' + slot.room + ' · ' + slot.time));
+      html += '<button type="button" class="' + cls + '" data-slot-no="' + n + '" title="' + esc(title) + '">' +
+        '<span class="no">' + n + '</span><span class="sub">' + esc(sub) + '</span></button>';
+    }
+    html += '</div></div>';
+    var hint = saveMode
+      ? '已选「' + SAVE_MODE_LABEL[saveMode] + '」，点下面 1 / 2 / 3 对那个槽执行。'
+      : '先点上面一个动作（选中会变绿），再点 1 / 2 / 3。当前槽：' + ((state && state.current_slot) || 1) + ' 号。';
+    return html + '<p class="hint-small">' + esc(hint) + '</p>';
+  }
+
+  function slotById(n) {
+    return ((lastState && lastState.slots) || []).filter(function (x) { return x.slot === n; })[0];
+  }
+
+  function doSlotAction(n) {
+    var slot = slotById(n) || { slot: n, exists: false };
+    if (!saveMode) {
+      showToast('先在 1 / 2 / 3 上面选一个动作：存档 / 读档 / 清空。');
+      return;
+    }
+    if (saveMode === 'save') {
+      var text = (slot.exists && !slot.broken)
+        ? (n + ' 号槽已经有存档了（' + slot.name + ' · ' + slot.time + '），覆盖它吗？')
+        : ('把当前进度存到 ' + n + ' 号槽？');
+      showConfirm('存档到 ' + n + ' 号', text, function () { saveSlot(n); });
+      return;
+    }
+    if (saveMode === 'load') {
+      if (!slot.exists) { showToast(n + ' 号槽是空的，没有东西可读。'); return; }
+      if (slot.broken) { showToast(n + ' 号存档损坏了，读不出来；可以先清空它。'); return; }
+      showConfirm('读取 ' + n + ' 号', '读取 ' + n + ' 号槽？现在没存档的进度会丢掉。', function () { loadSlot(n); });
+      return;
+    }
+    if (!slot.exists) { showToast(n + ' 号槽本来就是空的。'); return; }
+    showConfirm('清空 ' + n + ' 号', '确定清空 ' + n + ' 号存档？清空之后没法恢复。', function () { clearSlot(n); });
   }
 
   function post(url, body) {
@@ -500,9 +685,9 @@
     }
     renderChar(state);
     renderActions(state);
-    // 技能浮层开着的话，学完技能后要跟着刷新
-    if (modalKind === 'skills' && !el.modal.classList.contains('hidden')) {
-      renderSkillsModal(state);
+    // 技能 / 背包浮层开着的话，用完东西之后要跟着刷新
+    if ((modalKind === 'skills' || modalKind === 'bag') && !el.modal.classList.contains('hidden')) {
+      renderModal(state);
     }
   }
 
@@ -580,9 +765,22 @@
   }
 
   function renderActions(state) {
-    var html = '';
+    // 按界面区域分工（区域约定见 ../界面区域.md）：
+    //   移动栏 = #move-body，右侧栏 = #action-body，快捷区域1/2 暂时留空。
+    if (el.moveBody) el.moveBody.innerHTML = moveSection(state);
+    el.actionBody.innerHTML =
+      hereSection(state) +
+      bagSection(state) +
+      (state.rest ? restSection(state) : '') +
+      saveSection(state) +
+      systemSection();
+    bindActionControls();
+  }
 
-    // 移动：六个方向常驻，颜色说明能不能走
+  /* ---------- 移动栏（文字栏下面正中间那块） ---------- */
+
+  function moveSection(state) {
+    // 六个方向常驻，颜色说明能不能走
     var byDir = {};
     (state.exits || []).forEach(function (e) { byDir[e.id] = e; });
 
@@ -608,16 +806,19 @@
         '<span class="dir-sub">' + esc(sub) + '</span></button>';
     }
 
-    html += '<div class="section"><h4>' + icon('map') + '移动</h4>' +
-      '<div class="dir-grid">' +
+    return '<div class="dir-grid">' +
       dirBtn('up') + dirBtn('north') + dirBtn('down') +
       dirBtn('west') + '<span class="dir-center">' + esc(state.room ? state.room.name : '') + '</span>' +
       dirBtn('east') +
       '<span class="dir-empty"></span>' + dirBtn('south') + '<span class="dir-empty"></span>' +
-      '</div><p class="hint-small">绿＝可以走，红＝那边有危险，暗色＝不知道，点了才知道</p></div>';
+      '</div><p class="hint-small">绿＝可以走，红＝那边有危险，暗色＝不知道，点了才知道</p>';
+  }
 
-    // 这个地点
-    html += '<div class="section"><h4>' + icon('look') + '这里</h4>';
+  /* ---------- 右侧栏的几段 ---------- */
+
+  // 这个地点
+  function hereSection(state) {
+    var html = '<div class="section"><h4>' + icon('look') + '这里</h4>';
     var here = state.room_items || [];
     var npcs = state.npcs || [];
     if (!here.length && !npcs.length) {
@@ -636,46 +837,25 @@
         btn('说话 ' + npc.name, '交谈', 'talk', 'small') +
         '</div></div>';
     });
-    html += '</div>';
+    return html + '</div>';
+  }
 
-    // 背包
-    html += '<div class="section"><h4>' + icon('bag') + '背包</h4>';
-    var inv = state.inventory || [];
-    if (!inv.length) {
-      html += '<span class="empty">背包是空的。</span>';
-    }
-    inv.forEach(function (item) {
-      html += '<div class="entry"><div class="entry-top">' + itemIcon(item.id) +
-        '<span class="entry-name">' + esc(item.name) +
-        (item.where ? ' <span class="tag">' + esc(item.where) + '</span>' : '') +
-        '</span></div><div class="entry-actions">' +
-        (item.usable ? btn('使用 ' + item.name, '使用', 'use', 'small') : '') +
-        btn('查看 ' + item.name, '查看', 'look', 'small') +
-        btn('装备 ' + item.name, '装备', 'equip', 'small') +
-        btn('卸下 ' + item.name, '卸下', 'unequip', 'small') +
-        btn('放下 ' + item.name, '放下', 'drop', 'small') +
-        '</div></div>';
-    });
-    html += '</div>';
+  // 背包：右侧只留 3 格快捷栏，完整列表点按钮展开（和技能树一样的浮层）
+  function bagSection(state) {
+    return '<div class="section"><h4>' + icon('bag') + '背包快捷栏</h4>' +
+      quickBar(state) +
+      '<div class="btn-grid mt8">' + modalBtn('bag', '打开背包', 'bag', 'small') + '</div>' +
+      '<p class="hint-small">点物品＝使用 / 装备 / 查看；在背包里点 ★ 可以换快捷栏里的东西。</p></div>';
+  }
 
-    // 休息
-    if (state.rest) {
-      html += '<div class="section"><h4>' + icon('rest') + '休息</h4><div class="btn-grid">';
-      (state.rest.presets || []).forEach(function (r) {
-        html += btn('休息 ' + r.minutes, r.label, 'rest', 'small');
-      });
-      html += '</div><p class="hint-small">' + esc(state.rest.hint) +
-        '（体力满了会提前结束）</p></div>';
-    }
+  // 存档 / 读档：两排按钮，先选动作再选槽位
+  function saveSection(state) {
+    return '<div class="section"><h4>' + icon('save') + '存档 / 读档</h4>' +
+      savePad(state) + '</div>';
+  }
 
-    // 存档槽位（3 个，点选）
-    html += '<div class="section"><h4>' + icon('save') + '存档 / 读档</h4>' +
-      '<div class="slots">';
-    (state.slots || []).forEach(function (s) { html += slotRow(s, true); });
-    html += '</div></div>';
-
-    // 系统
-    html += '<div class="section"><h4>' + icon('help') + '系统</h4><div class="btn-grid">' +
+  function systemSection() {
+    return '<div class="section"><h4>' + icon('help') + '系统</h4><div class="btn-grid">' +
       btn('地图', '地图', 'map', 'small') +
       btn('角色', '角色卡', 'person', 'small') +
       btn('背包', '背包', 'bag', 'small') +
@@ -686,10 +866,70 @@
       fillBtn('检定 ', '检定', 'check') +
       '<button type="button" class="btn small danger" data-new-game="1">' +
       icon('person') + '<span>新游戏</span></button>' +
-      btn('退出', '退出游戏', 'exit', 'small danger') +
+      '<button type="button" class="btn small danger" data-quit="1">' +
+      icon('exit') + '<span>退出游戏</span></button>' +
       '</div></div>';
+  }
 
-    el.actionBody.innerHTML = html;
+  /* ---------- 休息滑条 ---------- */
+
+  function fmtMinutes(minutes) {
+    minutes = Math.round(minutes);
+    if (minutes < 60) return minutes + ' 分钟';
+    var hours = Math.floor(minutes / 60);
+    var rest = minutes % 60;
+    return rest ? (hours + ' 小时 ' + rest + ' 分钟') : (hours + ' 小时');
+  }
+
+  function setRestMinutes(minutes) {
+    restMinutes = Math.max(1, Math.round(minutes));
+    var range = document.getElementById('rest-range');
+    if (range) range.value = restMinutes;
+    var label = document.getElementById('rest-label');
+    if (label) label.textContent = fmtMinutes(restMinutes);
+  }
+
+  function restSection(state) {
+    var rest = state.rest || {};
+    var min = rest.min || 1;
+    var max = rest.max || 480;
+    if (restMinutes < min) restMinutes = min;
+    if (restMinutes > max) restMinutes = max;
+    var full = state.stamina && state.stamina.value >= state.stamina.max;
+    var html = '<div class="section"><h4>' + icon('rest') + '休息</h4><div class="rest-box">' +
+      '<input type="range" class="rest-range" id="rest-range" min="' + min + '" max="' + max +
+      '" step="1" value="' + restMinutes + '" title="拖动选择休息时长">' +
+      '<div class="rest-readout"><span id="rest-label">' + esc(fmtMinutes(restMinutes)) + '</span>' +
+      '<button type="button" class="btn small primary" id="rest-go">' + icon('rest') +
+      '<span>休息</span></button></div>' +
+      '<div class="rest-chips">';
+    (rest.presets || []).forEach(function (preset) {
+      html += '<button type="button" class="chip-btn" data-rest-preset="' + preset.minutes + '">' +
+        esc(preset.label) + '</button>';
+    });
+    html += '</div></div><p class="hint-small">' + esc(rest.hint || '') + '</p>';
+    if (full) {
+      html += '<p class="hint-small warn">体力已经是满的：休息不会拦着你，时间照样会过去。</p>';
+    }
+    return html + '</div>';
+  }
+
+  // 滑条、快捷档位、休息按钮都是重绘出来的，每次渲染后要重新挂事件
+  function bindActionControls() {
+    var range = document.getElementById('rest-range');
+    if (range) {
+      range.addEventListener('input', function () { setRestMinutes(range.value); });
+    }
+    var go = document.getElementById('rest-go');
+    if (go) {
+      go.addEventListener('click', function () { sendCommand('休息 ' + restMinutes); });
+    }
+    var chips = el.actionBody.querySelectorAll('[data-rest-preset]');
+    for (var i = 0; i < chips.length; i++) {
+      chips[i].addEventListener('click', (function (node) {
+        return function () { setRestMinutes(parseInt(node.getAttribute('data-rest-preset'), 10)); };
+      })(chips[i]));
+    }
   }
 
   /* ---------- 请求流程 ---------- */
@@ -697,10 +937,18 @@
   function handlePayload(data) {
     if (!data) return;
     if (data.type === 'state') { applyBoot(data.state); return; }
+    if (data.type === 'pong') return;
     if (data.type === 'prompt') {
       show('create');
       appendLines(el.createLog, data.lines);
       renderPrompt(data);
+      return;
+    }
+    if (data.type === 'quit') {
+      stopHeartbeat();
+      show('exit');
+      if (data.lines) appendLines(el.log, data.lines);
+      if (el.exitText && data.lines && data.lines.length) el.exitText.textContent = data.lines[0];
       return;
     }
     if (data.type === 'play') {
@@ -708,12 +956,31 @@
       appendLines(el.log, data.lines);
       renderState(data.state);
       if (data.notice) showToast(data.notice);
+      // 在输入框里打“退出”也算退出：把服务和这一局一起结束
+      if (data.quit) finishQuit();
+      return;
+    }
+    if (data.type === 'menu') {
+      // 主菜单里的操作（比如清空存档）留在主菜单，不要把人踢进游戏界面
+      show('menu');
+      renderMenuSlots(data.state);
+      if (data.notice) {
+        showToast(data.notice);
+        el.menuHint.textContent = data.notice;
+      }
       return;
     }
     // error
     var target = currentMode === 'create' ? el.createLog : el.log;
-    if (currentMode === 'menu') { show('menu'); el.menuHint.textContent = (data.lines || []).join(' '); return; }
+    if (currentMode === 'menu') {
+      show('menu');
+      el.menuHint.textContent = (data.lines || []).join(' ');
+      if (data.lines) showToast(data.lines[0]);
+      if (data.state) renderMenuSlots(data.state);
+      return;
+    }
     appendLines(target, data.lines);
+    if (data.lines && data.lines.length) showToast(data.lines[0]);
     if (data.state) renderState(data.state);
   }
 
@@ -757,6 +1024,51 @@
     }).catch(function (err) { setBusy(false); fail(err); });
   }
 
+  function clearSlot(slot) {
+    if (busy) return;
+    setBusy(true);
+    post('/api/clear', { slot: slot }).then(function (res) {
+      setBusy(false);
+      handlePayload(res);
+    }).catch(function (err) { setBusy(false); fail(err); });
+  }
+
+  /* ---------- 退出游戏 ---------- */
+
+  function finishQuit() {
+    post('/api/quit').then(function (res) {
+      handlePayload(res);
+    }).catch(function () {
+      // 服务已经停了也没关系，至少把界面切到“已结束”
+      stopHeartbeat();
+      show('exit');
+    });
+  }
+
+  function quitGame() {
+    if (busy) return;
+    busy = true;
+    finishQuit();
+  }
+
+  /* ---------- 心跳：让再次启动的进程知道页面还开着 ---------- */
+
+  var heartbeatTimer = null;
+
+  function startHeartbeat() {
+    if (heartbeatTimer) return;
+    heartbeatTimer = setInterval(function () {
+      post('/api/heartbeat').catch(function () { /* 服务关了就算了 */ });
+    }, 20000);
+  }
+
+  function stopHeartbeat() {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+  }
+
   function sendCommand(text) {
     if (busy || !text) return;
     setBusy(true);
@@ -785,8 +1097,15 @@
     var modalNode = event.target.closest ? event.target.closest('[data-modal]') : null;
     if (modalNode) {
       event.preventDefault();
-      openModal('skills', '技能树');
-      if (lastState) renderSkillsModal(lastState);
+      var kind = modalNode.getAttribute('data-modal') || 'skills';
+      openModal(kind, kind === 'bag' ? '背包' : '技能树');
+      renderModal(lastState);
+      return;
+    }
+    var pinNode = event.target.closest ? event.target.closest('[data-pin]') : null;
+    if (pinNode) {
+      event.preventDefault();
+      togglePin(pinNode.getAttribute('data-pin'));
       return;
     }
     var learnNode = event.target.closest ? event.target.closest('[data-learn]') : null;
@@ -795,15 +1114,19 @@
       sendCommand('学习 ' + learnNode.getAttribute('data-learn'));
       return;
     }
-    var saveNode = event.target.closest ? event.target.closest('[data-save]') : null;
-    if (saveNode) {
+    // 存档盘：先选动作（存档 / 读档 / 清空），再点 1 / 2 / 3
+    var modeNode = event.target.closest ? event.target.closest('[data-save-mode]') : null;
+    if (modeNode) {
       event.preventDefault();
-      var s = parseInt(saveNode.getAttribute('data-save'), 10);
-      var slot = (lastState && lastState.slots || []).filter(function (x) { return x.slot === s; })[0];
-      var text = (slot && slot.exists)
-        ? (s + ' 号槽已经有存档了（' + slot.name + ' · ' + slot.time + '），覆盖它吗？')
-        : ('把当前进度存到 ' + s + ' 号槽？');
-      showConfirm('存档', text, function () { saveSlot(s); });
+      var picked = modeNode.getAttribute('data-save-mode');
+      saveMode = (saveMode === picked) ? null : picked;
+      if (lastState) renderActions(lastState);
+      return;
+    }
+    var slotNode = event.target.closest ? event.target.closest('[data-slot-no]') : null;
+    if (slotNode) {
+      event.preventDefault();
+      doSlotAction(parseInt(slotNode.getAttribute('data-slot-no'), 10));
       return;
     }
     var loadNode = event.target.closest ? event.target.closest('[data-load]') : null;
@@ -811,6 +1134,19 @@
       event.preventDefault();
       var n = parseInt(loadNode.getAttribute('data-load'), 10);
       showConfirm('读档', '读取 ' + n + ' 号槽？当前没存档的进度会丢失。', function () { loadSlot(n); });
+      return;
+    }
+    var clearNode = event.target.closest ? event.target.closest('[data-clear]') : null;
+    if (clearNode) {
+      event.preventDefault();
+      var c = parseInt(clearNode.getAttribute('data-clear'), 10);
+      showConfirm('清空存档', '确定清空 ' + c + ' 号存档？清空之后没法恢复。', function () { clearSlot(c); });
+      return;
+    }
+    var quitNode = event.target.closest ? event.target.closest('[data-quit]') : null;
+    if (quitNode) {
+      event.preventDefault();
+      showConfirm('退出游戏', '退出会结束这一局并关掉本地服务（没存档的进度会丢），确定吗？', quitGame);
       return;
     }
     var newNode = event.target.closest ? event.target.closest('[data-new-game]') : null;
@@ -850,10 +1186,29 @@
     sendCommand(text);
   });
 
+  // 主菜单上的“退出游戏”：结束服务，不用再去关那个黑窗口
+  if (el.menuExit) {
+    el.menuExit.addEventListener('click', function () {
+      showConfirm('退出游戏', '退出会关掉本地服务（进度已经存在 saves 文件夹里），确定吗？', quitGame);
+    });
+  }
+
+  // 退出页上的“关闭此页面”：浏览器不一定让脚本关标签页，关不掉就给提示
+  if (el.exitClose) {
+    el.exitClose.addEventListener('click', function () {
+      window.close();
+      setTimeout(function () {
+        el.exitHint.textContent = '页面还开着的话：浏览器一般不允许脚本关掉不是它自己打开的标签页，' +
+          '按 Ctrl+W，或者点标签上的 × 就行。';
+      }, 400);
+    });
+  }
+
   /* ---------- 启动 ---------- */
 
   function applyBoot(state) {
     if (!state) { show('menu'); return; }
+    if (state.mode === 'quit') { show('exit'); return; }
     if (state.mode === 'create') {
       // 上一轮创建角色还没走完（例如中途刷新了页面）：把当前问题要回来接着答
       show('create');
@@ -868,13 +1223,19 @@
       renderState(state);
       if (location.hash === '#skills') {
         openModal('skills', '技能树');
-        renderSkillsModal(state);
+        renderModal(state);
+      } else if (location.hash === '#bag') {
+        openModal('bag', '背包');
+        renderModal(state);
       }
       return;
     }
     show('menu');
     renderMenuSlots(state);
   }
+
+  // 每隔一会儿报个活，这样再次双击启动时不会又开一个新标签页
+  startHeartbeat();
 
   fetch('/api/state').then(function (res) { return res.json(); })
     .then(function (data) { applyBoot(data.state); })

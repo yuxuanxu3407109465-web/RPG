@@ -2,20 +2,27 @@
 
 用法：python webui.py            （默认 127.0.0.1:8730，自动打开浏览器）
       python webui.py --port 9000 --no-browser
+      python webui.py --open     （页面已经开着时，也强制再开一次）
 
 设计要点：
-- 不动 engine.py。界面上每个按钮最终都翻译成一句玩家指令（如“走东”“拿 手电筒”），
+- 不动 engine.py 的规则。界面上每个按钮最终都翻译成一句玩家指令（如“走东”“拿 手电筒”），
   交给 Game.handle() 处理，规则仍然只有引擎里那一份。
 - 角色创建复用 CharacterCreator + Prompter：WebPrompter 把 Prompter 的
   input()/print() 接到 HTTP 上（一问一答），所以属性、背景、同伴的校验逻辑
   一行都不用重写。
+- 同一个地址只跑一个服务：再次双击启动时先探测 /api/ping，如果本游戏已经在跑，
+  就不另起一个服务、也不再开新标签页（除非加 --open），这样地址永远是同一个。
 - 只用标准库（http.server），不引入第三方依赖；只监听本机回环地址。
 """
 
 import argparse
 import json
 import queue
+import socket
 import threading
+import time
+import urllib.error
+import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -24,11 +31,22 @@ import items
 import stats
 from character import CharacterCreator, CharacterOptions, Prompter, check_attributes
 from dice import Dice
-from engine import DIRECTION_NAMES, SLOT_COUNT, Game, World
+from engine import (
+    DIRECTION_NAMES, REST_MINUTES_MAX, REST_MINUTES_MIN, SLOT_COUNT, Game, World,
+)
 from skills import SkillTrees, tree_unlocked, unmet_requirements
 
 BASE_DIR = Path(__file__).parent
 WEB_DIR = BASE_DIR / "web"
+
+# 用来认出“这个端口上跑的是我们自己”，避免重复启动
+APP_ID = "fengcheng-day7"
+APP_VERSION = 2
+
+# 页面每隔 HEARTBEAT_SECONDS 秒报一次活；超过 IDLE_LIMIT 秒没动静就当成页面已经关了，
+# 再次启动时才会重新打开浏览器。
+HEARTBEAT_SECONDS = 20
+IDLE_LIMIT = 50
 
 # 只允许这几条路径，避免任何路径穿越问题
 STATIC_FILES = {
@@ -44,10 +62,14 @@ SLOT_NAMES = {"main_hand": "主手", "off_hand": "副手"}
 # 移动按钮永远显示这六个方向，能不能走由世界数据决定
 DIRECTIONS_ALL = ("north", "south", "east", "west", "up", "down")
 
-# 休息按钮的档位（分钟，按钮文字）
-REST_PRESETS = [(30, "半小时"), (60, "1 小时"), (120, "2 小时"), (240, "4 小时")]
+# 休息滑条上方的快捷档位（分钟，按钮文字）；滑条本身是 1 分钟 ~ 8 小时
+REST_PRESETS = [(10, "10 分钟"), (30, "半小时"), (60, "1 小时"),
+                (120, "2 小时"), (240, "4 小时"), (480, "8 小时")]
 
 MOVE_WORDS = ("走", "去", "go")
+
+# 这些指令执行完顺手在浮层里回一句（存档、读档、清空、休息）
+NOTICE_COMMANDS = ("存档", "读档", "清空", "休息", "save", "load", "clear", "rest")
 
 
 def is_move(text):
@@ -217,9 +239,10 @@ class Session:
 
     def __init__(self):
         self.lock = threading.RLock()
-        self.mode = "menu"  # menu / create / play
+        self.mode = "menu"  # menu / create / play / quit
         self.started = False
         self.bridge = None
+        self.last_seen = 0.0  # 页面最后一次心跳的时间，用来决定要不要重开浏览器
         self.world = World(BASE_DIR / "data" / "world.json")
         self.options = CharacterOptions(BASE_DIR / "data" / "character_options.json")
         self.skill_trees = SkillTrees(BASE_DIR / "data" / "skill_trees.json")
@@ -228,6 +251,31 @@ class Session:
             self.world, self.options, self.skill_trees, self.dice,
             BASE_DIR / "saves" / "save.json",
         )
+
+    # ---------- 页面存活探测 ----------
+
+    def heartbeat(self):
+        """页面每隔一会儿叫一声，用来判断“还有人在看这个页面”。"""
+        with self.lock:
+            self.last_seen = time.time()
+        return {"type": "pong", "app": APP_ID, "version": APP_VERSION}
+
+    def idle_seconds(self):
+        """距上一次页面心跳过去了几秒；从来没有过就返回 None。"""
+        with self.lock:
+            if not self.last_seen:
+                return None
+            return time.time() - self.last_seen
+
+    def ping(self):
+        """给新启动的进程认人用：这个端口上跑的是不是这个游戏。"""
+        return {
+            "app": APP_ID,
+            "version": APP_VERSION,
+            "mode": self.mode,
+            "started": self.started,
+            "idle_seconds": self.idle_seconds(),
+        }
 
     # ---------- 状态打包 ----------
 
@@ -271,6 +319,16 @@ class Session:
                     info["target"] = self.world.rooms[target]["name"]
             result.append(info)
         return result
+
+    def quick_action(self, item_id):
+        """快捷栏里点这件物品时默认执行什么：返回 {cmd, label}。"""
+        data = self.world.items[item_id]
+        name = data["name"]
+        if items.is_usable(data):
+            return {"cmd": "使用 " + name, "label": "使用"}
+        if data.get("weapon"):
+            return {"cmd": "装备 " + name, "label": "装备"}
+        return {"cmd": "查看 " + name, "label": "查看"}
 
     def skills_state(self):
         """技能树打包给前端：按分支分组，能学的给按钮，学过的和不合条件的不可点。"""
@@ -338,13 +396,19 @@ class Session:
         room = world.rooms[game.current_room]
         inventory = []
         for item_id in game.inventory:
+            data = world.items[item_id]
             slots = [SLOT_NAMES[s] for s, held in game.equipment.items() if held == item_id]
             inventory.append({
                 "id": item_id,
-                "name": world.items[item_id]["name"],
+                "name": data["name"],
                 "where": "双手" if len(slots) == 2 else "".join(slots),
-                "usable": items.is_usable(world.items[item_id]),
-                "use_hint": (world.items[item_id].get("use") or {}).get("hint", ""),
+                "usable": items.is_usable(data),
+                "use_hint": (data.get("use") or {}).get("hint", ""),
+                "desc": data.get("description", ""),
+                "weight": data.get("weight", 1),
+                "weapon": bool(data.get("weapon")),
+                # 快捷栏点一下默认做什么：能吃能喝就使用，武器就装备，其它就查看
+                "quick": self.quick_action(item_id),
             })
 
         c = game.character
@@ -355,10 +419,11 @@ class Session:
             "room": {"id": game.current_room, "name": room["name"]},
             "exits": self.exits_for(room),
             "rest": {
+                "min": REST_MINUTES_MIN,
+                "max": REST_MINUTES_MAX,
                 "presets": [{"minutes": m, "label": label} for m, label in REST_PRESETS],
-                "hint": "每 %d 分钟恢复 %d%% 体力上限" % (
-                    stats.REST_MINUTES_PER_TICK, int(stats.REST_RECOVER_RATIO * 100)
-                ),
+                "hint": "滑条可以从 1 分钟拖到 8 小时；每 %d 分钟恢复 %d%% 体力上限，8 小时足够补满。"
+                        % (stats.REST_MINUTES_PER_TICK, int(stats.REST_RECOVER_RATIO * 100)),
             },
             "skills": self.skills_state(),
             "room_items": [
@@ -467,25 +532,68 @@ class Session:
             text = self.game.cmd_load("")
             self.started = self.game.character is not None
             self.mode = "play" if self.started else "menu"
-            return {"type": "play", "lines": [text], "state": self.state()}
+            return {"type": "play", "lines": [text], "state": self.state(),
+                    "notice": text.splitlines()[0] if text else ""}
+
+    def _reply(self, text, notice=None, kind=None):
+        """存档类操作的统一回包。
+
+        已经开局就回到游戏界面；还没开局（比如在主菜单里清空存档）就留在主菜单，
+        别因为一次清空把玩家踢进游戏界面。notice 是浮层提示的文字，成功失败都说一声。
+        """
+        if kind is None:
+            kind = "play" if self.started else "menu"
+        return {
+            "type": kind,
+            "lines": [text],
+            "state": self.state(),
+            "notice": text.splitlines()[0] if (notice is None and text) else notice,
+        }
 
     def save_to(self, slot):
-        """存到指定槽位。"""
+        """存到指定槽位（槽位里已有存档时就是覆盖）。"""
         with self.lock:
-            if not self.started:
+            if not self.started or not self.game.character:
                 return {"type": "error", "lines": ["还没有角色，先开一局新游戏。"],
                         "state": self.state()}
             text = self.game.cmd_save(str(slot))
-            return {"type": "play", "lines": [text], "state": self.state()}
+            failed = text.startswith("存档失败")
+            return self._reply(text, notice=text.splitlines()[0], kind="error" if failed else "play")
 
     def load_slot(self, slot):
         """从指定槽位读档。"""
         with self.lock:
+            was_playing = self.started
             self.game.running = True
             text = self.game.cmd_load(str(slot))
+            ok = "读档成功" in text
             self.started = self.game.character is not None
-            self.mode = "play" if self.started else "menu"
-            return {"type": "play", "lines": [text], "state": self.state()}
+            # 读失败时别把正在玩的人踢回主菜单
+            self.mode = "play" if (ok or was_playing) else "menu"
+            return self._reply(text, kind="play" if (ok or was_playing) else "menu")
+
+    def clear_slot(self, slot):
+        """清空一个存档槽（不需要先开局，在主菜单里也能清）。"""
+        with self.lock:
+            text = self.game.cmd_clear(str(slot))
+            return self._reply(text)
+
+    def quit_game(self):
+        """退出游戏：结束这一局，并且让本地服务停下来。
+
+        网页不是脚本打开的，浏览器一般不让页面自己关标签页，所以这里至少把
+        游戏和服务真正结束掉，前端再给一句“可以关掉这个页面了”。
+        """
+        with self.lock:
+            self.game.running = False
+            self.started = False
+            self.mode = "quit"
+            return {
+                "type": "quit",
+                "lines": ["你退出了游戏，本地服务正在关闭。"],
+                "state": self.state(),
+            }
+
 
     def command(self, text):
         """玩家在界面上按了一个按钮（或输入了一行指令）。"""
@@ -504,6 +612,9 @@ class Session:
             notice = None
             if is_move(text) and not (output or "").startswith("【"):
                 notice = output or "那边走不过去。"
+            elif output and text.split()[0] in NOTICE_COMMANDS:
+                # 存档 / 读档 / 清空 / 休息 这类操作，浮层里也回一句，省得去日志里翻
+                notice = next((line for line in output.splitlines() if line.strip()), None)
             return {
                 "type": "play",
                 "lines": lines,
@@ -511,6 +622,28 @@ class Session:
                 "quit": not self.game.running,
                 "notice": notice,
             }
+
+
+class LazySession:
+    """第一次真的收到请求时才建 Session。
+
+    端口空着（最常见的情况）就直接把服务起起来，不需要任何探测；发现本游戏
+    已经在跑时也直接退出，没必要先把世界数据读一遍。这样启动只剩解释器启动
+    和 import 的时间。
+    """
+
+    def __init__(self):
+        self._session = None
+        self._lock = threading.Lock()
+
+    def get(self):
+        with self._lock:
+            if self._session is None:
+                self._session = Session()
+            return self._session
+
+    def __getattr__(self, name):
+        return getattr(self.get(), name)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -550,6 +683,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/state":
             self._json({"type": "state", "state": self.session.state()})
             return
+        if path == "/api/ping":
+            # 只给“新启动的进程”探测用，不算页面活动
+            self._json(self.session.ping())
+            return
         entry = STATIC_FILES.get(path)
         if not entry:
             self._json({"error": "没有这个地址"}, 404)
@@ -582,8 +719,18 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(self.session.save_to(int(payload.get("slot") or 1)))
             elif path == "/api/load":
                 self._json(self.session.load_slot(int(payload.get("slot") or 1)))
+            elif path == "/api/clear":
+                self._json(self.session.clear_slot(int(payload.get("slot") or 1)))
+            elif path == "/api/heartbeat":
+                self._json(self.session.heartbeat())
             elif path == "/api/command":
                 self._json(self.session.command(str(payload.get("text", ""))))
+            elif path == "/api/quit":
+                self._json(self.session.quit_game())
+                # 先把回包发出去，再让服务停下来（不然浏览器什么都收不到）
+                stop = getattr(type(self), "stop_server", None)
+                if stop:
+                    threading.Timer(0.6, stop).start()
             else:
                 self._json({"error": "没有这个地址"}, 404)
         except Exception as exc:
@@ -594,18 +741,93 @@ class Handler(BaseHTTPRequestHandler):
 def make_handler(session):
     return type("BoundHandler", (Handler,), {"session": session})
 
+def port_is_free(host, port):
+    """这个端口现在是不是空的。
+
+    不能直接拿 HTTPServer 去试：它开了 SO_REUSEADDR，而 Windows 上带这个选项的
+    bind 在别人已经监听时也会成功。所以用一个不带任何选项的裸 socket 来判断。
+    """
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        probe.bind((host, port))
+        return True
+    except OSError:
+        return False
+    finally:
+        probe.close()
+
+
+def probe_app(host, port, timeout=0.3):
+    """看看这个端口上是不是本游戏已经在跑。
+
+    返回 (状态, 信息)：
+      "ours"    本游戏的服务
+      "foreign" 别的程序在监听
+      "closed"  没人监听（连接被拒绝）
+      "unknown" 说不清（超时、被防火墙挡了、端口被系统保留）
+    """
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # 别走系统代理
+    request = urllib.request.Request("http://%s:%d/api/ping" % (host, port))
+    try:
+        with opener.open(request, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError:
+        return "foreign", None
+    except urllib.error.URLError as exc:
+        if isinstance(getattr(exc, "reason", None), ConnectionRefusedError):
+            return "closed", None
+        return "unknown", None
+    except Exception:
+        return "unknown", None
+    if isinstance(data, dict) and data.get("app") == APP_ID:
+        return "ours", data
+    return "foreign", None
+
+
+def announce_existing(host, port, info, args):
+    """已经有一个在跑：不再起第二个服务，地址也永远是那一个，页面就不会越开越多。"""
+    url = "http://%s:%d/" % (host, port)
+    idle = (info or {}).get("idle_seconds")
+    print("=== 封城第七天 · 网页版 ===")
+    print("游戏已经在运行了，地址还是：%s" % url)
+    if args.no_browser:
+        print("（--no-browser：自己打开上面的地址就行）")
+    elif args.open or idle is None or idle > IDLE_LIMIT:
+        print("这个地址上好像没有开着的页面，帮你打开。")
+        webbrowser.open(url)
+    else:
+        print("页面应该还开着（%.0f 秒前还有活动），这次就不另开标签页了。" % idle)
+        print("想强制再开一个页面就加 --open。")
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description="《封城第七天》网页版入口")
     parser.add_argument("--port", type=int, default=8730, help="起始端口，被占用就往后找")
     parser.add_argument("--host", default="127.0.0.1", help="默认只监听本机")
     parser.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
+    parser.add_argument("--open", action="store_true",
+                        help="页面还开着的时候也强制再打开一次（默认不重复开标签页）")
+    parser.add_argument("--force", action="store_true",
+                        help="就算已经有在跑的服务，也另起一个（端口会往后找）")
     args = parser.parse_args()
 
-    session = Session()
-    handler = make_handler(session)
+    ports = list(range(args.port, args.port + 10))
+    handler = make_handler(LazySession())
 
+    # 先看端口空不空：空就直接用，连探测都不做（启动最快）。
+    # 只有端口被占时才去问一句“是不是我们自己”，问的代价只有 0.3 秒。
     server = None
-    for port in range(args.port, args.port + 10):
+    for port in ports:
+        if not port_is_free(args.host, port):
+            if args.force:
+                continue  # 指定要另起一个，那占用中的端口一律跳过
+            status, info = probe_app(args.host, port)
+            if status == "ours":
+                return announce_existing(args.host, port, info, args)
+            if status != "closed":
+                continue  # 别的程序占着（或者问不出来），换下一个端口
+            # "closed"：探测说没人监听，多半只是 TIME_WAIT，照常自己起
         try:
             server = ThreadingHTTPServer((args.host, port), handler)
             break
@@ -619,9 +841,13 @@ def main():
     url = "http://%s:%d/" % (args.host, server.server_address[1])
     print("=== 封城第七天 · 网页版 ===")
     print("地址：%s" % url)
-    print("在这个窗口按 Ctrl+C 结束服务。")
+    print("在这个窗口按 Ctrl+C 结束服务；游戏里的“退出游戏”按钮也会结束它。")
     if not args.no_browser:
-        threading.Timer(0.5, webbrowser.open, args=(url,)).start()
+        # 服务已经绑好端口了，这里只留一丁点时间让 print 刷出来就开浏览器
+        threading.Timer(0.15, webbrowser.open, args=(url,)).start()
+
+    # 游戏里点“退出游戏”时用这个把服务停掉
+    handler.stop_server = server.shutdown
     try:
         server.serve_forever()
     except KeyboardInterrupt:

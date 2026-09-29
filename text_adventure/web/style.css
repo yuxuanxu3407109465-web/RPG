@@ -14,6 +14,15 @@
   --amber: #e0a33c;
   --green: #4f9d6d;
   --radius: 10px;
+
+  /* 界面六大区域的尺寸开关（区域约定见 ../界面区域.md）：
+       左侧栏 = .side-left    文字栏 = .main       移动栏 = .move-panel
+       快捷区域1 / 快捷区域2 = .quick-zone（移动栏左右两块预留位）
+       右侧栏 = .side-right
+     想调宽度只改下面三个变量；每个区域的根元素都带 data-region="区域名"。 */
+  --w-left: 300px;      /* 左侧栏宽度 */
+  --w-right: 320px;     /* 右侧栏宽度 */
+  --w-move: clamp(300px, 24.5vw, 520px);   /* 移动栏宽度：1920 宽屏时约 470px */
 }
 
 * { box-sizing: border-box; }
@@ -139,15 +148,60 @@ body {
 
 .hint { margin: 22px 0 0; min-height: 24px; color: var(--amber); font-size: 13px; }
 
-/* ---------- 布局 ---------- */
+/* ---------- 布局：六大区域 ---------- */
 
+/* 三栏：左侧栏 | 中间列（文字栏 + 下排） | 右侧栏 */
 .layout {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr) 320px;
+  grid-template-columns: var(--w-left) minmax(0, 1fr) var(--w-right);
   gap: 14px;
   height: 100vh;
   padding: 14px;
 }
+
+/* 中间一列：上面文字栏吃掉剩下的高度，下面一条下排按内容高度 */
+.play-col {
+  display: grid;
+  grid-template-rows: minmax(180px, 1fr) auto;
+  gap: 14px;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* 下排：快捷区域1 | 移动栏 | 快捷区域2
+   左右两块都是 1fr，所以一样宽；移动栏宽度固定，自然居中。 */
+.bottom-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, var(--w-move)) minmax(0, 1fr);
+  gap: 14px;
+  min-width: 0;
+}
+
+/* 快捷区域1 / 快捷区域2：预留位，暂时留空。
+   虚线框只是标出位置，以后往里塞东西直接改这两个容器。 */
+.quick-zone {
+  border-style: dashed;
+  border-color: #262b34;
+  background: rgba(23, 26, 32, .45);
+}
+
+/* 移动栏：只有九宫格，高度按内容来，别把文字栏挤小 */
+.move-panel { min-height: 0; }
+.move-panel .panel-body { padding: 5px 8px 6px; }
+.move-panel .dir-grid { margin: 0 auto; }
+.move-panel .hint-small { margin: 3px auto 0; text-align: center; font-size: 11.5px; }
+
+/* 下排做扁一点：格子内边距和图标都收一号，快捷区域跟着一起变矮（同一排） */
+.move-panel .dir { padding: 4px 4px; gap: 1px; }
+.move-panel .dir .ico { width: 15px; height: 15px; }
+.move-panel .dir-grid { gap: 5px; }
+
+/* 移动栏的横幅（标题条）：比其它面板头矮一截，“移动”两个字也小一号。
+   注意前面已经定义了 .panel-head / .panel-head h3，选择器要写得比它们更具体
+   （多带一层 .move-panel），否则同权重时后面的规则会盖掉这里。 */
+.move-panel .move-head { padding: 3px 8px; gap: 6px; }
+.move-panel .move-head h3 { font-size: 12px; letter-spacing: .5px; }
+.move-panel .move-head .ico { width: 13px; height: 13px; }
 
 .panel {
   display: flex;
@@ -171,7 +225,7 @@ body {
 
 .panel-head h3 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: 1px; color: #b9c0ca; }
 
-.panel-body { padding: 12px; overflow-y: auto; }
+.panel-body { padding: 11px 12px; overflow-y: auto; }
 
 .main {
   display: flex;
@@ -204,6 +258,14 @@ body {
   padding: 16px 18px;
   overflow-y: auto;
   scroll-behavior: smooth;
+}
+
+/* 游戏界面里的文字对话框：把行动带剩下的高度全部吃掉 */
+.main .log {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+  max-height: none;
 }
 
 .log p.line {
@@ -297,7 +359,7 @@ button.choice .label { white-space: pre-line; flex: 1; }
 
 /* ---------- 侧栏内容 ---------- */
 
-.section { margin-bottom: 16px; }
+.section { margin-bottom: 13px; }
 .section:last-child { margin-bottom: 4px; }
 
 .section > h4 {
@@ -313,6 +375,7 @@ button.choice .label { white-space: pre-line; flex: 1; }
 
 .btn-grid { display: flex; flex-wrap: wrap; gap: 8px; }
 .btn-stack { display: flex; flex-direction: column; gap: 8px; }
+.mt8 { margin-top: 8px; }
 
 .entry {
   padding: 8px 10px;
@@ -378,28 +441,30 @@ button.choice .label { white-space: pre-line; flex: 1; }
 
 .cmdline input:focus { outline: none; border-color: var(--amber); }
 
-/* ---------- 计时器（行动栏上方） ---------- */
+/* ---------- 计时器（右侧栏最上面那条，做紧凑一点，别占地方） ---------- */
 
 .clock {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 12px 14px;
+  gap: 7px;
+  padding: 7px 12px;
   background: linear-gradient(180deg, #1b2028, #14171c);
   border-bottom: 1px solid var(--line-soft);
   color: var(--amber);
 }
 
+.clock .ico { width: 14px; height: 14px; }
+
 .clock .clock-text {
-  font-size: 17px;
-  letter-spacing: 2px;
+  font-size: 14.5px;
+  letter-spacing: 1px;
   font-weight: 600;
 }
 
 .clock .clock-turns {
   margin-left: auto;
   color: var(--dim-2);
-  font-size: 12.5px;
+  font-size: 11.5px;
 }
 
 /* ---------- 六向移动 ---------- */
@@ -697,13 +762,148 @@ button.choice .label { white-space: pre-line; flex: 1; }
 
 .slot-current { border-color: #4a5461; }
 
-/* 窄屏：改成单列堆叠 */
+/* ---------- 背包快捷栏（右侧固定 3 格） ---------- */
+
+.quick-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+
+.quick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 70px;
+  padding: 8px 4px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #12151a;
+  color: var(--text);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .12s, background .12s, transform .06s;
+}
+
+.quick:hover:not(.quick-empty) { border-color: var(--amber); background: #1a1f27; }
+.quick:active:not(.quick-empty) { transform: translateY(1px); }
+.quick:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.quick .ico { width: 20px; height: 20px; }
+.quick-name { font-size: 12px; line-height: 1.25; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quick-act { font-size: 11px; color: var(--amber); }
+.quick-empty { border-style: dashed; color: var(--dim-2); cursor: default; }
+
+/* ---------- 背包浮层 ---------- */
+
+.bag-entry .pin { margin-left: auto; color: var(--dim-2); }
+.bag-entry .pin.pinned {
+  border-color: #7a5a1f;
+  color: var(--amber);
+  background: linear-gradient(180deg, #33280f, #1f1809);
+}
+.entry-desc { margin-top: 5px; color: var(--dim); font-size: 12.5px; line-height: 1.6; }
+
+/* ---------- 存档 / 读档 操作盘（两排按钮） ---------- */
+
+.save-pad { display: flex; flex-direction: column; gap: 6px; }
+.save-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+
+.save-mode { justify-content: center; }
+
+/* 选中的那个动作变绿 */
+.save-mode.active {
+  border-color: #2f6b48;
+  background: linear-gradient(180deg, #1b3327, #131f19);
+  color: #d6f0e2;
+}
+
+.slot-no-btn { flex-direction: column; gap: 0; justify-content: center; padding: 6px 4px; }
+.slot-no-btn .no { font-size: 15px; font-weight: 600; line-height: 1.1; }
+.slot-no-btn .sub { font-size: 11px; color: var(--dim-2); line-height: 1.2; }
+.slot-no-btn.has-save { border-color: #3a4653; }
+.slot-no-btn.current { box-shadow: inset 0 0 0 1px var(--amber); }
+.slot-no-btn.current .sub { color: var(--amber); }
+
+/* ---------- 休息滑条 ---------- */
+
+.rest-box {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  background: #12151a;
+}
+
+input[type="range"].rest-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #2f6f8f, #4aa7c9);
+  outline: none;
+}
+
+input[type="range"].rest-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #e8eef4;
+  border: 2px solid #2f6f8f;
+  cursor: pointer;
+}
+
+input[type="range"].rest-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #e8eef4;
+  border: 2px solid #2f6f8f;
+  cursor: pointer;
+}
+
+.rest-readout { display: flex; align-items: center; gap: 8px; }
+.rest-readout #rest-label { font-size: 15px; letter-spacing: 1px; color: var(--amber); }
+.rest-readout .btn { margin-left: auto; }
+
+.rest-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.chip-btn {
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #171a1f;
+  color: var(--dim);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chip-btn:hover { border-color: var(--amber); color: var(--text); }
+
+.hint-small.warn { color: var(--amber); }
+
+/* ---------- 退出页 / 主菜单存档描述 ---------- */
+
+.exit-box { width: min(620px, 92vw); }
+.exit-box .subtitle { margin-bottom: 26px; }
+.exit-box .hint { color: var(--dim-2); }
+
+.slot-saved-at { color: var(--dim-2); font-size: 12px; }
+
+/* 窄屏：改成单列堆叠，预留的快捷区域先收起来 */
 @media (max-width: 1080px) {
   .layout {
     grid-template-columns: 1fr;
     height: auto;
     min-height: 100vh;
   }
-  .panel, .main { max-height: 70vh; }
-  .log { max-height: 46vh; }
+  .play-col { grid-template-rows: auto auto; }
+  .bottom-row { grid-template-columns: 1fr; }
+  .quick-zone { display: none; }
+  .main .log { height: 44vh; min-height: 180px; max-height: 44vh; }
+  .side-left, .side-right { max-height: 70vh; }
 }

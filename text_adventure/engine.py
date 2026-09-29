@@ -1,7 +1,9 @@
 """文字冒险游戏引擎：负责世界数据、游戏状态和指令解析。"""
 
 import json
+import os
 import shutil
+from datetime import datetime
 from pathlib import Path
 
 import dice as dice_rules
@@ -32,6 +34,20 @@ REST_WORDS = {
     "四小时": 240, "4小时": 240, "八小时": 480, "8小时": 480,
 }
 
+# 一次休息的上下限（分钟）：网页版的时间滑条按这两个值取范围。
+# 8 小时 = 480 分钟，按“每半小时恢复 10% 上限”够把任何角色的体力补满。
+REST_MINUTES_MIN = 1
+REST_MINUTES_MAX = 8 * 60
+
+
+def format_duration(minutes):
+    """把分钟数写成“45 分钟 / 2 小时 / 1 小时 30 分钟”。"""
+    minutes = int(minutes)
+    if minutes < 60:
+        return f"{minutes} 分钟"
+    hours, rest = divmod(minutes, 60)
+    return f"{hours} 小时 {rest} 分钟" if rest else f"{hours} 小时"
+
 
 def parse_minutes(text):
     """把“30”“半小时”“2小时”“90分钟”都换算成分钟数，认不出来返回 0。"""
@@ -54,22 +70,53 @@ def parse_minutes(text):
 
 SLOT_COUNT = 3  # 存档槽位数量
 
+# 老版本单存档搬进 1 号槽之后留下的标记文件。有了它，清空 1 号槽之后
+# 下次启动就不会被那个旧文件“复活”。
+MIGRATED_MARKER = ".migrated"
+
+
+def mark_migrated(save_dir):
+    """记下“老存档已经处理过了”。"""
+    try:
+        save_dir = Path(save_dir)
+        save_dir.mkdir(parents=True, exist_ok=True)
+        (save_dir / MIGRATED_MARKER).write_text("1\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def write_json_file(path, payload):
+    """先写临时文件再替换，中途出错也不会把原来那份存档写坏。"""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, path)  # 同盘替换是原子操作，Windows 上也一样
+
 
 def migrate_old_save(save_dir):
-    """把老版本的单存档（save.json）复制到 1 号槽。
+    """把老版本的单存档（save.json）复制到 1 号槽，只做一次。
 
     早期版本只有一个存档文件，改成多槽位之后旧进度会“消失”，所以启动时
-    静默搬一次（保留原文件，不删）。
+    静默搬一次（保留原文件，不删）。搬完写一个标记：否则玩家清空 1 号槽后，
+    下次启动又会从旧文件里把进度搬回来。
     """
-    old = Path(save_dir) / "save.json"
-    first = Path(save_dir) / "save1.json"
-    if old.exists() and not first.exists():
+    save_dir = Path(save_dir)
+    old = save_dir / "save.json"
+    first = save_dir / "save1.json"
+    if (save_dir / MIGRATED_MARKER).exists():
+        return False
+    if not old.exists():
+        return False
+    moved = False
+    if not first.exists():
         try:
             shutil.copyfile(old, first)
-            return True
+            moved = True
         except OSError:
             return False
-    return False
+    mark_migrated(save_dir)
+    return moved
 
 
 class World:
@@ -126,6 +173,7 @@ class Game:
             (["说话", "交谈", "对话", "talk"], self.cmd_talk),
             (["存档", "save"], self.cmd_save),
             (["读档", "load"], self.cmd_load),
+            (["清空存档", "清空", "删除存档", "clear"], self.cmd_clear),
             (["帮助", "help", "h", "?"], self.cmd_help),
             (["退出", "quit", "q"], self.cmd_quit),
         ]
@@ -180,34 +228,57 @@ class Game:
             return 1
         return max(existing, key=lambda n: self.slot_path(n).stat().st_mtime)
 
+    def _background_name(self, background_id):
+        """存档里的背景 id 在当前版本里可能已经没了，查不到就留空。"""
+        if not background_id:
+            return ""
+        try:
+            return self.options.background(background_id)["name"]
+        except (StopIteration, KeyError, TypeError):
+            return ""
+
+    def _saved_at(self, path):
+        """存档文件的最后修改时间，界面用来显示“什么时候存的”。"""
+        try:
+            return datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+        except OSError:
+            return ""
+
     def slot_info(self, slot):
         """读一个槽的概要，给界面显示用。空槽返回 None，文件坏了返回 broken。"""
         path = self.slot_path(slot)
         if not path.exists():
             return None
+        saved_at = self._saved_at(path)
+        base = {"slot": slot, "exists": True, "current": slot == self.slot, "saved_at": saved_at}
         try:
             state = json.loads(path.read_text(encoding="utf-8"))
-        except (ValueError, OSError):
-            return {"slot": slot, "exists": True, "broken": True, "name": "存档损坏",
-                    "level": "-", "room": "-", "time": "-"}
-        character = state.get("character") or {}
-        room = self.world.rooms.get(state.get("current_room"), {})
+            if not isinstance(state, dict):
+                raise ValueError("存档内容不是一个对象")
+        except (ValueError, OSError, UnicodeDecodeError):
+            return dict(base, broken=True, name="存档损坏", level="-", background="",
+                        room="-", day=0, minutes=0, time="-")
+        character = state.get("character")
+        if not isinstance(character, dict):
+            character = {}
+        room = self.world.rooms.get(state.get("current_room")) or {}
         day = state.get("day", stats.START_DAY)
         minutes = state.get("minutes", stats.START_MINUTES)
-        background = self.options.background(character["background"])["name"] \
-            if character.get("background") else ""
-        return {
-            "slot": slot,
-            "exists": True,
-            "broken": False,
-            "name": character.get("name") or "无名幸存者",
-            "level": character.get("level", 1),
-            "background": background,
-            "room": room.get("name", state.get("current_room") or "未知地点"),
-            "day": day,
-            "minutes": minutes,
-            "time": "第 %d 天 %02d:%02d" % (day, minutes // 60, minutes % 60),
-        }
+        try:  # 存档里的数字理论上没问题，坏了也不该让整个界面报错
+            day = int(day)
+            minutes = int(minutes)
+        except (TypeError, ValueError):
+            day, minutes = stats.START_DAY, stats.START_MINUTES
+        return dict(base,
+                    broken=False,
+                    name=character.get("name") or "无名幸存者",
+                    level=character.get("level", 1),
+                    background=self._background_name(character.get("background")),
+                    room=room.get("name") or state.get("current_room") or "未知地点",
+                    day=day,
+                    minutes=minutes,
+                    time="第 %d 天 %02d:%02d" % (day, minutes // 60, minutes % 60))
+
 
     def _parse_slot(self, arg):
         """从“存档 2”这类参数里取槽位号，返回 (槽位, 错误文字)。"""
@@ -314,11 +385,21 @@ class Game:
         self.current_room = exit_
         self.visited.add(exit_)
         self.turns += 1
+        cost_note = ""
         if self.character:
-            self.character.stamina = max(0, self.character.stamina - cost)
-            self.advance_time(stats.move_minutes(outdoor))
+            before = self.character.stamina
+            self.character.stamina = max(0, before - cost)
+            minutes = stats.move_minutes(outdoor)
+            self.advance_time(minutes)
+            # 这一步花了多少体力直接写进正文（文字栏里就能看到），
+            # 不用再去悬停移动按钮看提示。控制台版和网页版共用这段。
+            cost_note = (f"（移动消耗 {cost} 点体力：{before} → {self.character.stamina}"
+                         f"/{stats.stamina_max(self.character.attributes)}，"
+                         f"用时 {format_duration(minutes)}）")
         self._regenerate()
         text = self.describe_room()
+        if cost_note:
+            text += "\n" + cost_note
         if first_visit and self.character:
             text += "\n\n探索了新地点。" + stats.gain_xp(
                 self.character, self.options.progression["explore_xp"], self.options
@@ -367,27 +448,41 @@ class Game:
                 f"醒来时是 {self.clock_text()}，体力 {c.stamina}/{cap}）")
 
     def cmd_rest(self, arg):
+        """休息：只推进时间、恢复体力，绝不提前结束。
+
+        以前的写法是“体力一满就停下”，结果玩家想靠休息把时间推到晚上会被卡住。
+        现在不管体力满没满，请求多久就过多久，只是体力最多补到上限。
+        """
         c = self.character
         if not c:
             return "还没有创建角色。"
+        cap = stats.stamina_max(c.attributes)
         if not arg:
-            return "你想休息多久？例如：休息 30、休息 2小时（每半小时恢复 10% 体力上限）"
+            return ("你想休息多久？可以写 %d~%d 分钟，例如：休息 30、休息 2小时、休息 8小时。\n"
+                    "（体力满了也能接着休息，只是时间照样过去）"
+                    % (REST_MINUTES_MIN, REST_MINUTES_MAX))
         minutes = parse_minutes(arg)
         if minutes <= 0:
-            return "没听明白要休息多久。可以写分钟数（休息 90），或者半小时 / 1小时 / 2小时。"
-        cap = stats.stamina_max(c.attributes)
+            return "没听明白要休息多久。可以写分钟数（休息 90），或者半小时 / 1小时 / 2小时 / 8小时。"
+        clamped = ""
+        if minutes < REST_MINUTES_MIN:
+            minutes = REST_MINUTES_MIN
+        elif minutes > REST_MINUTES_MAX:
+            minutes = REST_MINUTES_MAX
+            clamped = f"（一次最多休息 {format_duration(REST_MINUTES_MAX)}）\n"
+
         before = c.stamina
-        spent = 0
-        while spent < minutes and c.stamina < cap:
-            c.stamina = min(
-                cap, c.stamina + stats.rest_recovery(c.attributes, stats.REST_MINUTES_PER_TICK)
-            )
-            self.advance_time(stats.REST_MINUTES_PER_TICK)
-            spent += stats.REST_MINUTES_PER_TICK
-        lines = [f"你休息了 {spent} 分钟，现在是 {self.clock_text()}。",
-                 f"体力 {before} → {c.stamina}/{cap}。"]
-        if spent < minutes:
-            lines.append("（体力已经恢复满，没必要再躺着了）")
+        self.advance_time(minutes)
+        c.stamina = min(cap, before + stats.rest_recovery(c.attributes, minutes))
+
+        lines = [
+            clamped + f"你休息了 {format_duration(minutes)}，现在是 {self.clock_text()}。",
+            f"体力 {before} → {c.stamina}/{cap}。",
+        ]
+        if before >= cap:
+            lines.append("（体力本来就是满的——休息不拦着你，时间就这么过去了。）")
+        elif c.stamina >= cap:
+            lines.append("（体力已经补满，多躺的那段时间也没白过。）")
         return "\n".join(lines)
 
     def conditions(self):
@@ -691,12 +786,13 @@ class Game:
         return f"{npc['name']}：{lines[index]}"
 
     def cmd_save(self, arg):
+        if not self.character:
+            return "还没有创建角色，先开一局新游戏再存档。"
         slot, error = self._parse_slot(arg)
         if error:
             return error
-        self.use_slot(slot)
         state = {
-            "character": self.character.to_dict() if self.character else None,
+            "character": self.character.to_dict(),
             "current_room": self.current_room,
             "inventory": self.inventory,
             "turns": self.turns,
@@ -708,8 +804,12 @@ class Game:
             "room_items": self.room_items,
             "dialogue_index": self.dialogue_index,
         }
-        self.save_path.parent.mkdir(parents=True, exist_ok=True)
-        self.save_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        # 写盘成功之后才切换当前槽：写失败时至少不会连"当前用的是哪个槽"都改掉
+        try:
+            write_json_file(self.slot_path(slot), state)
+        except OSError as exc:
+            return f"存档失败：{exc}\n（{slot} 号槽里原来的内容没有被改动，可以再试一次）"
+        self.use_slot(slot)
         return f"游戏已保存到 {slot} 号槽。"
 
     def cmd_load(self, arg):
@@ -722,8 +822,16 @@ class Game:
             slot = self.slot if self.slot_path(self.slot).exists() else self.newest_slot()
         if not self.slot_path(slot).exists():
             return f"{slot} 号存档是空的。"
+        try:
+            state = json.loads(self.slot_path(slot).read_text(encoding="utf-8"))
+            if not isinstance(state, dict):
+                raise ValueError("存档内容不是一个对象")
+        except (ValueError, OSError, UnicodeDecodeError):
+            return (f"{slot} 号存档读不出来（文件损坏或者不是存档）。\n"
+                    f"可以用「清空 {slot}」删掉它，再重新存一次。")
+        if "current_room" not in state:
+            return f"{slot} 号存档缺少地点信息，读不了。"
         self.use_slot(slot)
-        state = json.loads(self.save_path.read_text(encoding="utf-8"))
         if state.get("character"):
             self.character = Character.from_dict(state["character"])
             # 旧存档没有属性，按默认值补上
@@ -747,6 +855,28 @@ class Game:
         self.dialogue_index = state.get("dialogue_index", {})
         self._load_notice = ("（存档已按当前版本适配：" + "、".join(notes) + "）\n") if notes else ""
         return self._load_notice + f"读档成功（{slot} 号槽）。\n\n" + self.describe_room()
+
+    def cmd_clear(self, arg):
+        """清空一个存档槽：删掉那个文件，不影响正在进行的这一局。"""
+        arg = (arg or "").strip()
+        if arg.startswith("存档"):  # 兼容“清空存档 2”这种写法
+            arg = arg[len("存档"):].strip()
+        if not arg:
+            return f"要清空哪个存档？例如：清空 2（槽位 1~{SLOT_COUNT}）"
+        slot, error = self._parse_slot(arg)
+        if error:
+            return error
+        path = self.slot_path(slot)
+        if not path.exists():
+            return f"{slot} 号存档本来就是空的。"
+        try:
+            path.unlink()
+        except OSError as exc:
+            return f"清空失败：{exc}"
+        # 老版本的 save.json 还在的话，别让 1 号槽下次启动时被它顶回来
+        mark_migrated(self.save_dir)
+        return f"{slot} 号存档已清空。"
+
 
     def _load_room_items(self, saved):
         """按当前世界数据重建房间物品表，返回适配提示。
@@ -825,9 +955,11 @@ class Game:
             "  掷骰 <骰子>              掷骰，例如：掷骰 2d6+1\n"
             "  检定 <成功率/数值名>       做一次检定，例如：检定 70、检定 近战精准\n"
             "  骰子系统 <d20/d100>       查看或切换检定用的骰子\n"
-            "  休息 <时长>             恢复体力，例如：休息 30、休息 2小时\n"
+            "  休息 <时长>             恢复体力并推进时间，例如：休息 30、休息 2小时（1~480 分钟）\n"
+            "                          体力满了也能休息，只是时间照样过去\n"
             "  说话 <人>               和 NPC 交谈\n"
             "  存档 [槽位] / 读档 [槽位]  保存或读取进度（槽位 1~3，不写就用当前槽）\n"
+            "  清空 <槽位>             删掉某个槽位的存档，例如：清空 2\n"
             "  退出 / quit            离开游戏"
         )
 

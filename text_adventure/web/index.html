@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>封城第七天</title>
+<link rel="icon" href="/icons.svg">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -19,6 +20,10 @@
       <button class="btn big primary" data-act="new">
         <svg class="ico" aria-hidden="true"><use href="#i-person"></use></svg>
         <span>新游戏</span>
+      </button>
+      <button class="btn big ghost" id="menu-exit" title="结束游戏并关闭本地服务">
+        <svg class="ico" aria-hidden="true"><use href="#i-exit"></use></svg>
+        <span>退出游戏</span>
       </button>
     </div>
     <div class="slots" id="menu-slots"></div>
@@ -38,11 +43,20 @@
   </div>
 </section>
 
-<!-- ========== 游戏中 ========== -->
+<!-- ========== 游戏中 ==========
+     界面上下一共分六个区域，名字固定，改布局时按名字找（详见 ../界面区域.md）：
+       左侧栏    = .side-left       最左边一列，角色卡
+       文字栏    = .main            中间一列上半，房间栏 + 正文 + 指令输入
+       移动栏    = .move-panel      中间一列下半正中间，六向移动
+       快捷区域1 = #quick-zone-1    移动栏左边那块，预留，暂时空着
+       快捷区域2 = #quick-zone-2    移动栏右边那块，预留，暂时空着
+       右侧栏    = .side-right      最右边一列，时钟 + 这里/背包/休息/存档/系统
+     每个区域的根元素都带 data-region="区域名"，改哪儿直接搜这个名字。 -->
 <section id="screen-play" class="screen hidden">
   <div class="layout">
 
-    <aside class="panel side-left">
+    <!-- 左侧栏 -->
+    <aside class="panel side-left" data-region="左侧栏">
       <div class="panel-head">
         <svg class="ico" aria-hidden="true"><use href="#i-person"></use></svg>
         <h3>角色</h3>
@@ -50,22 +64,49 @@
       <div class="panel-body" id="char-body"></div>
     </aside>
 
-    <main class="main">
-      <header class="bar room-bar">
-        <h2 id="room-name">—</h2>
-        <span class="room-sub" id="room-sub"></span>
-      </header>
-      <div class="log" id="log"></div>
-      <form class="cmdline" id="cmd-form" autocomplete="off">
-        <input id="cmd-input" type="text" placeholder="也可以直接输入指令，例如：技能 锐器 / 掷骰 2d6+1 / 检定 70">
-        <button class="btn primary" type="submit">
-          <svg class="ico" aria-hidden="true"><use href="#i-check"></use></svg>
-          <span>执行</span>
-        </button>
-      </form>
-    </main>
+    <div class="play-col">
 
-    <aside class="panel side-right">
+      <!-- 文字栏 -->
+      <main class="main" data-region="文字栏">
+        <header class="bar room-bar">
+          <h2 id="room-name">—</h2>
+          <span class="room-sub" id="room-sub"></span>
+        </header>
+        <div class="log" id="log"></div>
+        <form class="cmdline" id="cmd-form" autocomplete="off">
+          <input id="cmd-input" type="text" placeholder="也可以直接输入指令，例如：技能 锐器 / 掷骰 2d6+1 / 检定 70">
+          <button class="btn primary" type="submit">
+            <svg class="ico" aria-hidden="true"><use href="#i-check"></use></svg>
+            <span>执行</span>
+          </button>
+        </form>
+      </main>
+
+      <!-- 下排：快捷区域1 | 移动栏 | 快捷区域2（左右两块一样宽，移动栏居中） -->
+      <div class="bottom-row">
+
+        <!-- 快捷区域1：预留，暂时留空 -->
+        <section class="panel quick-zone" id="quick-zone-1" data-region="快捷区域1"
+                 title="快捷区域1（预留，暂时留空）"></section>
+
+        <!-- 移动栏 -->
+        <section class="panel move-panel" data-region="移动栏">
+          <div class="panel-head move-head">
+            <svg class="ico" aria-hidden="true"><use href="#i-map"></use></svg>
+            <h3>移动</h3>
+          </div>
+          <div class="panel-body" id="move-body"></div>
+        </section>
+
+        <!-- 快捷区域2：预留，暂时留空 -->
+        <section class="panel quick-zone" id="quick-zone-2" data-region="快捷区域2"
+                 title="快捷区域2（预留，暂时留空）"></section>
+
+      </div>
+    </div>
+
+    <!-- 右侧栏：时钟 + 这里 / 背包 / 休息 / 存档读档 / 系统 -->
+    <aside class="panel side-right" data-region="右侧栏">
       <div class="clock" id="clock">
         <svg class="ico" aria-hidden="true"><use href="#i-clock"></use></svg>
         <span class="clock-text" id="clock-text">第 7 天 14:00</span>
@@ -81,7 +122,22 @@
   </div>
 </section>
 
-<!-- ========== 技能 / 确认 浮层 ========== -->
+<!-- ========== 已退出 ========== -->
+<section id="screen-exit" class="screen menu hidden">
+  <div class="menu-box exit-box">
+    <h1 class="title">游戏已结束</h1>
+    <p class="subtitle" id="exit-text">本地服务已经关闭，进度存在 saves 文件夹里，随时可以再来。</p>
+    <div class="menu-actions">
+      <button class="btn big primary" id="exit-close">
+        <svg class="ico" aria-hidden="true"><use href="#i-x"></use></svg>
+        <span>关闭此页面</span>
+      </button>
+    </div>
+    <p class="hint" id="exit-hint">浏览器一般不允许脚本关掉不是它自己打开的标签页；没反应的话按 Ctrl+W，或者点标签上的 ×。</p>
+  </div>
+</section>
+
+<!-- ========== 技能树 / 背包 / 确认 浮层 ========== -->
 <div id="modal" class="modal hidden">
   <div class="modal-box">
     <div class="modal-head">
