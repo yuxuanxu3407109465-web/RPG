@@ -37,6 +37,8 @@ python3 main.py
 | `main.py` | 控制台版入口：开场、角色创建、主循环 |
 | `webui.py` | 网页版入口：本地 HTTP 服务，把角色创建的问答搬到网页上 |
 | `启动网页版.bat` | Windows 下双击启动网页版 |
+| `make_icon.py` | 生成图标 `icon.ico`：纯标准库手写 PNG/ICO 编码，改完配色形状重新运行即可 |
+| `icon.ico` | 游戏图标（桌面快捷方式用的就是它），`icon_preview.png` 是预览图 |
 | `web/` | 网页界面：`index.html`、`style.css`、`app.js`、`icons.svg`（手写 SVG 图标精灵） |
 | `items.py` | 物品的使用效果（效果写在 `data/world.json` 的 `use` 字段里） |
 | `engine.py` | 游戏状态与所有玩家指令 |
