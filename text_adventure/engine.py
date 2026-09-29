@@ -477,22 +477,23 @@ class Game:
             if not self.character.hp:
                 self.character.hp = stats.max_hp(self.character.attributes, self.character.level)
         self.current_room = state["current_room"]
-        self.inventory = state["inventory"]
         self.turns = state["turns"]
         self.visited = set(state.get("visited", [self.current_room]))
-        self.equipment = state.get("equipment", {"main_hand": None, "off_hand": None})
         self.stance = state.get("stance")
-        self._load_room_items(state.get("room_items", {}))
+        # 三张表都要按当前世界数据重建，顺序不能换：装备栏依赖清理后的背包
+        notes = self._load_room_items(state.get("room_items", {}))
+        notes += self._load_inventory(state.get("inventory", []))
+        notes += self._load_equipment(state.get("equipment"))
         self.dialogue_index = state.get("dialogue_index", {})
+        self._load_notice = ("（存档已按当前版本适配：" + "、".join(notes) + "）\n") if notes else ""
         return self._load_notice + "读档成功。\n\n" + self.describe_room()
 
     def _load_room_items(self, saved):
-        """按当前世界数据重建房间物品表。
+        """按当前世界数据重建房间物品表，返回适配提示。
 
         存档里记的是当时每个房间的地面物品。世界数据之后可能加房间、
         加物品或删物品，所以不能直接赋值：以当前世界为基准，逐房间比对，
         存档里没有的新房间补上默认值，存档里有但世界已不存在的条目丢掉。
-        一并记录提示文字到 self._load_notice，供读档信息里说明。
         """
         items = self.world.items
         rebuilt = {}
@@ -514,7 +515,37 @@ class Game:
             notes.append(f"{added_rooms} 个新地点")
         if removed_items:
             notes.append(f"{removed_items} 件已不存在的物品")
-        self._load_notice = ("（存档已按当前版本适配：" + "、".join(notes) + "）\n") if notes else ""
+        return notes
+
+    def _load_inventory(self, saved):
+        """按当前世界数据清理背包，返回适配提示。
+
+        与地面物品同理：存档里的物品 id 可能在世界数据里已被删除或改名，
+        直接赋值会让之后的拿取、查看、放下在查物品表时崩溃。
+        """
+        items = self.world.items
+        kept = [i for i in saved if i in items]
+        removed = len(saved) - len(kept)
+        self.inventory = kept
+        return [f"背包里有 {removed} 件物品已不存在"] if removed else []
+
+    def _load_equipment(self, saved):
+        """按清理后的背包重建装备栏，返回适配提示。
+
+        装备栏里存的是物品 id：物品若已失效或已不在背包里，就不能继续挂在
+        手上，否则状态面板和武器类型判断会查到不存在的物品。
+        """
+        if not isinstance(saved, dict):
+            saved = {}
+        equipment = {"main_hand": None, "off_hand": None}
+        for slot in equipment:
+            held = saved.get(slot)
+            if held and held in self.inventory:
+                equipment[slot] = held
+        # 双手武器两个槽存同一个 id，按件数去重后再报数字
+        dropped = {h for h in (saved.get(slot) for slot in equipment) if h and h not in self.inventory}
+        self.equipment = equipment
+        return [f"已卸下 {len(dropped)} 件失效装备"] if dropped else []
 
     def cmd_help(self, arg):
         return (
