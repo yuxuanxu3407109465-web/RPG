@@ -8,6 +8,7 @@
 </head>
 <body>
 <!--SPRITE-->
+<div id="toast" class="toast hidden"></div>
 
 <!-- ========== 主菜单 ========== -->
 <section id="screen-menu" class="screen menu">
@@ -68,6 +69,11 @@
     </main>
 
     <aside class="panel side-right">
+      <div class="clock" id="clock">
+        <svg class="ico" aria-hidden="true"><use href="#i-clock"></use></svg>
+        <span class="clock-text" id="clock-text">第 7 天 14:00</span>
+        <span class="clock-turns" id="clock-turns"></span>
+      </div>
       <div class="panel-head">
         <svg class="ico" aria-hidden="true"><use href="#i-bag"></use></svg>
         <h3>行动</h3>

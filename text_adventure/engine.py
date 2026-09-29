@@ -24,6 +24,31 @@ DIRECTION_NAMES = {
     "west": "西", "up": "上", "down": "下",
 }
 
+# 休息时长的中文写法
+REST_WORDS = {
+    "半小时": 30, "一小时": 60, "1小时": 60, "两小时": 120, "2小时": 120,
+    "四小时": 240, "4小时": 240, "八小时": 480, "8小时": 480,
+}
+
+
+def parse_minutes(text):
+    """把“30”“半小时”“2小时”“90分钟”都换算成分钟数，认不出来返回 0。"""
+    text = text.strip()
+    if text in REST_WORDS:
+        return REST_WORDS[text]
+    if text.endswith("小时"):
+        text = text[:-2].strip()
+        unit = 60
+    elif text.endswith("分钟"):
+        text = text[:-2].strip()
+        unit = 1
+    else:
+        unit = 1
+    try:
+        return int(float(text) * unit)
+    except ValueError:
+        return 0
+
 
 class World:
     """只读的世界数据（地图、物品、NPC），从 JSON 文件加载。"""
@@ -70,6 +95,7 @@ class Game:
             (["掷骰", "roll"], self.cmd_roll),
             (["检定", "check"], self.cmd_check),
             (["骰子系统", "dice"], self.cmd_dice_system),
+            (["休息", "睡", "rest"], self.cmd_rest),
             (["说话", "交谈", "对话", "talk"], self.cmd_talk),
             (["存档", "save"], self.cmd_save),
             (["读档", "load"], self.cmd_load),
@@ -86,6 +112,8 @@ class Game:
         self.equipment = {"main_hand": None, "off_hand": None}  # 双手武器会同时占两个位置
         self.stance = None  # 当前姿态 id
         self.turns = 0
+        self.day = stats.START_DAY  # 计时器：第几天
+        self.minutes = stats.START_MINUTES  # 计时器：当天已经过去的分钟数
         self._load_notice = ""  # 读档时若按新版本适配过，这里放一句提示
         # 去过的地点（地图上的显示方式不同，内容也只对去过的地点公开）
         self.visited = {self.current_room}
@@ -101,6 +129,7 @@ class Game:
         background = self.options.background(character.background)
         self.inventory = list(background.get("starting_items", []))
         character.hp = stats.max_hp(character.attributes, character.level)
+        character.stamina = stats.stamina_max(character.attributes)
 
     # ---------- 指令解析 ----------
 
@@ -175,26 +204,136 @@ class Game:
         direction = DIRECTIONS.get(arg)
         if not direction:
             return "你想往哪个方向走？（东/南/西/北/上/下）"
-        exit_ = self._room()["exits"].get(direction)
+        room = self._room()
+        exit_ = room["exits"].get(direction)
         if exit_ is None:
-            return "那个方向没有路。"
+            return self._no_path(room, direction)
         # 出口可以是房间 id，也可以是带条件的对象
         if isinstance(exit_, dict):
             required = exit_.get("requires")
             if required and required not in self.inventory:
                 return exit_.get("blocked_message", "你过不去。")
             exit_ = exit_["to"]
+
+        outdoor = bool(room.get("outdoor"))
+        cost = 0
+        if self.character:
+            cost = stats.move_cost(self.character.attributes, outdoor)
+            if self.character.stamina < cost:
+                return (f"体力不够：走这一步要 {cost} 点，你只剩 {self.character.stamina} 点。\n"
+                        f"先休息一下吧（例如：休息 60）。")
+
         first_visit = exit_ not in self.visited
         self.current_room = exit_
         self.visited.add(exit_)
         self.turns += 1
+        if self.character:
+            self.character.stamina = max(0, self.character.stamina - cost)
+            self.advance_time(stats.move_minutes(outdoor))
         self._regenerate()
         text = self.describe_room()
         if first_visit and self.character:
             text += "\n\n探索了新地点。" + stats.gain_xp(
                 self.character, self.options.progression["explore_xp"], self.options
             )
+        shock = self._check_shock()
+        if shock:
+            text += "\n\n" + shock
         return text
+
+    # ---------- 时间与体力 ----------
+
+    def clock_text(self):
+        """计时器文字：第几天 + 当天时间。"""
+        return f"第 {self.day} 天 {self.minutes // 60:02d}:{self.minutes % 60:02d}"
+
+    def advance_time(self, minutes):
+        """推进时间，跨过午夜就进入下一天。"""
+        self.minutes += minutes
+        while self.minutes >= stats.MINUTES_PER_DAY:
+            self.minutes -= stats.MINUTES_PER_DAY
+            self.day += 1
+
+    def _no_path(self, room, direction):
+        """那个方向走不通：普通房间说墙壁，走廊和室外说有障碍物。"""
+        name = DIRECTION_NAMES.get(direction, direction)
+        if room.get("blocked") == "障碍物":
+            return f"{name}边有障碍物，过不去。"
+        return f"{name}边是墙壁，没有路。"
+
+    def _check_shock(self):
+        """体力归零会当场休克：失去行动能力，强制休息到缓过来。"""
+        c = self.character
+        if not c or c.stamina > 0:
+            return ""
+        cap = stats.stamina_max(c.attributes)
+        target = int(cap * stats.SHOCK_WAKE_RATIO)
+        minutes = 0
+        while c.stamina < target:
+            c.stamina = min(
+                cap, c.stamina + stats.rest_recovery(c.attributes, stats.REST_MINUTES_PER_TICK)
+            )
+            self.advance_time(stats.REST_MINUTES_PER_TICK)
+            minutes += stats.REST_MINUTES_PER_TICK
+        return (f"你眼前一黑，直接瘫倒在地上——体力彻底耗尽了。\n"
+                f"（休克：强制休息 {minutes // 60} 小时 {minutes % 60} 分钟，"
+                f"醒来时是 {self.clock_text()}，体力 {c.stamina}/{cap}）")
+
+    def cmd_rest(self, arg):
+        c = self.character
+        if not c:
+            return "还没有创建角色。"
+        if not arg:
+            return "你想休息多久？例如：休息 30、休息 2小时（每半小时恢复 10% 体力上限）"
+        minutes = parse_minutes(arg)
+        if minutes <= 0:
+            return "没听明白要休息多久。可以写分钟数（休息 90），或者半小时 / 1小时 / 2小时。"
+        cap = stats.stamina_max(c.attributes)
+        before = c.stamina
+        spent = 0
+        while spent < minutes and c.stamina < cap:
+            c.stamina = min(
+                cap, c.stamina + stats.rest_recovery(c.attributes, stats.REST_MINUTES_PER_TICK)
+            )
+            self.advance_time(stats.REST_MINUTES_PER_TICK)
+            spent += stats.REST_MINUTES_PER_TICK
+        lines = [f"你休息了 {spent} 分钟，现在是 {self.clock_text()}。",
+                 f"体力 {before} → {c.stamina}/{cap}。"]
+        if spent < minutes:
+            lines.append("（体力已经恢复满，没必要再躺着了）")
+        return "\n".join(lines)
+
+    def conditions(self):
+        """身上的异常状态。体力不足造成的力竭是实时算出来的，不写进存档。"""
+        c = self.character
+        if not c:
+            return []
+        active = [dict(x) for x in c.conditions]
+        if stats.is_exhausted(c) and not any(x.get("id") == "exhausted" for x in active):
+            active.insert(0, {
+                "id": "exhausted",
+                "name": "力竭",
+                "source": "stamina",
+                "effect": f"攻击力 {stats.EXHAUSTED_DAMAGE_PENALTY}%",
+                "note": "体力低于上限的 10%，恢复体力即可解除",
+            })
+        return active
+
+    def clear_condition(self, condition_id):
+        """清除异常状态（留给以后的解毒剂之类道具调用）。
+
+        体力不足造成的力竭不能直接清掉，必须先把体力补回来；其它来源的力竭可以清。
+        """
+        c = self.character
+        if not c:
+            return "还没有创建角色。"
+        if condition_id == "exhausted" and stats.is_exhausted(c):
+            return "这种力竭是体力耗尽引起的，清除异常状态的道具不管用，得先恢复体力。"
+        before = len(c.conditions)
+        c.conditions = [x for x in c.conditions if x.get("id") != condition_id]
+        if len(c.conditions) == before:
+            return "身上没有这个异常状态。"
+        return "异常状态已解除。"
 
     def _regenerate(self):
         """每隔一定回合按体质恢复生命。"""
@@ -265,7 +404,11 @@ class Game:
             name = lambda i: self.world.items[i]["name"] if i else "空"
             hands = f"主手 {name(main)}    副手 {name(off)}"
         stance = self._current_stance()
-        return sheet + f"\n\n【装备与姿态】\n  {hands}\n  姿态：{stance['name'] if stance else '无'}"
+        conditions = self.conditions()
+        active = "、".join(f"{x['name']}（{x['effect']}）" for x in conditions) if conditions else "无"
+        return (sheet
+                + f"\n\n【装备与姿态】\n  {hands}\n  姿态：{stance['name'] if stance else '无'}"
+                + f"\n\n【时间】{self.clock_text()}\n【异常状态】{active}")
 
     def cmd_skills(self, arg):
         if not self.character:
@@ -455,6 +598,8 @@ class Game:
             "current_room": self.current_room,
             "inventory": self.inventory,
             "turns": self.turns,
+            "day": self.day,
+            "minutes": self.minutes,
             "visited": sorted(self.visited),
             "equipment": self.equipment,
             "stance": self.stance,
@@ -476,8 +621,13 @@ class Game:
                 self.character.attributes = self.options.default_attributes()
             if not self.character.hp:
                 self.character.hp = stats.max_hp(self.character.attributes, self.character.level)
+            # 旧存档没有体力，按满值补上
+            if not self.character.stamina:
+                self.character.stamina = stats.stamina_max(self.character.attributes)
         self.current_room = state["current_room"]
         self.turns = state["turns"]
+        self.day = state.get("day", stats.START_DAY)
+        self.minutes = state.get("minutes", stats.START_MINUTES)
         self.visited = set(state.get("visited", [self.current_room]))
         self.stance = state.get("stance")
         # 三张表都要按当前世界数据重建，顺序不能换：装备栏依赖清理后的背包
@@ -564,6 +714,7 @@ class Game:
             "  掷骰 <骰子>              掷骰，例如：掷骰 2d6+1\n"
             "  检定 <成功率/数值名>       做一次检定，例如：检定 70、检定 近战精准\n"
             "  骰子系统 <d20/d100>       查看或切换检定用的骰子\n"
+            "  休息 <时长>             恢复体力，例如：休息 30、休息 2小时\n"
             "  说话 <人>               和 NPC 交谈\n"
             "  存档 / 读档             保存或读取进度\n"
             "  退出 / quit            离开游戏"

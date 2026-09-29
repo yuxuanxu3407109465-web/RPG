@@ -34,6 +34,29 @@ body {
 
 .hidden { display: none !important; }
 
+/* 浮层提示：走不通、体力不够这类 */
+.toast {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(560px, 88vw);
+  padding: 11px 18px;
+  background: linear-gradient(180deg, #2a1d1b, #1d1413);
+  border: 1px solid #6d3630;
+  border-radius: 10px;
+  color: #f0d9d4;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .55);
+  font-size: 14.5px;
+  z-index: 50;
+  animation: toast-in .16s ease-out;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
 .ico {
   width: 18px;
   height: 18px;
@@ -354,6 +377,182 @@ button.choice .label { white-space: pre-line; flex: 1; }
 }
 
 .cmdline input:focus { outline: none; border-color: var(--amber); }
+
+/* ---------- 计时器（行动栏上方） ---------- */
+
+.clock {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, #1b2028, #14171c);
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--amber);
+}
+
+.clock .clock-text {
+  font-size: 17px;
+  letter-spacing: 2px;
+  font-weight: 600;
+}
+
+.clock .clock-turns {
+  margin-left: auto;
+  color: var(--dim-2);
+  font-size: 12.5px;
+}
+
+/* ---------- 六向移动 ---------- */
+
+.dir-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.dir {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #12151a;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color .12s, background .12s, transform .06s;
+}
+
+.dir:hover { border-color: #4a5461; background: #1a1f27; }
+.dir:active { transform: translateY(1px); }
+.dir:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+.dir .dir-name { font-size: 13.5px; line-height: 1.2; }
+.dir .dir-sub {
+  font-size: 11px;
+  color: var(--dim-2);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 绿：明确可以移动 */
+.dir-open { border-color: #2f6b48; background: linear-gradient(180deg, #1b3327, #131f19); color: #d6f0e2; }
+.dir-open .dir-sub { color: #7fb79a; }
+.dir-open:hover { border-color: #3f8a5d; background: linear-gradient(180deg, #21402f, #17251d); }
+
+/* 红：那边有危险 */
+.dir-danger { border-color: #7a3129; background: linear-gradient(180deg, #3a1d19, #241412); color: #f2d6d1; }
+.dir-danger .dir-sub { color: #d98a7e; }
+.dir-danger:hover { border-color: #a04136; background: linear-gradient(180deg, #48241e, #2c1815); }
+
+/* 暗：未知，点了才知道 */
+.dir-unknown { color: var(--dim); }
+.dir-unknown .dir-sub { color: var(--dim-2); }
+
+.dir-center {
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--line);
+  border-radius: 9px;
+  color: var(--dim-2);
+  font-size: 11.5px;
+  padding: 4px;
+  text-align: center;
+  overflow: hidden;
+}
+
+.dir-empty { display: block; }
+
+/* ---------- 体力 ---------- */
+
+.stamina-track { background: #1e2630; border-color: #26313d; }
+.stamina-fill { background: linear-gradient(90deg, #2f6f8f, #4aa7c9); }
+.stamina-fill.low { background: linear-gradient(90deg, #8a5a1f, #d09a3c); }
+.stamina-fill.empty { background: linear-gradient(90deg, #7a2a24, #c8453a); }
+
+.cond {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  padding: 6px 9px;
+  margin-bottom: 6px;
+  border: 1px solid #4a2a2a;
+  border-radius: 8px;
+  background: #241a19;
+  font-size: 13px;
+}
+
+.cond-name { color: #e6b3ae; font-weight: 600; }
+.cond-eff { color: #d9705f; }
+.cond-note { color: var(--dim-2); font-size: 12px; width: 100%; }
+
+/* ---------- 技能 ---------- */
+
+.skill-tree { margin-bottom: 10px; }
+.skill-tree-name { color: var(--dim); font-size: 12.5px; margin-bottom: 5px; letter-spacing: .5px; }
+
+.chip {
+  display: inline-block;
+  padding: 4px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: #12151a;
+  color: var(--dim-2);
+  font-size: 12.5px;
+}
+
+.chip-done { border-color: #2f6b48; color: #8fc4a8; }
+
+.hint-small { margin: 6px 0 0; color: var(--dim-2); font-size: 12px; }
+
+/* ---------- 属性加减号 ---------- */
+
+.attr-list { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+
+.attr-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #12151a;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+.attr-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.attr-name { font-size: 14.5px; color: #dfe4ea; }
+.attr-desc { font-size: 12px; color: var(--dim-2); }
+
+.attr-controls { display: flex; align-items: center; gap: 10px; }
+
+.attr-value {
+  min-width: 26px;
+  text-align: center;
+  font-size: 19px;
+  font-weight: 600;
+  color: #eef2f6;
+}
+
+.icon-btn {
+  padding: 4px 8px;
+  min-width: 34px;
+  justify-content: center;
+}
+
+.icon-btn:disabled { opacity: .3; }
+
+.attr-remaining {
+  width: 100%;
+  color: var(--amber);
+  font-size: 13.5px;
+}
+
+.attr-remaining.bad { color: #d9705f; }
 
 /* 窄屏：改成单列堆叠 */
 @media (max-width: 1080px) {

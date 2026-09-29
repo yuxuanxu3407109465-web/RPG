@@ -21,10 +21,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import stats
-from character import CharacterCreator, CharacterOptions, Prompter
+from character import CharacterCreator, CharacterOptions, Prompter, check_attributes
 from dice import Dice
 from engine import DIRECTION_NAMES, Game, World
-from skills import SkillTrees
+from skills import SkillTrees, tree_unlocked, unmet_requirements
 
 BASE_DIR = Path(__file__).parent
 WEB_DIR = BASE_DIR / "web"
@@ -39,6 +39,24 @@ STATIC_FILES = {
 }
 
 SLOT_NAMES = {"main_hand": "主手", "off_hand": "副手"}
+
+# 移动按钮永远显示这六个方向，能不能走由世界数据决定
+DIRECTIONS_ALL = ("north", "south", "east", "west", "up", "down")
+
+# 休息按钮的档位（分钟，按钮文字）
+REST_PRESETS = [(30, "半小时"), (60, "1 小时"), (120, "2 小时"), (240, "4 小时")]
+
+MOVE_WORDS = ("走", "去", "go")
+
+
+def is_move(text):
+    """这行指令是不是在移动？用来决定走不通时要不要弹提示。"""
+    text = text.strip()
+    if not text:
+        return False
+    if text in DIRECTION_NAMES:  # 直接输入“东”“north”这种
+        return True
+    return text.startswith(MOVE_WORDS) or text.split()[0:1] == ["go"]
 
 
 def load_page():
@@ -153,6 +171,45 @@ class WebPrompter(Prompter):
         finally:
             self._hint = None
 
+    def attributes(self, attributes, rules, attribute_defs):
+        """网页版属性分配：前端用加减号按钮调，最后一次性提交整份分配。
+
+        收到的结果仍然交给 check_attributes 校验（和控制台同一个函数），
+        不合法就退回前端重来。
+        """
+        self._hint = {
+            "kind": "attributes",
+            "attributes": dict(attributes),
+            "rules": dict(rules),
+            "defs": [
+                {"id": a["id"], "name": a["name"], "description": a["description"]}
+                for a in attribute_defs
+            ],
+        }
+        names = {a["id"]: a["name"] for a in attribute_defs}
+        try:
+            while True:
+                raw = self._web_input("分配属性")
+                try:
+                    data = json.loads(raw)
+                    attrs = {key: int(value) for key, value in data.items()}
+                except (ValueError, TypeError, AttributeError):
+                    self._web_print("  没收到能用的分配结果，请重新调好再提交。")
+                    continue
+                if set(attrs) != set(attributes):
+                    self._web_print("  属性项对不上，请重新提交。")
+                    continue
+                error = check_attributes(attrs, rules)
+                if error:
+                    self._web_print("  " + error)
+                    continue
+                self._web_print("【属性】" + "  ".join(
+                    "%s %d" % (attr["name"], attrs[attr["id"]]) for attr in attribute_defs
+                ))
+                return attrs
+        finally:
+            self._hint = None
+
 
 class Session:
     """一个本地单人游戏会话：加载数据、维护 Game、把状态打包给前端。"""
@@ -172,6 +229,77 @@ class Session:
         )
 
     # ---------- 状态打包 ----------
+
+    def exits_for(self, room):
+        """六个方向全部返回，颜色交给界面决定。
+
+        open    = 现在就能走（绿色）
+        danger  = 出口数据里写了 danger，那边有危险（红色）
+        blocked = 走不通、或者暂时过不去（保持原色，点了才会知道原因）
+        """
+        game = self.game
+        result = []
+        for direction in DIRECTIONS_ALL:
+            exit_ = room["exits"].get(direction)
+            outdoor = bool(room.get("outdoor"))
+            info = {
+                "id": direction,
+                "name": DIRECTION_NAMES.get(direction, direction),
+                "state": "blocked",
+                "target": None,
+                "danger": None,
+                "cost": stats.move_cost(game.character.attributes, outdoor) if game.character else 0,
+                "minutes": stats.move_minutes(outdoor),
+            }
+            if exit_ is not None:
+                danger = None
+                required = None
+                if isinstance(exit_, dict):
+                    danger = exit_.get("danger")
+                    required = exit_.get("requires")
+                    target = exit_.get("to")
+                else:
+                    target = exit_
+                passable = not required or required in game.inventory
+                if danger:
+                    info["state"] = "danger"
+                    info["danger"] = danger
+                elif passable:
+                    info["state"] = "open"
+                if target in game.visited:
+                    info["target"] = self.world.rooms[target]["name"]
+            result.append(info)
+        return result
+
+    def skills_state(self):
+        """技能树打包给前端，让“学技能”也是按钮。能不能学由 skills.py 判断。"""
+        c = self.game.character
+        trees = self.skill_trees
+        data = {"points": c.skill_points, "trees": []}
+        for tree in trees.trees:
+            unlocked = tree_unlocked(c, tree)
+            skills = []
+            for skill in trees.skills_in(tree["id"]):
+                learned = skill["id"] in c.learned_skills
+                unmet = []
+                if not learned and unlocked:
+                    unmet = unmet_requirements(c, skill, trees, self.options)
+                skills.append({
+                    "id": skill["id"],
+                    "name": skill["name"],
+                    "cost": skill.get("cost", 1),
+                    "description": skill["description"],
+                    "learned": learned,
+                    "unmet": unmet,
+                })
+            data["trees"].append({
+                "id": tree["id"],
+                "name": tree["name"],
+                "unlocked": unlocked,
+                "locked_message": tree.get("locked_message", "尚未解锁"),
+                "skills": skills,
+            })
+        return data
 
     def state(self):
         game = self.game
@@ -198,8 +326,16 @@ class Session:
         stance = game._current_stance()
         snap.update({
             "turns": game.turns,
+            "time": {"day": game.day, "minutes": game.minutes, "text": game.clock_text()},
             "room": {"id": game.current_room, "name": room["name"]},
-            "exits": [{"id": d, "name": DIRECTION_NAMES.get(d, d)} for d in room["exits"]],
+            "exits": self.exits_for(room),
+            "rest": {
+                "presets": [{"minutes": m, "label": label} for m, label in REST_PRESETS],
+                "hint": "每 %d 分钟恢复 %d%% 体力上限" % (
+                    stats.REST_MINUTES_PER_TICK, int(stats.REST_RECOVER_RATIO * 100)
+                ),
+            },
+            "skills": self.skills_state(),
             "room_items": [
                 {"id": i, "name": world.items[i]["name"]}
                 for i in game.room_items[game.current_room]
@@ -230,6 +366,14 @@ class Session:
                 "weight": game._carried_weight(),
                 "capacity": stats.carry_capacity(c.attributes),
             },
+            "stamina": {
+                "value": c.stamina,
+                "max": stats.stamina_max(c.attributes),
+                "cost_multiplier": round(stats.stamina_cost_multiplier(c.attributes), 2),
+                "exhausted": stats.is_exhausted(c),
+            },
+            "conditions": game.conditions(),
+            "attack_penalty": stats.attack_penalty(c),
             "equipment": {
                 slot: (world.items[i]["name"] if i else None)
                 for slot, i in game.equipment.items()
@@ -313,11 +457,16 @@ class Session:
             output = self.game.handle(text)
             if output:
                 lines.append(output)
+            # 走不通、体力不够这类提示额外带一份，界面会用浮层弹出来
+            notice = None
+            if is_move(text) and not (output or "").startswith("【"):
+                notice = output or "那边走不过去。"
             return {
                 "type": "play",
                 "lines": lines,
                 "state": self.state(),
                 "quit": not self.game.running,
+                "notice": notice,
             }
 
 

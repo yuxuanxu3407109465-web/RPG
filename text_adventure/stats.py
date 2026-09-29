@@ -63,6 +63,76 @@ def companion_limit(a):
     return a["charisma"] // 3
 
 
+# ---------- 体力与时间 ----------
+#
+# 体力上限：体质、力量各每点 30（5+5 时正好 300）。属性上限 10 只约束
+# 创建角色时的分配，后期属性可以涨过 10，下面这些公式照样适用。
+
+STAMINA_PER_POINT = 30        # 体质 / 力量 每点给的体力上限
+STAMINA_MIN_CAP = 180         # 体力上限的下限（体质与力量都只有 3 时）
+STAMINA_COST_FLOOR = 0.5      # 行动消耗最多降到一半
+STAMINA_LOW_RATIO = 0.1       # 体力低于上限的这个比例就力竭
+EXHAUSTED_DAMAGE_PENALTY = -50  # 力竭时攻击力 -50%
+MOVE_COST_INDOOR = 2          # 建筑物内走一步的体力
+MOVE_COST_OUTDOOR = 10        # 建筑物外走一步的体力
+MOVE_MINUTES_INDOOR = 1       # 建筑物内走一步花的时间（分钟）
+MOVE_MINUTES_OUTDOOR = 5      # 建筑物外走一步花的时间（分钟）
+REST_MINUTES_PER_TICK = 30    # 每休息半小时算一档
+REST_RECOVER_RATIO = 0.1      # 每档恢复 10% 上限
+SHOCK_WAKE_RATIO = 0.3        # 休克后强制休息到这个比例才醒
+START_DAY = 7                 # 游戏从封城第七天开始
+START_MINUTES = 14 * 60       # 14:00
+MINUTES_PER_DAY = 24 * 60
+
+
+def stamina_max(a):
+    """体力（行动力）上限。"""
+    return max(STAMINA_MIN_CAP, STAMINA_PER_POINT * (a["constitution"] + a["strength"]))
+
+
+def stamina_cost_multiplier(a):
+    """每次行动消耗体力的倍率。
+
+    敏捷 5 是基准：低于 5 时每点 +5%（3 点正好 +10%）；高于 5 时每满 5 点
+    -10%（7 点不减、10 点 -10%）；最低降到 50%。
+    """
+    agility = a["agility"]
+    if agility < 5:
+        multiplier = 1 + 0.05 * (5 - agility)
+    else:
+        multiplier = 1 - 0.1 * ((agility - 5) // 5)
+    return max(STAMINA_COST_FLOOR, multiplier)
+
+
+def move_cost(a, outdoor):
+    """走一个方向要花多少体力。"""
+    base = MOVE_COST_OUTDOOR if outdoor else MOVE_COST_INDOOR
+    return max(1, int(round(base * stamina_cost_multiplier(a))))
+
+
+def move_minutes(outdoor):
+    """走一个方向要花多少分钟。"""
+    return MOVE_MINUTES_OUTDOOR if outdoor else MOVE_MINUTES_INDOOR
+
+
+def rest_recovery(a, minutes):
+    """休息一段时间恢复的体力（每半小时恢复 10% 上限）。"""
+    return int(round(stamina_max(a) * REST_RECOVER_RATIO * minutes / REST_MINUTES_PER_TICK))
+
+
+def is_exhausted(character):
+    """体力低于上限的 10% → 力竭（攻击力 -50%），体力恢复后自动解除。"""
+    if not character:
+        return False
+    return character.stamina < stamina_max(character.attributes) * STAMINA_LOW_RATIO
+
+
+def attack_penalty(character):
+    """当前攻击力增减（%）。力竭 -50%，战斗系统接进来时直接用这个值。"""
+    return EXHAUSTED_DAMAGE_PENALTY if is_exhausted(character) else 0
+
+
+
 # ---------- 经验与升级 ----------
 
 def xp_to_next_level(level, options):

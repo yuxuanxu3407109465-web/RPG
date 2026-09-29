@@ -33,6 +33,9 @@ class Character:
     learned_skills: List[str] = field(default_factory=list)  # 已学会的技能 id
     unlocked_trees: List[str] = field(default_factory=list)  # 背景解锁的特殊技能树 id（如灵能）
     hp: int = 0
+    stamina: int = 0  # 当前体力，上限由体质和力量推导（stats.stamina_max）
+    # 异常状态列表。体力不足造成的力竭不放在这里，它由体力实时推导（stats.is_exhausted）
+    conditions: List[dict] = field(default_factory=list)
 
     def to_dict(self):
         return asdict(self)
@@ -48,6 +51,25 @@ class Character:
         data.setdefault("attributes", {})
         data.pop("skill_allocation", None)  # 旧版数值型技能，已废弃
         return cls(**data)
+
+
+def check_attributes(attributes, rules):
+    """检查一份属性分配是否合法，返回错误文字；没问题返回 None。
+
+    控制台和网页版都走这里，规则只有一份。rules 来自 data/character_options.json
+    里的 attribute_rules（min / max / total），其中 max 只约束创建角色时的分配，
+    后期属性成长不受它限制。
+    """
+    low, high, total = rules["min"], rules["max"], rules["total"]
+    for value in attributes.values():
+        if not low <= value <= high:
+            return f"每项属性要在 {low}~{high} 之间。"
+    remaining = total - sum(attributes.values())
+    if remaining > 0:
+        return f"还有 {remaining} 点没分配。"
+    if remaining < 0:
+        return f"点数超了 {-remaining} 点。"
+    return None
 
 
 class CharacterOptions:
@@ -85,11 +107,14 @@ def format_sheet(character, options, items, carried_weight=None, tree_names=None
         return value + (f"（含姿态 {extra:+d}）" if extra else "")
     background = options.background(character.background)
     hp_max = stats.max_hp(a, character.level)
+    stamina_cap = stats.stamina_max(a)
+    stamina_now = character.stamina or stamina_cap
     lines = [
         "======== 角色卡 ========",
         f"{character.name} · {character.gender} · {character.age} 岁 · {character.height} cm",
         f"等级 {character.level}（经验 {character.xp}/{stats.xp_to_next_level(character.level, options)}）"
-        f"    生命值 {character.hp or hp_max}/{hp_max}    未使用技能点 {character.skill_points}",
+        f"    生命值 {character.hp or hp_max}/{hp_max}    体力 {stamina_now}/{stamina_cap}"
+        f"    未使用技能点 {character.skill_points}",
         f"样貌：{character.appearance}",
         f"背景：{background['name']}",
         f"  {background['description']}",
@@ -119,6 +144,9 @@ def format_sheet(character, options, items, carried_weight=None, tree_names=None
         f"  近战精准 {with_bonus('melee_accuracy', stats.melee_accuracy(a))}    远程精准 {stats.ranged_accuracy(a)}%",
         f"  闪避 {with_bonus('dodge', stats.dodge(a))}    先攻 {stats.initiative(a)}",
         f"  生命恢复 每 {stats.REGEN_INTERVAL} 回合 +{stats.hp_regen(a)}",
+        f"  体力上限 {stamina_cap}    行动消耗 ×{stats.stamina_cost_multiplier(a):.2f}"
+        f"（移动：室内 {stats.move_cost(a, False)} 点 / {stats.move_minutes(False)} 分钟，"
+        f"室外 {stats.move_cost(a, True)} 点 / {stats.move_minutes(True)} 分钟）",
         f"  经验倍率 ×{stats.xp_multiplier(a):.1f}    每级技能点 {stats.skill_points_per_level(a)}",
     ]
     return "\n".join(lines)
@@ -165,6 +193,46 @@ class Prompter:
                 return False
             self.print("  请输入 y 或 n。")
 
+    def attributes(self, attributes, rules, attribute_defs):
+        """分配属性，返回分配好的属性字典。
+
+        控制台里逐个输入“编号 数值”；网页版会覆盖这个方法，改用加减号按钮。
+        校验统一交给 check_attributes，两个界面规则一致。
+        """
+        attrs = dict(attributes)
+        low, high = rules["min"], rules["max"]
+        self.print(f"\n【属性】每项 {low}~{high}，5 是普通人水平。降低某项可以把点数挪给别的属性。")
+        while True:
+            remaining = rules["total"] - sum(attrs.values())
+            self.print(f"\n剩余点数：{remaining}")
+            for i, attr in enumerate(attribute_defs, 1):
+                self.print(f"  {i}. {attr['name']} {attrs[attr['id']]:>2}   {attr['description']}")
+            value = self.input("输入“编号 数值”调整（例如：1 7），分配完输入“完成”：").strip()
+
+            if value in ("完成", "done"):
+                error = check_attributes(attrs, rules)
+                if error:
+                    self.print("  " + error)
+                    continue
+                return attrs
+            parts = value.split()
+            if len(parts) != 2 or not all(p.isdigit() for p in parts):
+                self.print("  格式不对，例如输入：1 7")
+                continue
+            index, new = int(parts[0]) - 1, int(parts[1])
+            if not 0 <= index < len(attribute_defs):
+                self.print(f"  编号要在 1~{len(attribute_defs)} 之间。")
+                continue
+            if not low <= new <= high:
+                self.print(f"  每项属性要在 {low}~{high} 之间。")
+                continue
+            attr_id = attribute_defs[index]["id"]
+            needed = new - attrs[attr_id]
+            if needed > remaining:
+                self.print(f"  点数不够，还差 {needed - remaining} 点。可以先调低别的属性。")
+                continue
+            attrs[attr_id] = new
+
 
 class CharacterCreator:
     """一步步引导玩家创建角色，最后确认；不满意可以从头再来。"""
@@ -181,6 +249,7 @@ class CharacterCreator:
             self.ask.print("\n" + format_sheet(character, self.options, self.items, tree_names=self.tree_names))
             if self.ask.confirm("\n确认使用这个角色吗？"):
                 character.hp = stats.max_hp(character.attributes, character.level)
+                character.stamina = stats.stamina_max(character.attributes)
                 return character
             self.ask.print("\n好的，重新创建。")
 
@@ -226,39 +295,11 @@ class CharacterCreator:
         return self.options.backgrounds[index]["id"]
 
     def _attributes(self):
-        rules = self.options.attribute_rules
-        attrs = self.options.default_attributes()
-        low, high, total = rules["min"], rules["max"], rules["total"]
-        self.ask.print(f"\n【属性】每项 {low}~{high}，5 是普通人水平。降低某项可以把点数挪给别的属性。")
-        while True:
-            remaining = total - sum(attrs.values())
-            self.ask.print(f"\n剩余点数：{remaining}")
-            for i, attr in enumerate(self.options.attributes, 1):
-                self.ask.print(f"  {i}. {attr['name']} {attrs[attr['id']]:>2}   {attr['description']}")
-            value = self.ask.input("输入“编号 数值”调整（例如：1 7），分配完输入“完成”：").strip()
-
-            if value in ("完成", "done"):
-                if remaining == 0:
-                    return attrs
-                self.ask.print(f"  还有 {remaining} 点没分配。")
-                continue
-            parts = value.split()
-            if len(parts) != 2 or not all(p.isdigit() for p in parts):
-                self.ask.print("  格式不对，例如输入：1 7")
-                continue
-            index, new = int(parts[0]) - 1, int(parts[1])
-            if not 0 <= index < len(self.options.attributes):
-                self.ask.print(f"  编号要在 1~{len(self.options.attributes)} 之间。")
-                continue
-            if not low <= new <= high:
-                self.ask.print(f"  每项属性要在 {low}~{high} 之间。")
-                continue
-            attr_id = self.options.attributes[index]["id"]
-            needed = new - attrs[attr_id]
-            if needed > remaining:
-                self.ask.print(f"  点数不够，还差 {needed - remaining} 点。可以先调低别的属性。")
-                continue
-            attrs[attr_id] = new
+        return self.ask.attributes(
+            self.options.default_attributes(),
+            self.options.attribute_rules,
+            self.options.attributes,
+        )
 
     def _companions(self, limit):
         if limit == 0:

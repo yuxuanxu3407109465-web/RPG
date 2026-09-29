@@ -19,7 +19,7 @@
     "女"
   ],
   "attribute_rules": {
-    "min": 1,
+    "min": 3,
     "max": 10,
     "default": 5,
     "total": 33

@@ -283,4 +283,15 @@
       <path d="M12 6.6V19.9"/>
     </g>
   </symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="8.4"/>
+      <path d="M12 6.6V12L15.8 14.3"/>
+    </g>
+  </symbol>
+  <symbol id="i-rest" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20.4 14.6A8.6 8.6 0 0 1 9.4 3.6A8.7 8.7 0 1 0 20.4 14.6Z"/>
+    </g>
+  </symbol>
 </svg>

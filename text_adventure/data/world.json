@@ -23,6 +23,7 @@
         "flashlight"
       ],
       "npcs": [],
+      "blocked": "墙壁",
       "map": {
         "area": "公寓楼 6F",
         "x": 0,
@@ -40,6 +41,7 @@
       "npcs": [
         "neighbor"
       ],
+      "blocked": "障碍物",
       "map": {
         "area": "公寓楼 6F",
         "x": 1,
@@ -55,6 +57,7 @@
         "down": {
           "to": "parking",
           "requires": "flashlight",
+          "danger": "楼梯口黑洞洞的。底下有东西在慢慢拖着脚走动。",
           "blocked_message": "地下停车场一片漆黑，里面好像有东西在慢慢拖着脚走。没有照明，你不敢下去。"
         }
       },
@@ -62,6 +65,7 @@
         "machete"
       ],
       "npcs": [],
+      "blocked": "墙壁",
       "map": {
         "area": "地面层",
         "x": 0,
@@ -78,6 +82,8 @@
         "crowbar"
       ],
       "npcs": [],
+      "blocked": "障碍物",
+      "outdoor": true,
       "map": {
         "area": "地下 B1",
         "x": 0,
@@ -97,6 +103,8 @@
       },
       "items": [],
       "npcs": [],
+      "blocked": "障碍物",
+      "outdoor": true,
       "map": {
         "area": "地面层",
         "x": 0,
@@ -116,6 +124,7 @@
       "npcs": [
         "clerk"
       ],
+      "blocked": "墙壁",
       "map": {
         "area": "地面层",
         "x": 1,
