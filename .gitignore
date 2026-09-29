@@ -1,0 +1,99 @@
+# ============================================================
+#  封城第七天 — Python 项目忽略规则
+#  目的：源码和 data/ 进 Git，缓存、虚拟环境、存档、构建产物一律不进
+# ============================================================
+
+# ---------- Python 字节码缓存（最主要的一项） ----------
+# 只要 import 过就会自动生成，是仓库膨胀的头号来源
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C 扩展 / 编译产物
+*.so
+*.pyd
+*.dll
+
+# ---------- 分发包与构建产物 ----------
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+wheels/
+pip-wheel-metadata/
+MANIFEST
+
+# 打包成 exe（PyInstaller / cx_Freeze / py2exe）
+*.spec
+*.manifest
+
+# 编译缓存
+*.pyc
+*.pyo
+
+# ---------- 虚拟环境（动辄上百 MB，绝不能推） ----------
+.venv/
+venv/
+ENV/
+env/
+.conda/
+.python-version
+
+# ---------- 测试与类型检查缓存 ----------
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+.cache/
+
+# ---------- 项目专属：存档不进 Git ----------
+# CLAUDE.md 第 12 行明确约定：saves/ 不进 Git
+# 存档格式会随开发变化，且属于玩家个人进度，不是源码
+saves/
+text_adventure/saves/
+*.sav
+
+# ---------- 环境变量与密钥（绝不能推） ----------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.json
+
+# ---------- 日志与临时文件 ----------
+*.log
+logs/
+*.tmp
+*.bak
+*~
+*.swp
+*.swo
+
+# ---------- 编辑器 / IDE ----------
+.vscode/
+.idea/
+*.code-workspace
+*.sublime-project
+*.sublime-workspace
+.vim/
+
+# ---------- 操作系统 ----------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# ---------- 调试与性能分析 ----------
+*.prof
+*.pstats

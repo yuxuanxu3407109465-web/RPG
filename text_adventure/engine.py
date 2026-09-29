@@ -76,6 +76,9 @@ class Game:
             (["帮助", "help", "h", "?"], self.cmd_help),
             (["退出", "quit", "q"], self.cmd_quit),
         ]
+        # 摊平并排序一次即可：指令表是静态的，没必要每输入一行都重建一遍
+        self.aliases = [(a, fn) for names, fn in self.commands for a in names]
+        self.aliases.sort(key=lambda pair: len(pair[0]), reverse=True)
 
     def reset(self):
         self.current_room = self.world.start_room
@@ -83,6 +86,7 @@ class Game:
         self.equipment = {"main_hand": None, "off_hand": None}  # 双手武器会同时占两个位置
         self.stance = None  # 当前姿态 id
         self.turns = 0
+        self._load_notice = ""  # 读档时若按新版本适配过，这里放一句提示
         # 去过的地点（地图上的显示方式不同，内容也只对去过的地点公开）
         self.visited = {self.current_room}
         # 每个房间里现有的物品（会随玩家拿取/丢弃而变化）
@@ -108,9 +112,7 @@ class Game:
         if text in DIRECTIONS:
             return self.cmd_go(text)
 
-        aliases = [(a, fn) for names, fn in self.commands for a in names]
-        aliases.sort(key=lambda pair: len(pair[0]), reverse=True)
-        for alias, fn in aliases:
+        for alias, fn in self.aliases:
             if alias.isascii():
                 # 英文指令需要用空格和参数隔开，避免 "i" 误匹配 "inn"
                 if text == alias or text.startswith(alias + " "):
@@ -480,9 +482,39 @@ class Game:
         self.visited = set(state.get("visited", [self.current_room]))
         self.equipment = state.get("equipment", {"main_hand": None, "off_hand": None})
         self.stance = state.get("stance")
-        self.room_items = state["room_items"]
-        self.dialogue_index = state["dialogue_index"]
-        return "读档成功。\n\n" + self.describe_room()
+        self._load_room_items(state.get("room_items", {}))
+        self.dialogue_index = state.get("dialogue_index", {})
+        return self._load_notice + "读档成功。\n\n" + self.describe_room()
+
+    def _load_room_items(self, saved):
+        """按当前世界数据重建房间物品表。
+
+        存档里记的是当时每个房间的地面物品。世界数据之后可能加房间、
+        加物品或删物品，所以不能直接赋值：以当前世界为基准，逐房间比对，
+        存档里没有的新房间补上默认值，存档里有但世界已不存在的条目丢掉。
+        一并记录提示文字到 self._load_notice，供读档信息里说明。
+        """
+        items = self.world.items
+        rebuilt = {}
+        added_rooms = 0
+        removed_items = 0
+        for room_id, room in self.world.rooms.items():
+            if room_id in saved:
+                keep = [i for i in saved[room_id] if i in items]
+                removed_items += len(saved[room_id]) - len(keep)
+                rebuilt[room_id] = keep
+            else:
+                # 新房间：世界数据里还没有存档记录，用世界默认值填上
+                rebuilt[room_id] = list(room.get("items", []))
+                added_rooms += 1
+        self.room_items = rebuilt
+
+        notes = []
+        if added_rooms:
+            notes.append(f"{added_rooms} 个新地点")
+        if removed_items:
+            notes.append(f"{removed_items} 件已不存在的物品")
+        self._load_notice = ("（存档已按当前版本适配：" + "、".join(notes) + "）\n") if notes else ""
 
     def cmd_help(self, arg):
         return (
