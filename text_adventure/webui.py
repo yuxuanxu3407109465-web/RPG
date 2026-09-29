@@ -34,7 +34,7 @@ from dice import Dice
 from engine import (
     DIRECTION_NAMES, REST_MINUTES_MAX, REST_MINUTES_MIN, SLOT_COUNT, Game, World,
 )
-from skills import SkillTrees, tree_unlocked, unmet_requirements
+from skills import SkillTrees, skill_details, tree_unlocked, unmet_requirements
 
 BASE_DIR = Path(__file__).parent
 WEB_DIR = BASE_DIR / "web"
@@ -352,7 +352,7 @@ class Session:
                     "description": skill["description"],
                     "active": skill.get("type") == "active",
                     "weapon": self.world.weapon_types.get(weapon, weapon) if weapon else "",
-                    "stance_effects": skill.get("stance_effects", {}),
+                    "details": skill_details(c, skill, trees, self.options),
                     "learned": learned,
                     "unmet": unmet,
                 })

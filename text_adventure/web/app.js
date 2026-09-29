@@ -200,8 +200,8 @@
         icon('learn') + '<span>学习（' + skill.cost + ' 点）</span></button>';
     }
     var desc = skill.description;
-    if (skill.stance_effects && skill.stance_effects.length) {
-      desc += '\n' + skill.stance_effects.join('\n');
+    if (skill.details && skill.details.length) {
+      desc += '\n' + skill.details.join('\n');
     }
     return '<div class="skill-row">' +
       '<div class="skill-info">' +

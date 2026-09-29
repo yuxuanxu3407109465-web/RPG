@@ -32,6 +32,27 @@ def stance_bonuses(character, stance, trees):
     return {m["stat"]: m["base"] + m.get("per_attribute", 0) * attribute for m in stance["modifiers"]}
 
 
+def describe_granted(character, skill, trees, options):
+    """学会 skill 能获得的姿态，每个一行：当前数值（公式）：说明。"""
+    tree = trees.tree(skill["tree"])
+    attribute_id = tree.get("attribute")
+    attribute_name = options.attribute_name(attribute_id) if attribute_id else ""
+    lines = []
+    for stance in trees.stances:
+        if stance["skill"] != skill["id"]:
+            continue
+        values = stance_bonuses(character, stance, trees)
+        parts = []
+        for m in stance["modifiers"]:
+            name, unit = STAT_NAMES[m["stat"]]
+            formula = f"{m['base']}"
+            if m.get("per_attribute") and attribute_name:
+                formula += f" + {attribute_name}×{m['per_attribute']}"
+            parts.append(f"{name} {values[m['stat']]:+d}{unit}（{formula}）")
+        lines.append(f"[{stance['name']}] " + "、".join(parts) + f"：{stance['description']}")
+    return lines
+
+
 def format_bonuses(bonuses):
     parts = []
     for stat, value in bonuses.items():

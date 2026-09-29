@@ -17,6 +17,8 @@ weapon_type 表示使用这个技能需要手持的武器类型。
 import json
 from pathlib import Path
 
+import stances
+
 
 class SkillTrees:
     """技能树数据，从 JSON 文件加载。"""
@@ -164,7 +166,13 @@ def _format_skill(character, skill, tree, trees, options, weapon_types):
     kind = "【主动】" if skill.get("type") == "active" else ""
     weapon = f"（需要手持{weapon_types[skill['weapon_type']]}武器）" if skill.get("weapon_type") else ""
     lines = [f"  {kind}{skill['name']}  {skill.get('cost', 1)} 点  {status}", f"    {skill['description']}{weapon}"]
-    # 在不同姿态下的额外效果
-    for stance_id, effect in skill.get("stance_effects", {}).items():
-        lines.append(f"    [{trees.stance(stance_id)['name']}] {effect}")
+    lines += [f"    {line}" for line in skill_details(character, skill, trees, options)]
     return "\n".join(lines)
+
+
+def skill_details(character, skill, trees, options):
+    """技能描述之外的详细数值：能获得的姿态（按当前属性算好），以及各姿态下的额外效果。"""
+    details = stances.describe_granted(character, skill, trees, options)
+    for stance_id, effect in skill.get("stance_effects", {}).items():
+        details.append(f"[{trees.stance(stance_id)['name']}] {effect}")
+    return details
