@@ -1,0 +1,439 @@
+"""网页版入口：把游戏操作做成按钮。
+
+用法：python webui.py            （默认 127.0.0.1:8730，自动打开浏览器）
+      python webui.py --port 9000 --no-browser
+
+设计要点：
+- 不动 engine.py。界面上每个按钮最终都翻译成一句玩家指令（如“走东”“拿 手电筒”），
+  交给 Game.handle() 处理，规则仍然只有引擎里那一份。
+- 角色创建复用 CharacterCreator + Prompter：WebPrompter 把 Prompter 的
+  input()/print() 接到 HTTP 上（一问一答），所以属性、背景、同伴的校验逻辑
+  一行都不用重写。
+- 只用标准库（http.server），不引入第三方依赖；只监听本机回环地址。
+"""
+
+import argparse
+import json
+import queue
+import threading
+import webbrowser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+import stats
+from character import CharacterCreator, CharacterOptions, Prompter
+from dice import Dice
+from engine import DIRECTION_NAMES, Game, World
+from skills import SkillTrees
+
+BASE_DIR = Path(__file__).parent
+WEB_DIR = BASE_DIR / "web"
+
+# 只允许这几条路径，避免任何路径穿越问题
+STATIC_FILES = {
+    "/": ("index.html", "text/html; charset=utf-8"),
+    "/index.html": ("index.html", "text/html; charset=utf-8"),
+    "/style.css": ("style.css", "text/css; charset=utf-8"),
+    "/app.js": ("app.js", "application/javascript; charset=utf-8"),
+    "/icons.svg": ("icons.svg", "image/svg+xml; charset=utf-8"),
+}
+
+SLOT_NAMES = {"main_hand": "主手", "off_hand": "副手"}
+
+
+def load_page():
+    """读取首页，并把图标精灵内联进去。
+
+    用 <use href="icons.svg#..."> 引外部精灵在部分浏览器里不生效，直接内联最稳，
+    也少一次请求。图标文件缺失时页面照样能用，只是没有图标。
+    """
+    html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    sprite_path = WEB_DIR / "icons.svg"
+    sprite = sprite_path.read_text(encoding="utf-8") if sprite_path.exists() else ""
+    return html.replace("<!--SPRITE-->", sprite)
+
+
+class Bridge:
+    """角色创建时的一问一答通道。
+
+    创建流程跑在后台线程里，它调用 input() 时会把“已经打印的文字 + 当前问题”
+    通过 out_q 交给 HTTP 线程；HTTP 线程拿到玩家的答案后塞进 in_q，让创建流程
+    继续往下走。这样阻塞式的 CharacterCreator 不需要任何改造。
+    """
+
+    def __init__(self, timeout=600):
+        self.lines = []
+        self.in_q = queue.Queue()
+        self.out_q = queue.Queue()
+        self.timeout = timeout
+        self.last_prompt = None  # 最近一个还没回答的问题，刷新页面后可以重新推给前端
+
+    def write(self, text):
+        self.lines.append(text)
+
+    def ask(self, prompt, hint):
+        """把问题发给前端，然后阻塞等待答案。"""
+        payload = {
+            "type": "prompt",
+            "lines": self.lines,
+            "prompt": prompt,
+            "input": hint or {"kind": "text"},
+        }
+        self.lines = []
+        self.last_prompt = payload
+        self.out_q.put(payload)
+        try:
+            return self.in_q.get(timeout=self.timeout)
+        except queue.Empty:
+            raise RuntimeError("等玩家回答超时（页面可能已关闭）")
+
+    def wait(self):
+        try:
+            return self.out_q.get(timeout=self.timeout)
+        except queue.Empty:
+            raise RuntimeError("游戏没有回应（可能已经卡住或页面被关闭）")
+
+    def answer(self, value):
+        self.in_q.put(value)
+        return self.wait()
+
+    def publish(self, payload):
+        self.out_q.put(payload)
+
+
+class WebPrompter(Prompter):
+    """把 Prompter 的问题搬上网页。
+
+    text/number/choice/confirm 都直接复用父类的实现（校验、报错、重问全都不变），
+    只在提问前记一下“这是个什么类型的问题、有什么限制”，让前端能渲染成
+    输入框 / 数字框 / 单选按钮 / 是&否按钮。
+    """
+
+    def __init__(self, bridge):
+        self.bridge = bridge
+        self._hint = None
+        super().__init__(self._web_input, self._web_print)
+
+    def _web_print(self, *args):
+        self.bridge.write(" ".join(str(a) for a in args))
+
+    def _web_input(self, prompt):
+        return self.bridge.ask(prompt, self._hint)
+
+    def text(self, prompt, max_length=None, default=None):
+        self._hint = {"kind": "text", "max_length": max_length, "default": default}
+        try:
+            return super().text(prompt, max_length, default)
+        finally:
+            self._hint = None
+
+    def number(self, prompt, low, high):
+        hint = dict(self._hint or {})
+        hint["min"] = low
+        hint["max"] = high
+        hint.setdefault("kind", "number")
+        self._hint = hint
+        try:
+            return super().number(prompt, low, high)
+        finally:
+            self._hint = None
+
+    def choice(self, prompt, labels):
+        # 选项文字由父类负责打印，这里额外把选项本身告诉前端
+        self._hint = {"kind": "choice", "options": list(labels)}
+        try:
+            return super().choice(prompt, labels)
+        finally:
+            self._hint = None
+
+    def confirm(self, prompt):
+        self._hint = {"kind": "confirm", "options": ["是", "否"]}
+        try:
+            return super().confirm(prompt)
+        finally:
+            self._hint = None
+
+
+class Session:
+    """一个本地单人游戏会话：加载数据、维护 Game、把状态打包给前端。"""
+
+    def __init__(self):
+        self.lock = threading.RLock()
+        self.mode = "menu"  # menu / create / play
+        self.started = False
+        self.bridge = None
+        self.world = World(BASE_DIR / "data" / "world.json")
+        self.options = CharacterOptions(BASE_DIR / "data" / "character_options.json")
+        self.skill_trees = SkillTrees(BASE_DIR / "data" / "skill_trees.json")
+        self.dice = Dice(BASE_DIR / "data" / "rules.json")
+        self.game = Game(
+            self.world, self.options, self.skill_trees, self.dice,
+            BASE_DIR / "saves" / "save.json",
+        )
+
+    # ---------- 状态打包 ----------
+
+    def state(self):
+        game = self.game
+        snap = {
+            "mode": self.mode,
+            "started": self.started,
+            "has_save": game.save_path.exists(),
+        }
+        if not self.started or not game.character:
+            return snap
+
+        world = self.world
+        room = world.rooms[game.current_room]
+        inventory = []
+        for item_id in game.inventory:
+            slots = [SLOT_NAMES[s] for s, held in game.equipment.items() if held == item_id]
+            inventory.append({
+                "id": item_id,
+                "name": world.items[item_id]["name"],
+                "where": "双手" if len(slots) == 2 else "".join(slots),
+            })
+
+        c = game.character
+        stance = game._current_stance()
+        snap.update({
+            "turns": game.turns,
+            "room": {"id": game.current_room, "name": room["name"]},
+            "exits": [{"id": d, "name": DIRECTION_NAMES.get(d, d)} for d in room["exits"]],
+            "room_items": [
+                {"id": i, "name": world.items[i]["name"]}
+                for i in game.room_items[game.current_room]
+            ],
+            "npcs": [{"id": n, "name": world.npcs[n]["name"]} for n in room.get("npcs", [])],
+            "inventory": inventory,
+            "character": {
+                "name": c.name,
+                "gender": c.gender,
+                "age": c.age,
+                "height": c.height,
+                "background": self.options.background(c.background)["name"],
+                "level": c.level,
+                "xp": c.xp,
+                "hp": c.hp,
+                "hp_max": stats.max_hp(c.attributes, c.level),
+                "skill_points": c.skill_points,
+                "attributes": [
+                    {"id": a["id"], "name": a["name"], "value": c.attributes.get(a["id"], 0)}
+                    for a in self.options.attributes
+                ],
+                "companions": [
+                    {"name": p.name, "relationship": p.relationship, "age": p.age}
+                    for p in c.companions
+                ],
+            },
+            "carry": {
+                "weight": game._carried_weight(),
+                "capacity": stats.carry_capacity(c.attributes),
+            },
+            "equipment": {
+                slot: (world.items[i]["name"] if i else None)
+                for slot, i in game.equipment.items()
+            },
+            "stance": stance["name"] if stance else None,
+            "running": game.running,
+        })
+        return snap
+
+    # ---------- 流程 ----------
+
+    def start_creation(self):
+        """开一局新游戏：后台线程跑角色创建，前端一问一答。"""
+        with self.lock:
+            if self.mode == "create" and self.bridge and self.bridge.last_prompt:
+                # 创建还没走完（比如刷新了页面）：把当前这个问题再推一遍，别让玩家卡死
+                return self.bridge.last_prompt
+            self.mode = "create"
+            self.started = False
+            bridge = Bridge()
+            self.bridge = bridge
+            ask = WebPrompter(bridge)
+            tree_names = {t["id"]: t["name"] for t in self.skill_trees.trees}
+
+        def work():
+            try:
+                character = CharacterCreator(
+                    self.options, self.world.items, tree_names, ask
+                ).run()
+                with self.lock:
+                    self.game.start_new(character)
+                    self.started = True
+                    self.mode = "play"
+                    self.bridge = None
+                    intro = [
+                        "你是%s，%s。" % (
+                            character.name,
+                            self.options.background(character.background)["name"],
+                        ),
+                        self.world.intro,
+                        "下面是你的第一个落脚点，用按钮行动吧。",
+                        self.game.describe_room(),
+                    ]
+                bridge.publish({"type": "play", "lines": intro, "state": self.state()})
+            except Exception as exc:  # 让前端看到错误，而不是页面一直转圈
+                with self.lock:
+                    self.mode = "menu"
+                    self.bridge = None
+                bridge.publish({"type": "error", "lines": ["创建角色失败：%s" % exc],
+                                "state": self.state()})
+
+        threading.Thread(target=work, daemon=True).start()
+        return bridge.wait()
+
+    def answer(self, value):
+        with self.lock:
+            bridge = self.bridge
+        if bridge is None:
+            return {"type": "error", "lines": ["现在没有等待回答的问题。"], "state": self.state()}
+        return bridge.answer(value)
+
+    def continue_game(self):
+        """读档继续。"""
+        with self.lock:
+            self.game.running = True
+            text = self.game.cmd_load("")
+            self.started = self.game.character is not None
+            self.mode = "play" if self.started else "menu"
+            return {"type": "play", "lines": [text], "state": self.state()}
+
+    def command(self, text):
+        """玩家在界面上按了一个按钮（或输入了一行指令）。"""
+        with self.lock:
+            if not self.started:
+                return {"type": "error", "lines": ["还没有角色，先新游戏或读档。"],
+                        "state": self.state()}
+            text = (text or "").strip()
+            if not text:
+                return {"type": "play", "lines": [], "state": self.state()}
+            lines = ["> " + text]
+            output = self.game.handle(text)
+            if output:
+                lines.append(output)
+            return {
+                "type": "play",
+                "lines": lines,
+                "state": self.state(),
+                "quit": not self.game.running,
+            }
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "FengchengWeb/1.0"
+    session = None
+
+    # 默认会把每个请求打到 stderr，本地玩的时候太吵，静音
+    def log_message(self, fmt, *args):
+        pass
+
+    # ---------- 工具 ----------
+
+    def _send(self, body, content_type, status=200):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        # 开发期避免浏览器缓存旧的 js/css
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _json(self, obj, status=200):
+        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        self._send(body, "application/json; charset=utf-8", status)
+
+    def _body(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        if not length:
+            return {}
+        raw = self.rfile.read(length).decode("utf-8")
+        return json.loads(raw) if raw.strip() else {}
+
+    # ---------- 路由 ----------
+
+    def do_GET(self):
+        path = self.path.split("?")[0]
+        if path == "/api/state":
+            self._json({"type": "state", "state": self.session.state()})
+            return
+        entry = STATIC_FILES.get(path)
+        if not entry:
+            self._json({"error": "没有这个地址"}, 404)
+            return
+        name, content_type = entry
+        file_path = WEB_DIR / name
+        if not file_path.exists():
+            self._json({"error": "缺少文件 %s" % name}, 500)
+            return
+        if name == "index.html":
+            self._send(load_page().encode("utf-8"), content_type)
+            return
+        self._send(file_path.read_bytes(), content_type)
+
+    def do_POST(self):
+        path = self.path.split("?")[0]
+        try:
+            payload = self._body()
+        except ValueError as exc:
+            self._json({"type": "error", "lines": ["请求格式不对：%s" % exc]}, 400)
+            return
+        try:
+            if path == "/api/new":
+                self._json(self.session.start_creation())
+            elif path == "/api/answer":
+                self._json(self.session.answer(str(payload.get("value", ""))))
+            elif path == "/api/continue":
+                self._json(self.session.continue_game())
+            elif path == "/api/command":
+                self._json(self.session.command(str(payload.get("text", ""))))
+            else:
+                self._json({"error": "没有这个地址"}, 404)
+        except Exception as exc:
+            self._json({"type": "error", "lines": ["服务器出错：%s" % exc],
+                        "state": self.session.state()}, 500)
+
+
+def make_handler(session):
+    return type("BoundHandler", (Handler,), {"session": session})
+
+def main():
+    parser = argparse.ArgumentParser(description="《封城第七天》网页版入口")
+    parser.add_argument("--port", type=int, default=8730, help="起始端口，被占用就往后找")
+    parser.add_argument("--host", default="127.0.0.1", help="默认只监听本机")
+    parser.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
+    args = parser.parse_args()
+
+    session = Session()
+    handler = make_handler(session)
+
+    server = None
+    for port in range(args.port, args.port + 10):
+        try:
+            server = ThreadingHTTPServer((args.host, port), handler)
+            break
+        except OSError:
+            continue
+    if server is None:
+        print("端口 %d~%d 都被占用了，请用 --port 换一个。" % (args.port, args.port + 9))
+        return 1
+
+    server.daemon_threads = True
+    url = "http://%s:%d/" % (args.host, server.server_address[1])
+    print("=== 封城第七天 · 网页版 ===")
+    print("地址：%s" % url)
+    print("在这个窗口按 Ctrl+C 结束服务。")
+    if not args.no_browser:
+        threading.Timer(0.5, webbrowser.open, args=(url,)).start()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n已停止。")
+    finally:
+        server.server_close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>封城第七天</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<!--SPRITE-->
+
+<!-- ========== 主菜单 ========== -->
+<section id="screen-menu" class="screen menu">
+  <div class="menu-box">
+    <h1 class="title">封城第七天</h1>
+    <p class="subtitle">末日生存文字冒险 · 按钮版</p>
+    <div class="menu-actions">
+      <button class="btn big primary" data-act="new">
+        <svg class="ico" aria-hidden="true"><use href="#i-person"></use></svg>
+        <span>新游戏</span>
+      </button>
+      <button class="btn big" data-act="continue" id="btn-continue">
+        <svg class="ico" aria-hidden="true"><use href="#i-load"></use></svg>
+        <span>继续存档</span>
+      </button>
+    </div>
+    <p class="hint" id="menu-hint"></p>
+  </div>
+</section>
+
+<!-- ========== 角色创建 ========== -->
+<section id="screen-create" class="screen hidden">
+  <div class="create-wrap">
+    <header class="bar">
+      <h2>创建角色</h2>
+      <span class="steps" id="create-steps"></span>
+    </header>
+    <div class="log" id="create-log"></div>
+    <div class="prompt" id="create-prompt"></div>
+  </div>
+</section>
+
+<!-- ========== 游戏中 ========== -->
+<section id="screen-play" class="screen hidden">
+  <div class="layout">
+
+    <aside class="panel side-left">
+      <div class="panel-head">
+        <svg class="ico" aria-hidden="true"><use href="#i-person"></use></svg>
+        <h3>角色</h3>
+      </div>
+      <div class="panel-body" id="char-body"></div>
+    </aside>
+
+    <main class="main">
+      <header class="bar room-bar">
+        <h2 id="room-name">—</h2>
+        <span class="room-sub" id="room-sub"></span>
+      </header>
+      <div class="log" id="log"></div>
+      <form class="cmdline" id="cmd-form" autocomplete="off">
+        <input id="cmd-input" type="text" placeholder="也可以直接输入指令，例如：技能 锐器 / 掷骰 2d6+1 / 检定 70">
+        <button class="btn primary" type="submit">
+          <svg class="ico" aria-hidden="true"><use href="#i-check"></use></svg>
+          <span>执行</span>
+        </button>
+      </form>
+    </main>
+
+    <aside class="panel side-right">
+      <div class="panel-head">
+        <svg class="ico" aria-hidden="true"><use href="#i-bag"></use></svg>
+        <h3>行动</h3>
+      </div>
+      <div class="panel-body" id="action-body"></div>
+    </aside>
+
+  </div>
+</section>
+
+<script src="/app.js"></script>
+</body>
+</html>
