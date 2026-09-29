@@ -1,9 +1,11 @@
 """文字冒险游戏引擎：负责世界数据、游戏状态和指令解析。"""
 
 import json
+import shutil
 from pathlib import Path
 
 import dice as dice_rules
+import items
 import skills
 import stances
 import stats
@@ -50,6 +52,26 @@ def parse_minutes(text):
         return 0
 
 
+SLOT_COUNT = 3  # 存档槽位数量
+
+
+def migrate_old_save(save_dir):
+    """把老版本的单存档（save.json）复制到 1 号槽。
+
+    早期版本只有一个存档文件，改成多槽位之后旧进度会“消失”，所以启动时
+    静默搬一次（保留原文件，不删）。
+    """
+    old = Path(save_dir) / "save.json"
+    first = Path(save_dir) / "save1.json"
+    if old.exists() and not first.exists():
+        try:
+            shutil.copyfile(old, first)
+            return True
+        except OSError:
+            return False
+    return False
+
+
 class World:
     """只读的世界数据（地图、物品、NPC），从 JSON 文件加载。"""
 
@@ -73,7 +95,11 @@ class Game:
         self.options = options
         self.skill_trees = skill_trees
         self.dice = dice
-        self.save_path = Path(save_path)
+        # 存档分成几个槽：save1.json / save2.json / save3.json
+        self.save_dir = Path(save_path).parent
+        self.slot = 1
+        self.save_path = self.slot_path(self.slot)
+        migrate_old_save(self.save_dir)
         self.character = None
         self.running = True
         self.reset()
@@ -95,6 +121,7 @@ class Game:
             (["掷骰", "roll"], self.cmd_roll),
             (["检定", "check"], self.cmd_check),
             (["骰子系统", "dice"], self.cmd_dice_system),
+            (["使用", "吃", "喝", "use"], self.cmd_use),
             (["休息", "睡", "rest"], self.cmd_rest),
             (["说话", "交谈", "对话", "talk"], self.cmd_talk),
             (["存档", "save"], self.cmd_save),
@@ -130,6 +157,66 @@ class Game:
         self.inventory = list(background.get("starting_items", []))
         character.hp = stats.max_hp(character.attributes, character.level)
         character.stamina = stats.stamina_max(character.attributes)
+
+    # ---------- 存档槽位 ----------
+
+    def slot_path(self, slot):
+        """第 n 号存档的文件路径（从 1 开始）。"""
+        return self.save_dir / f"save{slot}.json"
+
+    def use_slot(self, slot):
+        """切换当前使用的存档槽。"""
+        self.slot = slot
+        self.save_path = self.slot_path(slot)
+
+    def has_save(self):
+        """任意一个槽里有存档。"""
+        return any(self.slot_path(n).exists() for n in range(1, SLOT_COUNT + 1))
+
+    def newest_slot(self):
+        """最近改过的那个槽；都没有就返回 1。"""
+        existing = [n for n in range(1, SLOT_COUNT + 1) if self.slot_path(n).exists()]
+        if not existing:
+            return 1
+        return max(existing, key=lambda n: self.slot_path(n).stat().st_mtime)
+
+    def slot_info(self, slot):
+        """读一个槽的概要，给界面显示用。空槽返回 None，文件坏了返回 broken。"""
+        path = self.slot_path(slot)
+        if not path.exists():
+            return None
+        try:
+            state = json.loads(path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            return {"slot": slot, "exists": True, "broken": True, "name": "存档损坏",
+                    "level": "-", "room": "-", "time": "-"}
+        character = state.get("character") or {}
+        room = self.world.rooms.get(state.get("current_room"), {})
+        day = state.get("day", stats.START_DAY)
+        minutes = state.get("minutes", stats.START_MINUTES)
+        background = self.options.background(character["background"])["name"] \
+            if character.get("background") else ""
+        return {
+            "slot": slot,
+            "exists": True,
+            "broken": False,
+            "name": character.get("name") or "无名幸存者",
+            "level": character.get("level", 1),
+            "background": background,
+            "room": room.get("name", state.get("current_room") or "未知地点"),
+            "day": day,
+            "minutes": minutes,
+            "time": "第 %d 天 %02d:%02d" % (day, minutes // 60, minutes % 60),
+        }
+
+    def _parse_slot(self, arg):
+        """从“存档 2”这类参数里取槽位号，返回 (槽位, 错误文字)。"""
+        arg = (arg or "").strip()
+        if not arg:
+            return self.slot, None
+        if arg.isdigit() and 1 <= int(arg) <= SLOT_COUNT:
+            return int(arg), None
+        return None, "存档槽位要写 1~%d，例如：存档 2" % SLOT_COUNT
 
     # ---------- 指令解析 ----------
 
@@ -371,6 +458,17 @@ class Game:
         self.room_items[self.current_room].append(item_id)
         return f"你放下了{self.world.items[item_id]['name']}。" + self._check_stance()
 
+    def cmd_use(self, arg):
+        """使用物品。效果写在物品数据的 use 字段里，见 items.py。"""
+        if not self.character:
+            return "还没有创建角色。"
+        if not arg:
+            return "你想用什么？例如：使用 能量棒"
+        item_id = self._match(arg, self.inventory, self.world.items)
+        if not item_id:
+            return f"你身上没有{arg}。"
+        return items.use(self, self.character, item_id)
+
     def cmd_inventory(self, arg):
         if not self.inventory:
             return "你的背包是空的。"
@@ -593,6 +691,10 @@ class Game:
         return f"{npc['name']}：{lines[index]}"
 
     def cmd_save(self, arg):
+        slot, error = self._parse_slot(arg)
+        if error:
+            return error
+        self.use_slot(slot)
         state = {
             "character": self.character.to_dict() if self.character else None,
             "current_room": self.current_room,
@@ -608,11 +710,19 @@ class Game:
         }
         self.save_path.parent.mkdir(parents=True, exist_ok=True)
         self.save_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-        return "游戏已保存。"
+        return f"游戏已保存到 {slot} 号槽。"
 
     def cmd_load(self, arg):
-        if not self.save_path.exists():
-            return "还没有存档。"
+        if (arg or "").strip():
+            slot, error = self._parse_slot(arg)
+            if error:
+                return error
+        else:
+            # 不写槽位：优先当前槽，没有就找最近改过的那个
+            slot = self.slot if self.slot_path(self.slot).exists() else self.newest_slot()
+        if not self.slot_path(slot).exists():
+            return f"{slot} 号存档是空的。"
+        self.use_slot(slot)
         state = json.loads(self.save_path.read_text(encoding="utf-8"))
         if state.get("character"):
             self.character = Character.from_dict(state["character"])
@@ -636,7 +746,7 @@ class Game:
         notes += self._load_equipment(state.get("equipment"))
         self.dialogue_index = state.get("dialogue_index", {})
         self._load_notice = ("（存档已按当前版本适配：" + "、".join(notes) + "）\n") if notes else ""
-        return self._load_notice + "读档成功。\n\n" + self.describe_room()
+        return self._load_notice + f"读档成功（{slot} 号槽）。\n\n" + self.describe_room()
 
     def _load_room_items(self, saved):
         """按当前世界数据重建房间物品表，返回适配提示。
@@ -704,6 +814,7 @@ class Game:
             "  北、南、东、西 / n s e w  移动（也可以写“走 北”）\n"
             "  查看 <东西>              仔细查看物品或人物\n"
             "  拿 <东西> / 放下 <东西>   拾取或丢弃物品\n"
+            "  使用 <东西>             使用物品（例如：使用 能量棒）\n"
             "  背包 / i               查看携带的物品\n"
             "  地图 / m               查看地图\n"
             "  角色 / c               查看角色卡（属性、衍生数值）\n"
@@ -716,7 +827,7 @@ class Game:
             "  骰子系统 <d20/d100>       查看或切换检定用的骰子\n"
             "  休息 <时长>             恢复体力，例如：休息 30、休息 2小时\n"
             "  说话 <人>               和 NPC 交谈\n"
-            "  存档 / 读档             保存或读取进度\n"
+            "  存档 [槽位] / 读档 [槽位]  保存或读取进度（槽位 1~3，不写就用当前槽）\n"
             "  退出 / quit            离开游戏"
         )
 

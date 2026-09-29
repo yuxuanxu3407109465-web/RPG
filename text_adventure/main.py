@@ -4,10 +4,25 @@ from pathlib import Path
 
 from character import CharacterCreator, CharacterOptions, Prompter
 from dice import Dice
-from engine import Game, World
+from engine import Game, World, SLOT_COUNT
 from skills import SkillTrees
 
 BASE_DIR = Path(__file__).parent
+
+
+def choose_slot(game, ask):
+    """列出有存档的槽位让玩家挑一个，返回槽位号。"""
+    slots = [n for n in range(1, SLOT_COUNT + 1) if game.slot_path(n).exists()]
+    if len(slots) == 1:
+        return slots[0]
+    labels = []
+    for n in slots:
+        info = game.slot_info(n) or {}
+        labels.append("%d 号槽：%s · %s 级 · %s · %s" % (
+            n, info.get("name", "?"), info.get("level", "?"),
+            info.get("room", "?"), info.get("time", "?"),
+        ))
+    return slots[ask.choice("选择编号：", labels)]
 
 
 def main():
@@ -19,8 +34,8 @@ def main():
     ask = Prompter()
 
     print(f"=== {world.title} ===\n")
-    if game.save_path.exists() and ask.choice("选择编号：", ["新游戏", "继续存档"]) == 1:
-        print(game.cmd_load(""))
+    if game.has_save() and ask.choice("选择编号：", ["新游戏", "继续存档"]) == 1:
+        print(game.cmd_load(str(choose_slot(game, ask))))
     else:
         tree_names = {t["id"]: t["name"] for t in skill_trees.trees}
         character = CharacterCreator(options, world.items, tree_names, ask).run()

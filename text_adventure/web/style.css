@@ -554,6 +554,149 @@ button.choice .label { white-space: pre-line; flex: 1; }
 
 .attr-remaining.bad { color: #d9705f; }
 
+/* ---------- 浮层：技能树 / 确认 ---------- */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(6, 8, 11, .78);
+  backdrop-filter: blur(3px);
+}
+
+.modal-box {
+  display: flex;
+  flex-direction: column;
+  width: min(1000px, 96vw);
+  max-height: 88vh;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, .6);
+  overflow: hidden;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line-soft);
+  background: #14171c;
+}
+
+.modal-head h2 { margin: 0; font-size: 18px; letter-spacing: 2px; }
+.modal-head .btn { margin-left: auto; padding: 5px 9px; }
+
+.modal-body { padding: 16px 18px; overflow-y: auto; }
+
+.modal-note { margin: 0 0 14px; color: var(--dim); font-size: 13.5px; }
+
+/* 技能树 */
+.tree-block {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: #14171c;
+}
+
+.tree-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+.tree-title h3 { margin: 0; font-size: 16px; }
+.tree-title .tag { color: var(--dim-2); }
+.tree-desc { margin: 0 0 10px; color: var(--dim); font-size: 13px; }
+
+.branch-title {
+  margin: 10px 0 6px;
+  color: var(--amber);
+  font-size: 13px;
+  letter-spacing: 1px;
+}
+
+.skill-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 9px 11px;
+  margin-bottom: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  background: #12151a;
+}
+
+.skill-info { flex: 1; min-width: 0; }
+.skill-name { font-size: 14.5px; color: #e3e8ee; }
+.skill-meta { color: var(--dim-2); font-size: 12.5px; }
+.skill-desc { color: var(--dim); font-size: 12.5px; margin-top: 2px; white-space: pre-line; }
+.skill-action { flex: 0 0 auto; padding-top: 2px; }
+
+/* 已学会：绿色，不可点 */
+.skill-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1px solid #2f6b48;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #1b3327, #131f19);
+  color: #9fd8b8;
+  font-size: 13px;
+}
+
+/* 条件不够：灰色，不可点 */
+.skill-locked {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: #171a1f;
+  color: var(--dim-2);
+  font-size: 13px;
+  cursor: not-allowed;
+}
+
+/* ---------- 存档槽位 ---------- */
+
+.slots { display: flex; flex-direction: column; gap: 10px; margin-top: 22px; text-align: left; }
+
+.slot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #12151a;
+}
+
+.slot-no {
+  flex: 0 0 auto;
+  min-width: 36px;
+  padding: 6px 7px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--dim);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.slot-info { flex: 1 1 140px; min-width: 0; }
+.slot-name { color: #dfe4ea; font-size: 14.5px; }
+.slot-meta { color: var(--dim-2); font-size: 12.5px; }
+.slot-actions { flex: 1 1 100%; display: flex; gap: 6px; justify-content: flex-end; }
+.slot-empty .slot-name { color: var(--dim-2); }
+
+.slot-current { border-color: #4a5461; }
+
 /* 窄屏：改成单列堆叠 */
 @media (max-width: 1080px) {
   .layout {

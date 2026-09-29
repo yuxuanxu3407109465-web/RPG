@@ -20,11 +20,8 @@
         <svg class="ico" aria-hidden="true"><use href="#i-person"></use></svg>
         <span>新游戏</span>
       </button>
-      <button class="btn big" data-act="continue" id="btn-continue">
-        <svg class="ico" aria-hidden="true"><use href="#i-load"></use></svg>
-        <span>继续存档</span>
-      </button>
     </div>
+    <div class="slots" id="menu-slots"></div>
     <p class="hint" id="menu-hint"></p>
   </div>
 </section>
@@ -83,6 +80,19 @@
 
   </div>
 </section>
+
+<!-- ========== 技能 / 确认 浮层 ========== -->
+<div id="modal" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2 id="modal-title">技能树</h2>
+      <button type="button" class="btn" id="modal-close" title="关闭">
+        <svg class="ico" aria-hidden="true"><use href="#i-x"></use></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
 
 <script src="/app.js"></script>
 </body>

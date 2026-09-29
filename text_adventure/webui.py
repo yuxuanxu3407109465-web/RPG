@@ -20,10 +20,11 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import items
 import stats
 from character import CharacterCreator, CharacterOptions, Prompter, check_attributes
 from dice import Dice
-from engine import DIRECTION_NAMES, Game, World
+from engine import DIRECTION_NAMES, SLOT_COUNT, Game, World
 from skills import SkillTrees, tree_unlocked, unmet_requirements
 
 BASE_DIR = Path(__file__).parent
@@ -272,7 +273,7 @@ class Session:
         return result
 
     def skills_state(self):
-        """技能树打包给前端，让“学技能”也是按钮。能不能学由 skills.py 判断。"""
+        """技能树打包给前端：按分支分组，能学的给按钮，学过的和不合条件的不可点。"""
         c = self.game.character
         trees = self.skill_trees
         data = {"points": c.skill_points, "trees": []}
@@ -284,29 +285,51 @@ class Session:
                 unmet = []
                 if not learned and unlocked:
                     unmet = unmet_requirements(c, skill, trees, self.options)
+                weapon = skill.get("weapon_type")
                 skills.append({
                     "id": skill["id"],
                     "name": skill["name"],
+                    "branch": skill.get("branch", ""),
                     "cost": skill.get("cost", 1),
                     "description": skill["description"],
+                    "active": skill.get("type") == "active",
+                    "weapon": self.world.weapon_types.get(weapon, weapon) if weapon else "",
+                    "stance_effects": skill.get("stance_effects", {}),
                     "learned": learned,
                     "unmet": unmet,
                 })
             data["trees"].append({
                 "id": tree["id"],
                 "name": tree["name"],
+                "attribute": self.options.attribute_name(tree["attribute"])
+                if tree.get("attribute") else "",
+                "special": bool(tree.get("special")),
+                "description": tree.get("description", ""),
                 "unlocked": unlocked,
                 "locked_message": tree.get("locked_message", "尚未解锁"),
+                "branches": [{"id": b["id"], "name": b["name"]}
+                             for b in tree.get("branches", [])],
                 "skills": skills,
             })
         return data
+
+    def slot_state(self):
+        """三个存档槽的概要，界面拿去渲染成可点选的形式。"""
+        game = self.game
+        slots = []
+        for n in range(1, SLOT_COUNT + 1):
+            info = game.slot_info(n)
+            slots.append(info if info else {"slot": n, "exists": False})
+        return slots
 
     def state(self):
         game = self.game
         snap = {
             "mode": self.mode,
             "started": self.started,
-            "has_save": game.save_path.exists(),
+            "has_save": game.has_save(),
+            "current_slot": game.slot,
+            "slots": self.slot_state(),
         }
         if not self.started or not game.character:
             return snap
@@ -320,6 +343,8 @@ class Session:
                 "id": item_id,
                 "name": world.items[item_id]["name"],
                 "where": "双手" if len(slots) == 2 else "".join(slots),
+                "usable": items.is_usable(world.items[item_id]),
+                "use_hint": (world.items[item_id].get("use") or {}).get("hint", ""),
             })
 
         c = game.character
@@ -436,10 +461,28 @@ class Session:
         return bridge.answer(value)
 
     def continue_game(self):
-        """读档继续。"""
+        """继续上次的进度：读最近改过的那个存档槽。"""
         with self.lock:
             self.game.running = True
             text = self.game.cmd_load("")
+            self.started = self.game.character is not None
+            self.mode = "play" if self.started else "menu"
+            return {"type": "play", "lines": [text], "state": self.state()}
+
+    def save_to(self, slot):
+        """存到指定槽位。"""
+        with self.lock:
+            if not self.started:
+                return {"type": "error", "lines": ["还没有角色，先开一局新游戏。"],
+                        "state": self.state()}
+            text = self.game.cmd_save(str(slot))
+            return {"type": "play", "lines": [text], "state": self.state()}
+
+    def load_slot(self, slot):
+        """从指定槽位读档。"""
+        with self.lock:
+            self.game.running = True
+            text = self.game.cmd_load(str(slot))
             self.started = self.game.character is not None
             self.mode = "play" if self.started else "menu"
             return {"type": "play", "lines": [text], "state": self.state()}
@@ -535,6 +578,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(self.session.answer(str(payload.get("value", ""))))
             elif path == "/api/continue":
                 self._json(self.session.continue_game())
+            elif path == "/api/save":
+                self._json(self.session.save_to(int(payload.get("slot") or 1)))
+            elif path == "/api/load":
+                self._json(self.session.load_slot(int(payload.get("slot") or 1)))
             elif path == "/api/command":
                 self._json(self.session.command(str(payload.get("text", ""))))
             else:

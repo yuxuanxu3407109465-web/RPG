@@ -203,7 +203,16 @@
         "energy bar"
       ],
       "description": "外卖箱里剩下的一根巧克力能量棒。",
-      "weight": 0.1
+      "weight": 0.1,
+      "use": {
+        "message": "你撕开包装纸，几口把能量棒吞了下去，胃里一阵发热。",
+        "effects": [
+          {
+            "type": "stamina",
+            "ratio": 0.5
+          }
+        ]
+      }
     },
     "power_bank": {
       "name": "充电宝",
