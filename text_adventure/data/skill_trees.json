@@ -1,0 +1,362 @@
+{
+  "trees": [
+    {
+      "id": "blade",
+      "name": "锐器",
+      "attribute": "agility",
+      "description": "刀、匕首、斧头等锋利的近战武器。",
+      "branches": [
+        {
+          "id": "long",
+          "name": "长刃"
+        },
+        {
+          "id": "short",
+          "name": "短刃"
+        }
+      ]
+    },
+    {
+      "id": "blunt",
+      "name": "钝器",
+      "attribute": "strength",
+      "description": "棍棒、撬棍、锤子等沉重的近战武器。",
+      "branches": [
+        {
+          "id": "shield",
+          "name": "持盾"
+        },
+        {
+          "id": "two_handed",
+          "name": "双手"
+        }
+      ]
+    },
+    {
+      "id": "firearms",
+      "name": "枪械",
+      "attribute": "perception",
+      "description": "手枪、步枪、霰弹枪等远程武器。"
+    },
+    {
+      "id": "martial",
+      "name": "武术",
+      "attribute": "constitution",
+      "description": "徒手格斗与身体锻炼。"
+    },
+    {
+      "id": "stealth",
+      "name": "潜行",
+      "attribute": "agility",
+      "description": "躲开丧尸和其他幸存者的注意。"
+    },
+    {
+      "id": "survival",
+      "name": "生存",
+      "attribute": "constitution",
+      "description": "在末世里找吃的、找水、熬过去。"
+    },
+    {
+      "id": "scavenging",
+      "name": "搜刮",
+      "attribute": "perception",
+      "description": "从废墟里翻出有用的物资。"
+    },
+    {
+      "id": "persuasion",
+      "name": "交涉",
+      "attribute": "charisma",
+      "description": "说服、谈判、交易。",
+      "branches": [
+        {
+          "id": "persuade",
+          "name": "说服"
+        },
+        {
+          "id": "intimidate",
+          "name": "威吓"
+        }
+      ]
+    },
+    {
+      "id": "medicine",
+      "name": "医疗",
+      "attribute": "intelligence",
+      "description": "处理伤口、使用药品、对抗感染。"
+    },
+    {
+      "id": "crafting",
+      "name": "制造",
+      "attribute": "intelligence",
+      "description": "修理、改装、制作工具和武器。"
+    },
+    {
+      "id": "psionics",
+      "name": "灵能",
+      "attribute": null,
+      "special": true,
+      "locked_message": "仅限灵能者背景",
+      "description": "不属于任何属性的特殊能力。"
+    }
+  ],
+  "skills": [
+    {
+      "id": "long_stance",
+      "tree": "blade",
+      "branch": "long",
+      "name": "长刃姿态",
+      "cost": 1,
+      "description": "手持至少一把长刃武器时（双持也可以），可以在进攻、防守、决斗三种姿态之间切换，同时只能开启一个，切换不占用行动。之后学会的长刃技能，在不同姿态下会获得不同的额外效果。"
+    },
+    {
+      "id": "long_slash",
+      "tree": "blade",
+      "branch": "long",
+      "name": "随势斩",
+      "type": "active",
+      "cost": 1,
+      "requires": [
+        "long_stance"
+      ],
+      "description": "用长刃挥出一斩。没有开启姿态时只是一次普通的斩击，开启姿态后会附带对应的额外效果。",
+      "stance_effects": {
+        "long_attack": "横扫：攻击近战范围内的所有敌对目标。",
+        "long_defense": "撤步：斩击后向后撤开一段距离，并且不会受到借机攻击。",
+        "long_duel": "卸刃：无视目标的部分护甲，并使目标缴械。"
+      },
+      "weapon_type": "long_blade"
+    },
+    {
+      "id": "short_bleed",
+      "tree": "blade",
+      "branch": "short",
+      "name": "放血",
+      "type": "active",
+      "cost": 1,
+      "weapon_type": "short_blade",
+      "description": "刀锋钻进护甲的缝隙：发起一次无视目标部分护甲的攻击，并使目标流血（每回合损失生命值，持续 3 回合）。"
+    },
+    {
+      "id": "blunt_1",
+      "tree": "blunt",
+      "name": "钝器入门",
+      "cost": 1,
+      "description": "（占位）"
+    },
+    {
+      "id": "blunt_2",
+      "tree": "blunt",
+      "name": "钝器进阶",
+      "cost": 2,
+      "requires": [
+        "blunt_1"
+      ],
+      "attribute_min": 6,
+      "level_min": 3,
+      "description": "（占位）"
+    },
+    {
+      "id": "firearms_1",
+      "tree": "firearms",
+      "name": "枪械入门",
+      "cost": 1,
+      "description": "（占位）"
+    },
+    {
+      "id": "firearms_2",
+      "tree": "firearms",
+      "name": "枪械进阶",
+      "cost": 2,
+      "requires": [
+        "firearms_1"
+      ],
+      "attribute_min": 6,
+      "level_min": 3,
+      "description": "（占位）"
+    },
+    {
+      "id": "martial_1",
+      "tree": "martial",
+      "name": "武术入门",
+      "cost": 1,
+      "description": "（占位）"
+    },
+    {
+      "id": "martial_2",
+      "tree": "martial",
+      "name": "武术进阶",
+      "cost": 2,
+      "requires": [
+        "martial_1"
+      ],
+      "attribute_min": 6,
+      "level_min": 3,
+      "description": "（占位）"
+    },
+    {
+      "id": "stealth_1",
+      "tree": "stealth",
+      "name": "潜行入门",
+      "cost": 1,
+      "description": "（占位）"
+    },
+    {
+      "id": "stealth_2",
+      "tree": "stealth",
+      "name": "潜行进阶",
+      "cost": 2,
+      "requires": [
+        "stealth_1"
+      ],
+      "attribute_min": 6,
+      "level_min": 3,
+      "description": "（占位）"
+    },
+    {
+      "id": "survival_1",
+      "tree": "survival",
+      "name": "生存入门",
+      "cost": 1,
+      "description": "（占位）"
+    },
+    {
+      "id": "survival_2",
+      "tree": "survival",
+      "name": "生存进阶",
+      "cost": 2,
+      "requires": [
+        "survival_1"
+      ],
+      "attribute_min": 6,
+      "level_min": 3,
+      "description": "（占位）"
+    },
+    {
+      "id": "scavenging_1",
+      "tree": "scavenging",
+      "name": "搜刮入门",
+      "cost": 1,
+      "description": "（占位）"
+    },
+    {
+      "id": "scavenging_2",
+      "tree": "scavenging",
+      "name": "搜刮进阶",
+      "cost": 2,
+      "requires": [
+        "scavenging_1"
+      ],
+      "attribute_min": 6,
+      "level_min": 3,
+      "description": "（占位）"
+    },
+    {
+      "id": "persuasion_1",
+      "tree": "persuasion",
+      "name": "交涉入门",
+      "cost": 1,
+      "description": "（占位）"
+    },
+    {
+      "id": "persuasion_2",
+      "tree": "persuasion",
+      "name": "交涉进阶",
+      "cost": 2,
+      "requires": [
+        "persuasion_1"
+      ],
+      "attribute_min": 6,
+      "level_min": 3,
+      "description": "（占位）"
+    },
+    {
+      "id": "medicine_1",
+      "tree": "medicine",
+      "name": "医疗入门",
+      "cost": 1,
+      "description": "（占位）"
+    },
+    {
+      "id": "medicine_2",
+      "tree": "medicine",
+      "name": "医疗进阶",
+      "cost": 2,
+      "requires": [
+        "medicine_1"
+      ],
+      "attribute_min": 6,
+      "level_min": 3,
+      "description": "（占位）"
+    },
+    {
+      "id": "crafting_1",
+      "tree": "crafting",
+      "name": "制造入门",
+      "cost": 1,
+      "description": "（占位）"
+    },
+    {
+      "id": "crafting_2",
+      "tree": "crafting",
+      "name": "制造进阶",
+      "cost": 2,
+      "requires": [
+        "crafting_1"
+      ],
+      "attribute_min": 6,
+      "level_min": 3,
+      "description": "（占位）"
+    },
+    {
+      "id": "psionics_1",
+      "tree": "psionics",
+      "name": "灵能入门",
+      "cost": 1,
+      "description": "（占位）"
+    }
+  ],
+  "stances": [
+    {
+      "id": "long_attack",
+      "name": "进攻",
+      "skill": "long_stance",
+      "weapon_type": "long_blade",
+      "description": "放弃防守，全力进攻。",
+      "modifiers": [
+        {
+          "stat": "melee_damage_bonus",
+          "base": 10,
+          "per_attribute": 2
+        }
+      ]
+    },
+    {
+      "id": "long_defense",
+      "name": "防守",
+      "skill": "long_stance",
+      "weapon_type": "long_blade",
+      "description": "刀横在身前，专注于闪避和格挡。",
+      "modifiers": [
+        {
+          "stat": "dodge",
+          "base": 5,
+          "per_attribute": 1
+        }
+      ]
+    },
+    {
+      "id": "long_duel",
+      "name": "决斗",
+      "skill": "long_stance",
+      "weapon_type": "long_blade",
+      "description": "盯住一个对手，每一刀都更精准。",
+      "modifiers": [
+        {
+          "stat": "melee_accuracy",
+          "base": 5,
+          "per_attribute": 1
+        }
+      ]
+    }
+  ]
+}

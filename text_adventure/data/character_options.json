@@ -1,0 +1,123 @@
+{
+  "limits": {
+    "name_max_length": 12,
+    "age": [
+      16,
+      80
+    ],
+    "height": [
+      130,
+      220
+    ],
+    "companion_age": [
+      1,
+      100
+    ]
+  },
+  "genders": [
+    "男",
+    "女"
+  ],
+  "attribute_rules": {
+    "min": 1,
+    "max": 10,
+    "default": 5,
+    "total": 33
+  },
+  "attributes": [
+    {
+      "id": "strength",
+      "name": "力量",
+      "description": "负重、近战伤害"
+    },
+    {
+      "id": "agility",
+      "name": "敏捷",
+      "description": "近战精准、闪避、先攻"
+    },
+    {
+      "id": "constitution",
+      "name": "体质",
+      "description": "生命值、生命恢复"
+    },
+    {
+      "id": "intelligence",
+      "name": "智力",
+      "description": "经验倍率、每级技能点"
+    },
+    {
+      "id": "perception",
+      "name": "感知",
+      "description": "远程精准、闪避、先攻"
+    },
+    {
+      "id": "charisma",
+      "name": "魅力",
+      "description": "同伴上限"
+    }
+  ],
+  "progression": {
+    "xp_per_level": 100,
+    "explore_xp": 20,
+    "starting_skill_points": 4
+  },
+  "backgrounds": [
+    {
+      "id": "nurse",
+      "name": "急诊科护士",
+      "description": "你在市一院急诊科连上了三个夜班，亲眼看着第一批“病人”咬伤了医生。你懂得处理伤口，也见过太多死亡。",
+      "starting_items": [
+        "first_aid_kit"
+      ]
+    },
+    {
+      "id": "veteran",
+      "name": "退伍军人",
+      "description": "退伍五年，在小区当保安。你以为部队里学的那些东西这辈子都用不上了。",
+      "starting_items": [
+        "knife"
+      ]
+    },
+    {
+      "id": "rider",
+      "name": "外卖骑手",
+      "description": "这座城市的大街小巷你都跑过。封城前一天，你还在送最后一单。",
+      "starting_items": [
+        "energy_bar"
+      ]
+    },
+    {
+      "id": "student",
+      "name": "大学生",
+      "description": "放假没回老家，一个人留在出租屋里打游戏，直到网断了。",
+      "starting_items": [
+        "power_bank"
+      ]
+    },
+    {
+      "id": "psychic",
+      "name": "灵能者",
+      "description": "你从小就能感觉到别人感觉不到的东西，一直以为是自己想多了。末日降临那晚，脑海里的声音变得前所未有地清晰。",
+      "starting_items": [],
+      "unlocks_trees": [
+        "psionics"
+      ]
+    }
+  ],
+  "companions": [
+    {
+      "name": "林晓",
+      "gender": "女",
+      "age": 24,
+      "relationship": "合租室友",
+      "appearance": "短发，戴一副黑框眼镜，总穿着宽大的连帽卫衣。"
+    },
+    {
+      "name": "大黄",
+      "gender": "公",
+      "age": 3,
+      "relationship": "你养的狗",
+      "appearance": "一只黄色的中华田园犬，耳朵一只立着一只耷拉着。"
+    }
+  ]
+}

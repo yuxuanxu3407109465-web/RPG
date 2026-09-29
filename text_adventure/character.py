@@ -1,0 +1,291 @@
+"""角色系统：玩家自定义主角和同伴。"""
+
+import json
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Dict, List
+
+import stats
+
+
+@dataclass
+class Companion:
+    name: str
+    gender: str
+    age: int
+    relationship: str
+    appearance: str
+
+
+@dataclass
+class Character:
+    name: str
+    gender: str
+    age: int
+    height: int
+    appearance: str
+    background: str  # 背景 id，对应 character_options.json 里的 backgrounds
+    attributes: Dict[str, int]  # 属性 id -> 数值（1~10）
+    companions: List[Companion] = field(default_factory=list)
+    level: int = 1
+    xp: int = 0  # 当前等级内累积的经验
+    skill_points: int = 0  # 还没使用的技能点
+    learned_skills: List[str] = field(default_factory=list)  # 已学会的技能 id
+    unlocked_trees: List[str] = field(default_factory=list)  # 背景解锁的特殊技能树 id（如灵能）
+    hp: int = 0
+
+    def to_dict(self):
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data):
+        data = dict(data)
+        # 旧存档只有一个 companion 字段
+        old = data.pop("companion", None)
+        if old and "companions" not in data:
+            data["companions"] = [old]
+        data["companions"] = [Companion(**c) for c in data.get("companions", [])]
+        data.setdefault("attributes", {})
+        data.pop("skill_allocation", None)  # 旧版数值型技能，已废弃
+        return cls(**data)
+
+
+class CharacterOptions:
+    """角色相关的设定数据（属性、背景、预设同伴、各项范围），从 JSON 文件加载。"""
+
+    def __init__(self, path):
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        self.limits = data["limits"]
+        self.genders = data["genders"]
+        self.attribute_rules = data["attribute_rules"]
+        self.attributes = data["attributes"]
+        self.progression = data["progression"]
+        self.backgrounds = data["backgrounds"]
+        self.companions = data["companions"]
+
+    def background(self, background_id):
+        return next(b for b in self.backgrounds if b["id"] == background_id)
+
+    def attribute_name(self, attribute_id):
+        return next(a["name"] for a in self.attributes if a["id"] == attribute_id)
+
+    def default_attributes(self):
+        return {a["id"]: self.attribute_rules["default"] for a in self.attributes}
+
+
+def format_sheet(character, options, items, carried_weight=None, tree_names=None, bonuses=None):
+    """角色卡：创建完成时确认用，游戏中也可以随时查看。bonuses 是姿态等带来的临时加成。"""
+    a = character.attributes
+    bonuses = bonuses or {}
+
+    def with_bonus(stat, base, signed=False):
+        """数值加上姿态加成，例如：95%（含姿态 +13）。"""
+        extra = bonuses.get(stat, 0)
+        value = f"{base + extra:+d}%" if signed else f"{base + extra}%"
+        return value + (f"（含姿态 {extra:+d}）" if extra else "")
+    background = options.background(character.background)
+    hp_max = stats.max_hp(a, character.level)
+    lines = [
+        "======== 角色卡 ========",
+        f"{character.name} · {character.gender} · {character.age} 岁 · {character.height} cm",
+        f"等级 {character.level}（经验 {character.xp}/{stats.xp_to_next_level(character.level, options)}）"
+        f"    生命值 {character.hp or hp_max}/{hp_max}    未使用技能点 {character.skill_points}",
+        f"样貌：{character.appearance}",
+        f"背景：{background['name']}",
+        f"  {background['description']}",
+    ]
+    starting = [items[i]["name"] for i in background.get("starting_items", [])]
+    if starting:
+        lines.append("  初始物品：" + "、".join(starting))
+    if character.unlocked_trees and tree_names:
+        lines.append("  解锁技能树：" + "、".join(tree_names[t] for t in character.unlocked_trees))
+
+    limit = stats.companion_limit(a)
+    if character.companions:
+        lines.append(f"同伴（上限 {limit}）：")
+        for c in character.companions:
+            lines.append(f"  {c.name}（{c.relationship}） · {c.gender} · {c.age} 岁：{c.appearance}")
+    else:
+        lines.append(f"同伴（上限 {limit}）：无，独自行动")
+
+    lines.append("\n【属性】")
+    lines.append("  " + "   ".join(f"{attr['name']} {a[attr['id']]}" for attr in options.attributes))
+
+    capacity = stats.carry_capacity(a)
+    weight = f"{carried_weight:g}/{capacity}" if carried_weight is not None else f"{capacity}"
+    lines += [
+        "\n【衍生数值】",
+        f"  负重 {weight} kg    近战伤害 {with_bonus('melee_damage_bonus', stats.melee_damage_bonus(a), signed=True)}",
+        f"  近战精准 {with_bonus('melee_accuracy', stats.melee_accuracy(a))}    远程精准 {stats.ranged_accuracy(a)}%",
+        f"  闪避 {with_bonus('dodge', stats.dodge(a))}    先攻 {stats.initiative(a)}",
+        f"  生命恢复 每 {stats.REGEN_INTERVAL} 回合 +{stats.hp_regen(a)}",
+        f"  经验倍率 ×{stats.xp_multiplier(a):.1f}    每级技能点 {stats.skill_points_per_level(a)}",
+    ]
+    return "\n".join(lines)
+
+
+class Prompter:
+    """带输入检查的提问工具，输入不合法时会重新提问。"""
+
+    def __init__(self, input_fn=input, print_fn=print):
+        self.input = input_fn
+        self.print = print_fn
+
+    def text(self, prompt, max_length=None, default=None):
+        while True:
+            value = self.input(prompt).strip()
+            if not value and default is not None:
+                return default
+            if not value:
+                self.print("  不能为空，请重新输入。")
+            elif max_length and len(value) > max_length:
+                self.print(f"  太长了，最多 {max_length} 个字。")
+            else:
+                return value
+
+    def number(self, prompt, low, high):
+        while True:
+            value = self.input(prompt).strip()
+            if value.isdigit() and low <= int(value) <= high:
+                return int(value)
+            self.print(f"  请输入 {low} 到 {high} 之间的整数。")
+
+    def choice(self, prompt, labels):
+        """列出编号选项，返回玩家选中的下标（从 0 开始）。"""
+        for i, label in enumerate(labels, 1):
+            self.print(f"  {i}. {label}")
+        return self.number(prompt, 1, len(labels)) - 1
+
+    def confirm(self, prompt):
+        while True:
+            value = self.input(prompt + "（y/n）").strip().lower()
+            if value in ("y", "yes", "是", "确认"):
+                return True
+            if value in ("n", "no", "否", "不"):
+                return False
+            self.print("  请输入 y 或 n。")
+
+
+class CharacterCreator:
+    """一步步引导玩家创建角色，最后确认；不满意可以从头再来。"""
+
+    def __init__(self, options, items, tree_names, prompter=None):
+        self.options = options
+        self.items = items
+        self.tree_names = tree_names  # 技能树 id -> 名字，用来显示背景解锁的技能树
+        self.ask = prompter or Prompter()
+
+    def run(self):
+        while True:
+            character = self._create()
+            self.ask.print("\n" + format_sheet(character, self.options, self.items, tree_names=self.tree_names))
+            if self.ask.confirm("\n确认使用这个角色吗？"):
+                character.hp = stats.max_hp(character.attributes, character.level)
+                return character
+            self.ask.print("\n好的，重新创建。")
+
+    def _create(self):
+        limits = self.options.limits
+        self.ask.print("\n======== 创建角色 ========")
+        name = self.ask.text("名字：", max_length=limits["name_max_length"])
+        gender = self._gender()
+        age = self.ask.number(f"年龄（{limits['age'][0]}~{limits['age'][1]}）：", *limits["age"])
+        height = self.ask.number(
+            f"身高 cm（{limits['height'][0]}~{limits['height'][1]}）：", *limits["height"]
+        )
+        self.ask.print("\n【样貌】自由描述你的外貌，比如发型、穿着、特征（直接回车跳过）")
+        appearance = self.ask.text("样貌：", max_length=100, default="没什么特别的，扔进人群里就找不到。")
+        background = self._background()
+        attributes = self._attributes()
+        companions = self._companions(stats.companion_limit(attributes))
+        character = Character(name, gender, age, height, appearance, background, attributes, companions)
+        character.skill_points = self.options.progression["starting_skill_points"]
+        character.unlocked_trees = list(self.options.background(background).get("unlocks_trees", []))
+        return character
+
+    def _gender(self):
+        self.ask.print("\n性别：")
+        labels = self.options.genders + ["自定义"]
+        index = self.ask.choice("选择编号：", labels)
+        if index == len(self.options.genders):
+            return self.ask.text("请输入性别：", max_length=8)
+        return self.options.genders[index]
+
+    def _background(self):
+        self.ask.print("\n【背景故事】末日之前，你是做什么的？")
+        labels = []
+        for bg in self.options.backgrounds:
+            perks = []
+            starting = [self.items[i]["name"] for i in bg.get("starting_items", [])]
+            if starting:
+                perks.append("初始物品：" + "、".join(starting))
+            perks += [f"解锁{self.tree_names[t]}技能树" for t in bg.get("unlocks_trees", [])]
+            extra = f"（{'；'.join(perks)}）" if perks else ""
+            labels.append(f"{bg['name']}{extra}\n     {bg['description']}")
+        index = self.ask.choice("选择编号：", labels)
+        return self.options.backgrounds[index]["id"]
+
+    def _attributes(self):
+        rules = self.options.attribute_rules
+        attrs = self.options.default_attributes()
+        low, high, total = rules["min"], rules["max"], rules["total"]
+        self.ask.print(f"\n【属性】每项 {low}~{high}，5 是普通人水平。降低某项可以把点数挪给别的属性。")
+        while True:
+            remaining = total - sum(attrs.values())
+            self.ask.print(f"\n剩余点数：{remaining}")
+            for i, attr in enumerate(self.options.attributes, 1):
+                self.ask.print(f"  {i}. {attr['name']} {attrs[attr['id']]:>2}   {attr['description']}")
+            value = self.ask.input("输入“编号 数值”调整（例如：1 7），分配完输入“完成”：").strip()
+
+            if value in ("完成", "done"):
+                if remaining == 0:
+                    return attrs
+                self.ask.print(f"  还有 {remaining} 点没分配。")
+                continue
+            parts = value.split()
+            if len(parts) != 2 or not all(p.isdigit() for p in parts):
+                self.ask.print("  格式不对，例如输入：1 7")
+                continue
+            index, new = int(parts[0]) - 1, int(parts[1])
+            if not 0 <= index < len(self.options.attributes):
+                self.ask.print(f"  编号要在 1~{len(self.options.attributes)} 之间。")
+                continue
+            if not low <= new <= high:
+                self.ask.print(f"  每项属性要在 {low}~{high} 之间。")
+                continue
+            attr_id = self.options.attributes[index]["id"]
+            needed = new - attrs[attr_id]
+            if needed > remaining:
+                self.ask.print(f"  点数不够，还差 {needed - remaining} 点。可以先调低别的属性。")
+                continue
+            attrs[attr_id] = new
+
+    def _companions(self, limit):
+        if limit == 0:
+            self.ask.print("\n【同伴】你的魅力太低（至少需要 3），没有人愿意跟你一起行动。")
+            return []
+        self.ask.print(f"\n【同伴】要带一个同伴一起行动吗？（你的同伴上限：{limit}）")
+        presets = self.options.companions
+        labels = ["不带同伴，独自行动"]
+        labels += [f"{c['name']}（{c['relationship']}）：{c['appearance']}" for c in presets]
+        labels.append("自定义同伴")
+        index = self.ask.choice("选择编号：", labels)
+        if index == 0:
+            return []
+        if index <= len(presets):
+            return [Companion(**presets[index - 1])]
+        return [self._custom_companion()]
+
+    def _custom_companion(self):
+        limits = self.options.limits
+        self.ask.print("\n======== 自定义同伴 ========")
+        name = self.ask.text("同伴的名字：", max_length=limits["name_max_length"])
+        gender = self._gender()
+        age = self.ask.number(
+            f"同伴的年龄（{limits['companion_age'][0]}~{limits['companion_age'][1]}）：",
+            *limits["companion_age"],
+        )
+        relationship = self.ask.text("TA 和你是什么关系（例如：妹妹、同事、你养的猫）：", max_length=12)
+        self.ask.print("\n【同伴样貌】自由描述同伴的外貌（直接回车跳过）")
+        appearance = self.ask.text("样貌：", max_length=100, default="没什么特别的。")
+        return Companion(name, gender, age, relationship, appearance)

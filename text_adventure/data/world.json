@@ -1,0 +1,251 @@
+{
+  "title": "封城第七天",
+  "intro": "你在自家公寓里醒来。手机没有信号，停电已经三天了。窗外偶尔传来不像人声的嘶吼。家里的食物昨天就吃完了，你必须出去找补给。",
+  "start_room": "apartment",
+  "map_areas": [
+    "公寓楼 6F",
+    "地面层",
+    "地下 B1"
+  ],
+  "weapon_types": {
+    "long_blade": "长刃",
+    "short_blade": "短刃",
+    "blunt": "钝器"
+  },
+  "rooms": {
+    "apartment": {
+      "name": "你的公寓",
+      "description": "窗帘拉得严严实实，屋里一股闷味。门口用鞋柜顶着，东边就是通往楼道的防盗门。",
+      "exits": {
+        "east": "hallway"
+      },
+      "items": [
+        "flashlight"
+      ],
+      "npcs": [],
+      "map": {
+        "area": "公寓楼 6F",
+        "x": 0,
+        "y": 0
+      }
+    },
+    "hallway": {
+      "name": "六楼楼道",
+      "description": "应急灯早就不亮了，墙上有一道已经发黑的血手印。对门的邻居把门开了一条缝，警惕地看着你。楼梯往下通向一楼。",
+      "exits": {
+        "west": "apartment",
+        "down": "lobby"
+      },
+      "items": [],
+      "npcs": [
+        "neighbor"
+      ],
+      "map": {
+        "area": "公寓楼 6F",
+        "x": 1,
+        "y": 0
+      }
+    },
+    "lobby": {
+      "name": "一楼大堂",
+      "description": "大堂的玻璃门碎了一地，门外就是街道。旁边通往地下停车场的楼梯口黑洞洞的，什么也看不见。",
+      "exits": {
+        "up": "hallway",
+        "south": "street",
+        "down": {
+          "to": "parking",
+          "requires": "flashlight",
+          "blocked_message": "地下停车场一片漆黑，里面好像有东西在慢慢拖着脚走。没有照明，你不敢下去。"
+        }
+      },
+      "items": [
+        "machete"
+      ],
+      "npcs": [],
+      "map": {
+        "area": "地面层",
+        "x": 0,
+        "y": 0
+      }
+    },
+    "parking": {
+      "name": "地下停车场",
+      "description": "手电筒的光扫过一排排落满灰的车。B 区那辆银色轿车的后备箱开着，远处的阴影里有什么在晃动。",
+      "exits": {
+        "up": "lobby"
+      },
+      "items": [
+        "crowbar"
+      ],
+      "npcs": [],
+      "map": {
+        "area": "地下 B1",
+        "x": 0,
+        "y": 0
+      }
+    },
+    "street": {
+      "name": "街道",
+      "description": "马路上横七竖八地停着撞坏的车，一辆公交车侧翻在路口。几只丧尸在远处游荡，还没注意到你。东边是一家拉下卷帘门的便利店。",
+      "exits": {
+        "north": "lobby",
+        "east": {
+          "to": "store",
+          "requires": "crowbar",
+          "blocked_message": "卷帘门被锁死了，徒手根本拉不起来。得找个能撬开它的东西。"
+        }
+      },
+      "items": [],
+      "npcs": [],
+      "map": {
+        "area": "地面层",
+        "x": 0,
+        "y": 1
+      }
+    },
+    "store": {
+      "name": "便利店",
+      "description": "货架被翻得乱七八糟，但角落里还剩了一些东西。收银台后面缩着一个穿店员制服的年轻人。",
+      "exits": {
+        "west": "street"
+      },
+      "items": [
+        "canned_food",
+        "water"
+      ],
+      "npcs": [
+        "clerk"
+      ],
+      "map": {
+        "area": "地面层",
+        "x": 1,
+        "y": 1
+      }
+    }
+  },
+  "items": {
+    "flashlight": {
+      "name": "手电筒",
+      "aliases": [
+        "电筒",
+        "flashlight"
+      ],
+      "description": "一支强光手电筒，电量还剩一大半。",
+      "weight": 0.5
+    },
+    "crowbar": {
+      "name": "撬棍",
+      "aliases": [
+        "crowbar"
+      ],
+      "description": "沉甸甸的钢制撬棍，能撬门，必要时也能当武器。",
+      "weight": 3,
+      "weapon": {
+        "type": "blunt",
+        "hands": 1
+      }
+    },
+    "canned_food": {
+      "name": "午餐肉罐头",
+      "aliases": [
+        "罐头",
+        "午餐肉",
+        "can"
+      ],
+      "description": "一罐午餐肉，保质期还有两年。",
+      "weight": 0.4
+    },
+    "water": {
+      "name": "矿泉水",
+      "aliases": [
+        "水",
+        "water"
+      ],
+      "description": "一瓶 550 毫升的矿泉水。",
+      "weight": 0.6
+    },
+    "first_aid_kit": {
+      "name": "急救包",
+      "aliases": [
+        "急救",
+        "first aid"
+      ],
+      "description": "医院发的急救包，里面有纱布、碘伏和几片止痛药。",
+      "weight": 1
+    },
+    "knife": {
+      "name": "军用匕首",
+      "aliases": [
+        "匕首",
+        "刀",
+        "knife"
+      ],
+      "description": "退伍时偷偷留下的匕首，刀刃保养得很好。",
+      "weight": 0.3,
+      "weapon": {
+        "type": "short_blade",
+        "hands": 1
+      }
+    },
+    "energy_bar": {
+      "name": "能量棒",
+      "aliases": [
+        "能量",
+        "energy bar"
+      ],
+      "description": "外卖箱里剩下的一根巧克力能量棒。",
+      "weight": 0.1
+    },
+    "power_bank": {
+      "name": "充电宝",
+      "aliases": [
+        "power bank"
+      ],
+      "description": "一个 20000 毫安的充电宝，还剩一半电。",
+      "weight": 0.4
+    },
+    "machete": {
+      "name": "开山刀",
+      "aliases": [
+        "砍刀",
+        "machete"
+      ],
+      "description": "保安亭里找到的开山刀，刀身快有小臂那么长，刃口有几处缺口。",
+      "weight": 1.2,
+      "weapon": {
+        "type": "long_blade",
+        "hands": 1
+      }
+    }
+  },
+  "npcs": {
+    "neighbor": {
+      "name": "老陈",
+      "aliases": [
+        "邻居",
+        "陈",
+        "neighbor"
+      ],
+      "description": "对门的中年邻居，胡子拉碴，手里攥着一把菜刀。",
+      "dialogue": [
+        "“小声点！楼下那些东西听得见。”",
+        "“街对面便利店还没被抢光，就是卷帘门锁死了。”",
+        "“我车后备箱里有根撬棍，停在地下停车场 B 区。可那里断电了，黑得很，我不敢去。”"
+      ]
+    },
+    "clerk": {
+      "name": "阿杰",
+      "aliases": [
+        "店员",
+        "杰",
+        "clerk"
+      ],
+      "description": "二十出头的便利店店员，脸色苍白，看起来好几天没睡了。",
+      "dialogue": [
+        "“你……你是活人？吓死我了，我还以为门要被它们撞开了。”",
+        "“剩下的东西你拿吧，我一个人也守不住。”",
+        "“听说城西体育馆那边有军方的救援点，不知道是真是假。”"
+      ]
+    }
+  }
+}
