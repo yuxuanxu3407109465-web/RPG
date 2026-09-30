@@ -1077,7 +1077,9 @@ class Game:
         if weapon_type in stats.MELEE_WEAPON_TYPES:
             per_point = max([stats.STRENGTH_DAMAGE_PERCENT]
                             + [v for _, v in self.passive_effects("strength_damage_percent")])
-            mods.append(("力量", stats.melee_damage_bonus(c.attributes, per_point)))
+            penalty = min([stats.STRENGTH_DAMAGE_PERCENT]
+                          + [v for _, v in self.passive_effects("strength_penalty_percent")])
+            mods.append(("力量", stats.melee_damage_bonus(c.attributes, per_point, penalty)))
         stance = self._current_stance()
         if stance and stance["weapon_type"] == weapon_type:
             bonus = stances.stance_bonuses(c, stance, self.skill_trees).get("melee_damage_bonus", 0)

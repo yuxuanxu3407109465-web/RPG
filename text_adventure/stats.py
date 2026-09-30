@@ -20,12 +20,12 @@ def carry_capacity(a):
 STRENGTH_DAMAGE_PERCENT = 10  # 力量每比 5 多 / 少 1 点，近战伤害 ±10%
 
 
-def melee_damage_bonus(a, per_point=STRENGTH_DAMAGE_PERCENT):
+def melee_damage_bonus(a, per_point=STRENGTH_DAMAGE_PERCENT, penalty_per_point=STRENGTH_DAMAGE_PERCENT):
     """近战伤害加成（%）：力量每比 5 多 1 点 +10%，每少 1 点 −10%（力量 3 为 −20%）。
     适用于所有近战武器（锐器、钝器、武术），不适用于枪械。
-    per_point 可被技能改（势大力沉：15），但只放大加值：力量低于 5 时的惩罚始终按每点 10% 算。"""
+    技能可以分别改加值和惩罚的每点数值（势大力沉：加值每点 15%，惩罚每点 5%）。"""
     diff = a["strength"] - 5
-    return diff * (per_point if diff > 0 else STRENGTH_DAMAGE_PERCENT)
+    return diff * (per_point if diff > 0 else penalty_per_point)
 
 
 # ---------- 战斗（d20：d20 + 精准 ≥ 闪避 即命中） ----------
@@ -103,7 +103,8 @@ PASSIVE_EFFECTS = {
     "armor_ignore": "无视护甲",  # 多个同时生效时相加
     "offhand_attack_ap_percent": "副手追击行动点",
     "extra_blocks": "每回合额外格挡次数",  # 多个同时生效时相加
-    "strength_damage_percent": "每点力量的伤害修正",  # 取最高的那个  # 主手攻击后，副手追击的行动点 = 普通攻击 × 这个百分比
+    "strength_damage_percent": "每点力量的伤害加值",  # 取最高的那个
+    "strength_penalty_percent": "力量低于 5 时每点的伤害惩罚",  # 取最低的那个  # 主手攻击后，副手追击的行动点 = 普通攻击 × 这个百分比
 }
 
 
