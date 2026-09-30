@@ -21,6 +21,24 @@
     "legs": "腿部",
     "feet": "脚部"
   },
+  "gear_slots": {
+    "accessory_1": {
+      "name": "饰品 1",
+      "kind": "accessory"
+    },
+    "accessory_2": {
+      "name": "饰品 2",
+      "kind": "accessory"
+    },
+    "cloak": {
+      "name": "披风",
+      "kind": "cloak"
+    },
+    "backpack": {
+      "name": "背包",
+      "kind": "backpack"
+    }
+  },
   "rooms": {
     "apartment": {
       "name": "你的公寓",

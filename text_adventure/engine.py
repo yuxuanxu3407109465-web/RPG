@@ -134,6 +134,11 @@ class World:
         self.map_areas = data.get("map_areas", [])
         self.weapon_types = data.get("weapon_types", {})  # 武器类型 id -> 显示名
         self.armor_slots = data.get("armor_slots", {})  # 护甲部位 id -> 显示名
+        # 其他装备位 id -> {name, kind}；同一 kind 可以有多个位置（饰品有两个）
+        self.gear_slots = data.get("gear_slots", {})
+        self.wear_slot_names = dict(self.armor_slots)  # 所有穿戴位（护甲 + 其他）的显示名
+        self.wear_slot_names.update({slot: info["name"] for slot, info in self.gear_slots.items()})
+        gear_kinds = {info["kind"] for info in self.gear_slots.values()}
         for item_id, item in self.items.items():
             weapon = item.get("weapon")
             if weapon and not dice_rules.DICE_PATTERN.match(weapon.get("damage", "")):
@@ -150,6 +155,23 @@ class World:
                 name, low, high = stats.ARMOR_CLASSES[armor["class"]]
                 if not low <= armor.get("value", 0) <= high:
                     raise ValueError(f"{where}：{name}的护甲值要在 {low}~{high} 之间")
+            gear = item.get("gear")
+            if gear:
+                where = f"world.json 里的装备 {item_id}"
+                if gear.get("slot") not in gear_kinds:
+                    raise ValueError(f"{where}：装备位要是 {'、'.join(sorted(gear_kinds))} 之一")
+                if not 0 <= gear.get("weight_reduction", 0) <= 100:
+                    raise ValueError(f"{where}：减重率要在 0~100 之间")
+
+    def wear_candidates(self, item_id):
+        """这件物品可以穿戴在哪些位置（按顺序），不能穿戴就是空列表。"""
+        item = self.items[item_id]
+        if item.get("armor"):
+            return [item["armor"]["slot"]]
+        if item.get("gear"):
+            kind = item["gear"]["slot"]
+            return [slot for slot, info in self.gear_slots.items() if info["kind"] == kind]
+        return []
 
 
 class Game:
@@ -204,7 +226,7 @@ class Game:
         self.current_room = self.world.start_room
         self.inventory = []
         self.equipment = {"main_hand": None, "off_hand": None}  # 双手武器会同时占两个位置
-        self.worn = {slot: None for slot in self.world.armor_slots}  # 每个部位穿着的护甲 / 衣服
+        self.worn = {slot: None for slot in self.world.wear_slot_names}  # 护甲、饰品、披风、背包
         self.stance = None  # 当前姿态 id
         self.turns = 0
         self.day = stats.START_DAY  # 计时器：第几天
@@ -543,8 +565,18 @@ class Game:
         if c and self.turns % stats.REGEN_INTERVAL == 0:
             c.hp = min(stats.max_hp(c.attributes, c.level), c.hp + stats.hp_regen(c.attributes))
 
-    def _carried_weight(self):
-        return round(sum(self.world.items[i].get("weight", 1) for i in self.inventory), 1)
+    def _carried_weight(self, extra=0):
+        """背包里所有东西的重量（extra 是准备拿起来的东西），按背着的背包的减重率打折。"""
+        raw = sum(self.world.items[i].get("weight", 1) for i in self.inventory) + extra
+        return round(raw * (100 - self.backpack_reduction()) / 100, 1)
+
+    def backpack_reduction(self):
+        """背着的背包的减重率（%），没背就是 0。"""
+        for item_id in self.worn.values():
+            gear = self.world.items[item_id].get("gear") if item_id else None
+            if gear and gear.get("weight_reduction"):
+                return gear["weight_reduction"]
+        return 0
 
     def cmd_take(self, arg):
         if not arg:
@@ -556,7 +588,7 @@ class Game:
         if self.character:
             capacity = stats.carry_capacity(self.character.attributes)
             weight = self.world.items[item_id].get("weight", 1)
-            if self._carried_weight() + weight > capacity:
+            if self._carried_weight(weight) > capacity:
                 return f"太重了，背不动。（负重 {self._carried_weight():g}/{capacity} kg）"
         items.remove(item_id)
         self.inventory.append(item_id)
@@ -610,10 +642,16 @@ class Game:
             self.character, self.options, self.world.items, self._carried_weight(), tree_names, bonuses,
             self.armor_ap_penalty(),
         )
-        worn = [(self.world.armor_slots[s], i) for s, i in self.worn.items() if i]
+        worn = [(self.world.wear_slot_names[s], i) for s, i in self.worn.items() if i and self._armor(i)]
         armor_line = f"  护甲 {self.armor_total()}" + (
             "：" + "、".join(f"{slot} {self.world.items[i]['name']} +{self._armor(i)['value']}" for slot, i in worn)
             if worn else "：什么也没穿")
+        gear_line = "  " + "    ".join(
+            f"{info['name']} " + (self.world.items[self.worn[slot]]["name"] if self.worn[slot] else "空")
+            for slot, info in self.world.gear_slots.items()
+        )
+        if self.backpack_reduction():
+            gear_line += f"（减重 {self.backpack_reduction()}%）"
         def damage_text(w):
             if not w["damage"]:
                 return "伤害未定"
@@ -630,7 +668,7 @@ class Game:
         conditions = self.conditions()
         active = "、".join(f"{x['name']}（{x['effect']}）" for x in conditions) if conditions else "无"
         return (sheet
-                + f"\n\n【装备与姿态】\n{weapons}\n{armor_line}\n  姿态：{stance['name'] if stance else '无'}"
+                + f"\n\n【装备与姿态】\n{weapons}\n{armor_line}\n{gear_line}\n  姿态：{stance['name'] if stance else '无'}"
                 + f"\n  行动点消耗：普通攻击 {stats.ATTACK_AP_COST}、移动 1 格 {stats.MOVE_AP_COST}、"
                   f"使用物品 {stats.USE_ITEM_AP_COST}"
                 + f"\n\n【时间】{self.clock_text()}\n【异常状态】{active}")
@@ -680,7 +718,7 @@ class Game:
         hands = [slot_names[s] for s, held in self.equipment.items() if held == item_id]
         if hands:
             return "双手" if len(hands) == 2 else hands[0]
-        worn = [self.world.armor_slots[s] for s, held in self.worn.items() if held == item_id]
+        worn = [self.world.wear_slot_names[s] for s, held in self.worn.items() if held == item_id]
         return worn[0] if worn else ""
 
     def _armor(self, item_id):
@@ -688,27 +726,34 @@ class Game:
 
     def armor_total(self):
         """身上所有部位的护甲值之和。"""
-        return sum(self._armor(i)["value"] for i in self.worn.values() if i)
+        return sum(self._armor(i)["value"] for i in self.worn.values() if self._armor(i))
 
     def armor_ap_penalty(self):
         """身上重甲带来的每回合行动点减少量（每件重甲的 ap_penalty 相加）。"""
-        return sum(self._armor(i).get("ap_penalty", 0) for i in self.worn.values() if i)
+        return sum(self._armor(i).get("ap_penalty", 0) for i in self.worn.values() if self._armor(i))
 
     def _wear(self, item_id):
-        armor = self._armor(item_id)
+        """穿戴到对应的位置：有空位就放空位（饰品有两个），都满了就换下第一个。"""
         name = self.world.items[item_id]["name"]
-        slot = armor["slot"]
-        if self.worn.get(slot) == item_id:
-            return f"你已经穿着{name}了。"
-        old = self.worn.get(slot)
+        if item_id in self.worn.values():
+            return f"你已经装备着{name}了。"
+        candidates = self.world.wear_candidates(item_id)
+        slot = next((s for s in candidates if not self.worn[s]), candidates[0])
+        old = self.worn[slot]
         self.worn[slot] = item_id
-        class_name = stats.ARMOR_CLASSES[armor["class"]][0]
-        text = f"你穿上了{name}（{self.world.armor_slots[slot]}，{class_name}，护甲 +{armor['value']}"
-        if armor.get("ap_penalty"):
-            text += f"，每回合行动点 −{armor['ap_penalty']}"
-        text += f"）。现在总护甲 {self.armor_total()}。"
+        slot_name = self.world.wear_slot_names[slot]
+        armor = self._armor(item_id)
+        if armor:
+            class_name = stats.ARMOR_CLASSES[armor["class"]][0]
+            text = f"你穿上了{name}（{slot_name}，{class_name}，护甲 +{armor['value']}"
+            if armor.get("ap_penalty"):
+                text += f"，每回合行动点 −{armor['ap_penalty']}"
+            text += f"）。现在总护甲 {self.armor_total()}。"
+        else:
+            reduction = self.world.items[item_id]["gear"].get("weight_reduction")
+            text = f"你装备了{name}（{slot_name}" + (f"，减重 {reduction}%" if reduction else "") + "）。"
         if old:
-            text = f"你脱下了{self.world.items[old]['name']}，" + text
+            text = f"你换下了{self.world.items[old]['name']}，" + text
         return text
 
     def _check_stance(self):
@@ -727,7 +772,7 @@ class Game:
         if not item_id:
             return "你身上没有这样东西。"
         name = self.world.items[item_id]["name"]
-        if self._armor(item_id):
+        if self.world.wear_candidates(item_id):
             return self._wear(item_id)
         weapon = self._weapon(item_id)
         if not weapon:
@@ -767,8 +812,10 @@ class Game:
         if not item_id:
             return "你身上没装备这样东西。"
         self._unequip(item_id)
-        if item_id in worn:
+        if item_id in worn and self._armor(item_id):
             return f"你脱下了{self.world.items[item_id]['name']}。现在总护甲 {self.armor_total()}。"
+        if item_id in worn:
+            return f"你取下了{self.world.items[item_id]['name']}。"
         return f"你收起了{self.world.items[item_id]['name']}。" + self._check_stance()
 
     def cmd_stance(self, arg):
@@ -1101,20 +1148,21 @@ class Game:
         return [f"已卸下 {len(dropped)} 件失效装备"] if dropped else []
 
     def _load_worn(self, saved):
-        """按清理后的背包重建身上的护甲（部位按当前世界数据），返回适配提示。"""
+        """按清理后的背包重建身上的护甲、饰品、披风、背包（位置按当前世界数据），返回适配提示。"""
         if not isinstance(saved, dict):
             saved = {}
-        self.worn = {slot: None for slot in self.world.armor_slots}
+        self.worn = {slot: None for slot in self.world.wear_slot_names}
         dropped = 0
         for slot, item_id in saved.items():
             if not item_id:
                 continue
-            armor = self.world.items.get(item_id, {}).get("armor")
-            if item_id in self.inventory and armor and armor["slot"] == slot and slot in self.worn:
+            valid = (item_id in self.inventory and slot in self.worn
+                     and slot in self.world.wear_candidates(item_id))
+            if valid:
                 self.worn[slot] = item_id
             else:
                 dropped += 1
-        return [f"已脱下 {dropped} 件失效护甲"] if dropped else []
+        return [f"已取下 {dropped} 件失效的穿戴装备"] if dropped else []
 
     def cmd_help(self, arg):
         return (
@@ -1129,7 +1177,7 @@ class Game:
             "  角色 / c               查看角色卡（属性、衍生数值）\n"
             "  技能 / 技能 <树名>        查看技能树，例如：技能 锐器\n"
             "  学习 <技能>              花技能点解锁技能\n"
-            "  装备 <武器/护甲> / 卸下 <武器/护甲>  拿起或收起武器，穿上或脱下护甲\n"
+            "  装备 <物品> / 卸下 <物品>  拿起或收起武器，穿戴或取下护甲、饰品、披风、背包\n"
             "  姿态 / 姿态 <名字>        查看或切换姿态，“姿态 取消”解除\n"
             "  掷骰 <骰子>              掷骰，例如：掷骰 2d6+1\n"
             "  检定 <成功率>             做一次非战斗检定，例如：检定 70\n"

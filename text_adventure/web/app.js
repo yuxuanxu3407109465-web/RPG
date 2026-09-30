@@ -766,13 +766,18 @@
     if (state.carry) {
       html += '<div class="section"><h4>' + icon('weight') + '负重</h4>' +
         '<div class="kv"><span class="k">当前</span><span class="v">' + esc(state.carry.weight) +
-        ' / ' + esc(state.carry.capacity) + ' kg</span></div></div>';
+        ' / ' + esc(state.carry.capacity) + ' kg' +
+        (state.backpack_reduction ? '（背包减重 ' + esc(state.backpack_reduction) + '%）' : '') +
+        '</span></div></div>';
     }
 
     if (state.equipment) {
       html += '<div class="section"><h4>' + icon('stance') + '装备</h4>';
       html += '<div class="kv"><span class="k">主手</span><span class="v">' + esc(state.equipment.main_hand || '空') + '</span></div>';
       html += '<div class="kv"><span class="k">副手</span><span class="v">' + esc(state.equipment.off_hand || '空') + '</span></div>';
+      (state.gear || []).forEach(function (g) {
+        html += '<div class="kv"><span class="k">' + esc(g.slot) + '</span><span class="v">' + esc(g.name || '空') + '</span></div>';
+      });
       html += '<div class="kv"><span class="k">姿态</span><span class="v">' + esc(state.stance || '无') + '</span></div>';
       html += '</div>';
     }

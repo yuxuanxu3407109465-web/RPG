@@ -325,7 +325,7 @@ class Session:
         name = data["name"]
         if items.is_usable(data):
             return {"cmd": "使用 " + name, "label": "使用"}
-        if data.get("weapon") or data.get("armor"):
+        if data.get("weapon") or self.world.wear_candidates(item_id):
             return {"cmd": "装备 " + name, "label": "装备"}
         return {"cmd": "查看 " + name, "label": "查看"}
 
@@ -470,7 +470,7 @@ class Session:
                 "worn": [
                     {"slot": world.armor_slots[s], "name": world.items[i]["name"],
                      "value": world.items[i]["armor"]["value"]}
-                    for s, i in game.worn.items() if i
+                    for s, i in game.worn.items() if i and world.items[i].get("armor")
                 ],
                 "attack_cost": stats.ATTACK_AP_COST,
                 "move_cost": stats.MOVE_AP_COST,
@@ -484,6 +484,11 @@ class Session:
                 for slot, i in game.equipment.items()
             },
             "stance": stance["name"] if stance else None,
+            "gear": [
+                {"slot": info["name"], "name": world.items[game.worn[slot]]["name"] if game.worn[slot] else None}
+                for slot, info in world.gear_slots.items()
+            ],
+            "backpack_reduction": game.backpack_reduction(),
             "running": game.running,
         })
         return snap
