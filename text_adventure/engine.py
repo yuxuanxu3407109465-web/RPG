@@ -1084,7 +1084,8 @@ class Game:
                 "stance_bonus": total - base - quality,
                 "quality_bonus": quality,
                 "damage": stats.weapon_damage(self.world.items[item_id]) if item_id else self._unarmed_attack()["damage"],
-                "range": None if item_id else self._unarmed_attack().get("range"),
+                "range": (stats.MELEE_RANGE if weapon_type in stats.MELEE_WEAPON_TYPES else None) if item_id
+                else self._unarmed_attack().get("range", stats.MELEE_RANGE),
                 "crit_range": self._crit_range(weapon_type, item_id),
                 "damage_modifiers": self.damage_modifiers(weapon_type),
             })

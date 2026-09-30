@@ -87,6 +87,7 @@
 - **先攻** = 敏捷 + 感知。
 - **行动点**：每回合获得 敏捷 × 2；移动、使用技能、使用物品都消耗行动点；没用完的留到下回合，上限为每回合获得量的 2 倍；只在战斗中存在，不能带进战斗。开战第一回合就获得行动点。
 - **普通攻击**消耗 6 行动点。
+- **近战武器默认射程 1 格**（`stats.MELEE_RANGE`）；踢击等特殊攻击可以更远。
 - **远程武器的攻击范围 = 武器原始射程 + 感知 ÷ 4**（格，向下取整，`stats.ranged_attack_range`）。
 - **角色的视野范围 = 4 + 感知**（格，`stats.sight_range`）。**射程不能超过视野**（`stats.effective_ranged_range`），以后可能加瞄准 / 侦察功能来突破。原始射程暂定：霰弹枪 2、手枪 6、突击步枪 6、狙击枪 10（`stats.FIREARM_BASE_RANGES`）。枪械的其他设计仍然暂缓。
 - **等待**：战斗中使用 = 结束当前回合，没用完的行动点保留（受 2 倍上限约束）；战斗外 = 原地等一回合（1 分钟，计入生命恢复）。战斗中的部分等战斗流程做出来后接上。
@@ -121,7 +122,8 @@
 ### Perk（开卡特质）
 - 创建角色时在“背景”之后、“属性分配”之前选择，花 perk 点；可以反复点选 / 取消，perk 点不能为负。初始 perk 点 `progression.starting_perk_points` = **2**。**正面 perk（`kind: positive`，默认）花 1 点；有正有负的 perk（`kind: mixed`）不花点**；单独写了 `cost` 就按写的（`CharacterOptions.perk_cost`）。
 - 写在 `data/character_options.json` 的 `perks`：`cost`、`description`、`effects`。效果目前支持：`attribute_points`（额外可支配属性点，加到属性分配总数里）、`perk_points`（额外 perk 点）、`no_companions`（无法携带同伴，同伴上限为 0，`CharacterOptions.companion_limit`）。
-- 现有 perk：**孤独之路**（有正有负：+4 可支配属性点、+2 perk 点，无法携带同伴）；**早熟**（有正有负：+2 可支配属性点，经验获取 −20%，和智力倍率相乘）；**致命**（1 点：攻击命中时 5% 概率立刻杀死目标，对首领改为伤害 +100%——等战斗流程接上）；**警觉**（1 点：视野 +2，先攻检定优势——先攻检定等战斗流程接上）；**顽强**（1 点：每级生命上限额外 +2）；**踢腿的武道家**（有正有负：不能用枪械和近战武器，徒手变为踢击 1d8、射程 2；盾牌照样能拿）。
+- 现有 perk：**孤独之路**（有正有负：+4 可支配属性点、+2 perk 点，无法携带同伴）；**早熟**（有正有负：+2 可支配属性点，经验获取 −20%，和智力倍率相乘）；**致命**（1 点：攻击命中时 5% 概率触发——对非首领立刻杀死，对首领改为这一击伤害 +100%；等战斗流程接上）；**警觉**（1 点：视野 +2，先攻检定优势——先攻检定等战斗流程接上）；**顽强**（1 点：每级生命上限额外 +2）；**踢腿的武道家**（有正有负：不能用枪械和近战武器，徒手变为踢击 1d8、射程 2；盾牌照样能拿）。
+- **每个 perk 只能选一次**。
 - 已支持的 perk 效果键：`attribute_points`、`perk_points`、`no_companions`、`xp_percent`、`sight_bonus`、`hp_per_level`、`no_weapons`、`unarmed_attack`（替换空手攻击）；`instant_kill_percent`、`initiative_advantage` 已写进数据，等战斗流程接上。玩家的生命上限、经验倍率要用 `CharacterOptions.max_hp(character)` / `xp_multiplier(character)`，不要直接调 `stats.max_hp`。
 
 ### 变异（僵尸独有）

@@ -47,6 +47,7 @@ ARMOR_CLASSES = {
 }
 DODGE_MULTIPLIER = 1.5
 UNARMED = "unarmed"  # 没拿武器时按徒手（武术）算
+MELEE_RANGE = 1  # 近战武器默认射程（格）；踢击这类特殊攻击可以更远
 
 # 武器类型 -> 精准取哪项属性：锐器看敏捷、钝器看力量、枪械看感知、武术（徒手）看体质
 WEAPON_ATTRIBUTES = {

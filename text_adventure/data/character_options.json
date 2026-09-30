@@ -147,7 +147,7 @@
       "id": "lethal",
       "name": "致命",
       "kind": "positive",
-      "description": "每次攻击命中时有 5% 的概率立刻杀死目标（对首领改为这一击伤害 +100%）。",
+      "description": "每次攻击命中时有 5% 的概率立刻杀死目标；对首领触发时改为这一击伤害 +100%。",
       "effects": {
         "instant_kill_percent": 5
       }
