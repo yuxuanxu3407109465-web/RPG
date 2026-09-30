@@ -432,6 +432,24 @@
       "cooldown": 1,
       "value": "psionic_heal",
       "description": "为自己或一名同伴回复 5 +（你的体质 ÷ 4）× 等级 点生命值（向下取整），并解除流血和中毒。"
+    },
+    {
+      "id": "psionic_flame",
+      "tree": "psionics",
+      "name": "焰刃",
+      "type": "active",
+      "cost": 1,
+      "ap_cost": 6,
+      "description": "为自己所有的武器附上灵能火焰，持续到战斗结束：每次命中额外造成 1d4 点火焰伤害（火焰伤害不受护甲减免），并给目标叠加 1 层灼烧——每层在目标回合开始时造成 4 点火焰伤害，持续 3 回合，最多叠加 5 层。"
+    },
+    {
+      "id": "psionic_overdrive",
+      "tree": "psionics",
+      "name": "燃血",
+      "type": "active",
+      "cost": 1,
+      "ap_cost": 6,
+      "description": "燃烧自己的生命换取速度，持续整场战斗，也可以随时主动解除：从下回合起，每回合开始时额外获得等于敏捷的行动点，同时损失 敏捷 × 2 点生命值。"
     }
   ],
   "stances": [

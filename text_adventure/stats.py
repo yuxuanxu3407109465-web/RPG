@@ -119,9 +119,15 @@ def damage_multiplier(modifiers, crit=False):
     return multiplier
 
 
-def final_damage(raw, modifiers, armor, crit=False):
-    """最终伤害：骰出的伤害 × 各项修正（相乘）×（暴击 1.5），向下取整，再减护甲，最低为 0。"""
-    return max(0, math.floor(raw * damage_multiplier(modifiers, crit)) - armor)
+# 伤害类型：护甲（伤害减免）只对物理伤害生效
+DAMAGE_TYPES = {"physical": "物理", "fire": "火焰"}
+
+
+def final_damage(raw, modifiers, armor, crit=False, damage_type="physical"):
+    """最终伤害：骰出的伤害 × 各项修正（相乘）×（暴击 1.5），向下取整，再减护甲，最低为 0。
+    护甲只减物理伤害；火焰等其他类型的伤害不受护甲影响。"""
+    scaled = math.floor(raw * damage_multiplier(modifiers, crit))
+    return max(0, scaled - armor) if damage_type == "physical" else max(0, scaled)
 
 
 def load_level(weight, capacity):
