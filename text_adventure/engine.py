@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 from datetime import datetime
+from decimal import ROUND_FLOOR, Decimal
 from pathlib import Path
 
 import dice as dice_rules
@@ -641,7 +642,9 @@ class Game:
     def _carried_weight(self, extra=0):
         """背包里所有东西的重量（extra 是准备拿起来的东西），按背着的背包的减重率打折。"""
         raw = sum(self.world.items[i].get("weight", 1) for i in self.inventory) + extra
-        return round(raw * (100 - self.backpack_reduction()) / 100, 1)
+        # 重量保留 1 位小数，向下取整（用 Decimal 避免 0.1 这类小数的浮点误差）
+        total = Decimal(str(round(raw, 6))) * (100 - self.backpack_reduction()) / 100
+        return float(total.quantize(Decimal("0.1"), rounding=ROUND_FLOOR))
 
     def backpack_reduction(self):
         """背着的背包的减重率（%），没背就是 0。"""
@@ -1051,7 +1054,7 @@ class Game:
         return "\n".join(lines)
 
     def _roll_damage(self, weapon, armor, crit=False):
-        """掷伤害并写出计算过程：骰子 → 修正（相乘）→ 暴击 → 向上取整 → 护甲。"""
+        """掷伤害并写出计算过程：骰子 → 修正（相乘）→ 暴击 → 向下取整 → 护甲。"""
         if not weapon["damage"]:
             return f"{weapon['name']}的伤害还没有定。", 0
         roll = self.dice.roll(weapon["damage"])
@@ -1065,7 +1068,7 @@ class Game:
             steps.append(f"暴击 +{stats.CRIT_DAMAGE_BONUS}%")
         exact = roll.total * stats.damage_multiplier(modifiers, crit)
         if exact != roll.total:
-            steps[-1] += f" = {float(exact):g}，向上取整 {math.ceil(exact)}"
+            steps[-1] += f" = {float(exact):g}，向下取整 {math.floor(exact)}"
         if armor:
             steps.append(f"护甲 −{armor}")
         damage = stats.final_damage(roll.total, modifiers, armor, crit)

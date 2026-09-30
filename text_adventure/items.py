@@ -17,13 +17,16 @@
 物品信息和公式都来自数据与 stats.py，这里只负责“把效果套到角色身上”。
 """
 
+import math
+from fractions import Fraction
+
 import stats
 
 
 def _amount(effect, cap):
     """写 ratio 就按上限的比例算，写 amount 就用固定点数。"""
     if "ratio" in effect:
-        return int(round(cap * effect["ratio"]))
+        return math.floor(cap * Fraction(effect["ratio"]).limit_denominator(100))
     return int(effect.get("amount", 0))
 
 

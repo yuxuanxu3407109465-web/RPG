@@ -1,6 +1,7 @@
 """属性与成长规则：由六项属性推导出的各项数值、经验和升级。
 
 属性范围 1~10，5 是普通人水平。想调整平衡，直接改下面的公式。
+**所有计算结果一律向下取整**（带小数的倍率先用 Fraction 精确算，再取整，避免浮点误差）。
 """
 
 import math
@@ -77,7 +78,7 @@ def crit_range(weapon_type, weapon=None):
 
 def damage_multiplier(modifiers, crit=False):
     """各来源的修正（%）相乘，例如 +20% 和 +20% 是 ×1.2×1.2 = ×1.44；暴击再 ×1.5。
-    用分数计算，避免 5 × 1.2 算成 6.0000001 后被向上取整成 7。"""
+    用分数计算，避免 7 × 1.2 算成 8.3999999 这类浮点误差影响取整。"""
     multiplier = Fraction(1)
     for percent in modifiers:
         multiplier *= Fraction(100 + percent, 100)
@@ -87,8 +88,8 @@ def damage_multiplier(modifiers, crit=False):
 
 
 def final_damage(raw, modifiers, armor, crit=False):
-    """最终伤害：骰出的伤害 × 各项修正（相乘）×（暴击 1.5），向上取整，再减护甲，最低为 0。"""
-    return max(0, math.ceil(raw * damage_multiplier(modifiers, crit)) - armor)
+    """最终伤害：骰出的伤害 × 各项修正（相乘）×（暴击 1.5），向下取整，再减护甲，最低为 0。"""
+    return max(0, math.floor(raw * damage_multiplier(modifiers, crit)) - armor)
 
 
 def load_level(weight, capacity):
@@ -129,9 +130,8 @@ def accuracy(a, weapon_type):
 
 
 def dodge(a):
-    """闪避 =（敏捷 + 感知）× 1.5，可能带 .5。"""
-    value = (a["agility"] + a["perception"]) * DODGE_MULTIPLIER
-    return int(value) if value == int(value) else value
+    """闪避 =（敏捷 + 感知）× 1.5，向下取整（例如 11 × 1.5 = 16.5 → 16）。"""
+    return math.floor((a["agility"] + a["perception"]) * Fraction(DODGE_MULTIPLIER))
 
 
 def initiative(a):
@@ -169,9 +169,8 @@ CHECK_MODIFIER_MULTIPLIER = 1.5  # 属性检定的修正值 = 属性值 × 1.5
 
 
 def check_modifier(a, attribute_id):
-    """属性检定修正值，可能带 .5（例如敏捷 7 → 10.5）。"""
-    value = a[attribute_id] * CHECK_MODIFIER_MULTIPLIER
-    return int(value) if value == int(value) else value
+    """属性检定修正值 = 属性 × 1.5，向下取整（例如敏捷 7 → 10.5 → 10）。"""
+    return math.floor(a[attribute_id] * Fraction(CHECK_MODIFIER_MULTIPLIER))
 
 
 # ---------- 体力与时间 ----------
@@ -223,7 +222,7 @@ OVERWEIGHT_TRAVEL_MULTIPLIER = 2  # 战斗外超重：走路的体力消耗和�
 def move_cost(a, outdoor, overweight=False):
     """扣体力的那一步要花多少体力（室外每步都扣，室内每 10 步扣一次）；超重翻倍。"""
     base = MOVE_COST_OUTDOOR if outdoor else MOVE_COST_INDOOR
-    cost = max(1, int(round(base * stamina_cost_multiplier(a))))
+    cost = max(1, math.floor(Fraction(base) * Fraction(stamina_cost_multiplier(a)).limit_denominator(100)))
     return cost * OVERWEIGHT_TRAVEL_MULTIPLIER if overweight else cost
 
 
@@ -235,7 +234,8 @@ def move_minutes(outdoor, overweight=False):
 
 def rest_recovery(a, minutes):
     """休息一段时间恢复的体力（每半小时恢复 10% 上限）。"""
-    return int(round(stamina_max(a) * REST_RECOVER_RATIO * minutes / REST_MINUTES_PER_TICK))
+    ratio = Fraction(REST_RECOVER_RATIO).limit_denominator(100)
+    return math.floor(stamina_max(a) * ratio * minutes / REST_MINUTES_PER_TICK)
 
 
 def is_exhausted(character):
@@ -270,7 +270,7 @@ def xp_to_next_level(level, options):
 
 def gain_xp(character, amount, options):
     """获得经验（受智力倍率影响），可能连升多级。返回要显示给玩家的文字。"""
-    gained = round(amount * xp_multiplier(character.attributes))
+    gained = math.floor(amount * Fraction(xp_multiplier(character.attributes)).limit_denominator(100))
     character.xp += gained
     lines = [f"获得 {gained} 点经验。"]
     while character.xp >= xp_to_next_level(character.level, options):

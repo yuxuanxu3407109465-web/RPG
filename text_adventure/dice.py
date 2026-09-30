@@ -53,7 +53,7 @@ def crit_min(crit_range):
 
 
 def format_number(value):
-    """16.0 显示成 16，16.5 保持 16.5。"""
+    """16.0 显示成 16，小数照原样显示（数值本身已经在 stats 里取过整）。"""
     return f"{value:g}"
 
 
