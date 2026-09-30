@@ -159,6 +159,15 @@ def gain_ap(a, current, armor_penalty=0):
 POOR_ACCURACY_MULTIPLIER = 1  # 劣质武器（例如僵尸的撕咬）：精准只按属性 × 1 算
 
 
+ATTRIBUTE_MAX = 10  # 所有角色的原始属性都不能超过 10；超出的部分只能来自 buff
+ATTRIBUTE_MIN = 1
+
+
+def apply_buffs(base, buffs):
+    """实际属性 = 原始属性 + 各项 buff。buffs 是 {属性 id: [(来源, 数值), ...]}。"""
+    return {k: v + sum(value for _, value in buffs.get(k, [])) for k, v in base.items()}
+
+
 def accuracy(a, weapon_type, poor=False):
     """精准 = 所用武器对应的属性 × 1.5，向下取整（和属性修正一样）；劣质武器只 × 1。"""
     attribute = a[WEAPON_ATTRIBUTES[weapon_type]]
@@ -212,8 +221,7 @@ def check_modifier(a, attribute_id):
 
 # ---------- 体力与时间 ----------
 #
-# 体力上限：体质、力量各每点 30（5+5 时正好 300）。属性上限 10 只约束
-# 创建角色时的分配，后期属性可以涨过 10，下面这些公式照样适用。
+# 体力上限 = 10 ×（体质 + 力量）。属性带 buff 后可能超过 10，下面这些公式照样适用。
 
 STAMINA_PER_POINT = 10        # 体力上限 = 10 ×（体质 + 力量）
 STAMINA_MIN_CAP = 60          # 体力上限的下限（体质与力量都只有 3 时）
@@ -291,7 +299,7 @@ def attack_penalty(character):
 # ---------- 敌人等阶 ----------
 
 PHYSICAL_ATTRIBUTES = ("strength", "agility", "constitution")  # 肉体属性
-# 等阶 id -> (名字, 肉体属性加成, 生命上限加成)；加成可以把属性推到 10 以上
+# 等阶 id -> (名字, 肉体属性加成, 生命上限加成)；属性加成算 buff，不改原始属性
 ENEMY_TIERS = {
     "normal": ("普通", 0, 0),
     "elite": ("精英", 3, 20),

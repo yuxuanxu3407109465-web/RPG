@@ -1320,6 +1320,10 @@ class Game:
             # 旧存档没有属性，按默认值补上
             if not self.character.attributes:
                 self.character.attributes = self.options.default_attributes()
+            # 原始属性不能超过 10（加成只能来自 buff）
+            self.character.attributes = {
+                k: max(stats.ATTRIBUTE_MIN, min(stats.ATTRIBUTE_MAX, v)) for k, v in self.character.attributes.items()
+            }
             if not self.character.hp:
                 self.character.hp = stats.max_hp(self.character.attributes, self.character.level)
             # 旧存档没有体力，按满值补上

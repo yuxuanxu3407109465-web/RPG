@@ -1,8 +1,8 @@
 """敌人：按 data/enemies.json 里的模板生成，再按等阶（普通 / 精英 / 首领）加强。
 
 敌人和玩家用同一套战斗公式（精准、闪避、先攻、行动点、生命值、伤害修正都在 stats.py）。
-等阶加成见 stats.ENEMY_TIERS：精英的力量、敏捷、体质 +3、生命上限 +20，首领 +6、+40；
-加成可以把属性推到 10 以上。
+等阶加成见 stats.ENEMY_TIERS：精英的力量、敏捷、体质 +3、生命上限 +20，首领 +6、+40。
+模板里的是原始属性（1~10）；等阶加成算 buff，显示成“力量 12（9 + 精英 3）”。
 
 每个僵尸个体的武器、护甲、四肢是否完整都是随机的（模板的 loadout 指向 loadouts 里的一张随机表）：
   weapons  按权重抽一件武器（item 为 null 表示空手，按徒手算）
@@ -29,7 +29,7 @@ class Enemy:
     tier: str
     name: str
     level: int
-    attributes: dict
+    attributes: dict  # 实际属性（原始 + buff），战斗公式都用它
     max_hp: int
     hp: int
     attack: dict  # {"name", "type", "damage", 可选 "crit_range"}
@@ -38,6 +38,8 @@ class Enemy:
     weapon: str = None  # 拿着的武器（物品 id），空手是 None
     armor_items: list = field(default_factory=list)  # 穿着的护甲（物品 id）
     missing_limbs: list = field(default_factory=list)  # 缺失的肢体（LIMBS 的 key）
+    base_attributes: dict = field(default_factory=dict)  # 原始属性（不超过 10）
+    buffs: dict = field(default_factory=dict)  # {属性 id: [(来源, 数值), ...]}
 
     @property
     def tier_name(self):
@@ -79,6 +81,10 @@ class EnemyBook:
             missing = [a for a in attribute_ids if a not in t.get("attributes", {})]
             if missing:
                 raise ValueError(f"{where}：缺少属性 {'、'.join(missing)}")
+            for attribute_id, value in t["attributes"].items():
+                if not stats.ATTRIBUTE_MIN <= value <= stats.ATTRIBUTE_MAX:
+                    raise ValueError(f"{where}：原始属性 {attribute_id} 要在 "
+                                     f"{stats.ATTRIBUTE_MIN}~{stats.ATTRIBUTE_MAX} 之间（加成请用等阶 buff）")
             attack = t.get("attack", {})
             if attack.get("type") not in stats.WEAPON_ATTRIBUTES:
                 raise ValueError(f"{where}：攻击类型要是 {'、'.join(stats.WEAPON_ATTRIBUTES)} 之一")
@@ -110,9 +116,9 @@ class EnemyBook:
         """生成一个敌人：模板属性 + 等阶加成 + 随机的武器、护甲、缺失肢体。"""
         t = self.templates[template_id]
         tier_name, physical_bonus, hp_bonus = stats.ENEMY_TIERS[tier]
-        attributes = dict(t["attributes"])
-        for attribute_id in stats.PHYSICAL_ATTRIBUTES:
-            attributes[attribute_id] += physical_bonus
+        base = dict(t["attributes"])
+        buffs = {a: [(tier_name, physical_bonus)] for a in stats.PHYSICAL_ATTRIBUTES} if physical_bonus else {}
+        attributes = stats.apply_buffs(base, buffs)
         level = t.get("level", 1)
         max_hp = stats.max_hp(attributes, level) + hp_bonus
         name = t["name"] if tier == "normal" else f"{tier_name}{t['name']}"
@@ -139,7 +145,7 @@ class EnemyBook:
             if arms == 0 and t.get("armless_attack"):
                 attack = dict(t["armless_attack"])  # 两条胳膊都没了：撕咬
         return Enemy(template_id, tier, name, level, attributes, max_hp, max_hp, attack, armor,
-                     t.get("description", ""), weapon, armor_items, missing)
+                     t.get("description", ""), weapon, armor_items, missing, base, buffs)
 
     @staticmethod
     def _pick_weapon(entries, rng):
@@ -154,6 +160,19 @@ class EnemyBook:
         return entries[-1]["item"]
 
 
+def _attribute_text(enemy, attr):
+    """“力量 12（9 + 精英 3）”：实际值，有 buff 时括号里拆开原始属性和各项 buff。"""
+    attribute_id = attr["id"]
+    text = f"{attr['name']} {enemy.attributes[attribute_id]}"
+    buffs = enemy.buffs.get(attribute_id, [])
+    if buffs:
+        detail = str(enemy.base_attributes[attribute_id])
+        for source, value in buffs:
+            detail += f" {'+' if value >= 0 else '−'} {source} {abs(value)}"
+        text += f"（{detail}）"
+    return text
+
+
 def format_enemy(enemy, options, weapon_types, items):
     """敌人资料卡。"""
     a = enemy.attributes
@@ -165,7 +184,7 @@ def format_enemy(enemy, options, weapon_types, items):
         f"======== {enemy.name}（{enemy.tier_name}，{enemy.level} 级） ========",
         enemy.description,
         f"生命 {enemy.hp}/{enemy.max_hp}    护甲 {enemy.armor}" + (f"（{armor}）" if armor else ""),
-        "属性：" + "   ".join(f"{attr['name']} {a[attr['id']]}" for attr in options.attributes),
+        "属性：" + "   ".join(_attribute_text(enemy, attr) for attr in options.attributes),
         f"攻击：{enemy.attack['name']}（{weapon_types[enemy.attack['type']]}）"
         f"  精准 {enemy.accuracy():g}  伤害 {damage}  暴击 {enemy.crit_range()}",
         f"闪避 {dice_rules.format_number(enemy.dodge())}    先攻 {enemy.initiative()}"
