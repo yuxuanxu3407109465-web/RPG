@@ -342,6 +342,27 @@ def sneak_attack_accuracy_bonus(a):
     return (a["agility"] + a["perception"]) // 2
 
 
+# ---------- 射程 ----------
+
+# 各类枪械的原始射程（格，暂定）；枪械的其余设计暂缓
+FIREARM_BASE_RANGES = {
+    "shotgun": ("霰弹枪", 2),
+    "pistol": ("手枪", 6),
+    "assault_rifle": ("突击步枪", 6),
+    "sniper_rifle": ("狙击枪", 10),
+}
+
+
+def ranged_attack_range(a, base_range):
+    """远程武器的攻击范围（格）= 武器原始射程 + 感知。"""
+    return base_range + a["perception"]
+
+
+def incinerate_range(a):
+    """焚化的施放范围（格）= 感知 × 2。"""
+    return a["perception"] * 2
+
+
 def psionic_bolt_damage(level):
     """焚化（灵能·塑能系）的火焰伤害 = 6 + 等级 × 2。"""
     return 6 + level * 2
