@@ -68,7 +68,7 @@ REST_PRESETS = [(10, "10 分钟"), (30, "半小时"), (60, "1 小时"),
 MOVE_WORDS = ("走", "去", "go")
 
 # 这些指令执行完顺手在浮层里回一句（存档、读档、清空、休息）
-NOTICE_COMMANDS = ("存档", "读档", "清空", "休息", "save", "load", "clear", "rest")
+NOTICE_COMMANDS = ("存档", "读档", "清空", "休息", "等待", "save", "load", "clear", "rest", "wait")
 
 
 def is_move(text):
@@ -297,7 +297,7 @@ class Session:
                 "state": "blocked",
                 "target": None,
                 "danger": None,
-                "cost": stats.move_cost(game.character.attributes, outdoor, overweight) if game.character else 0,
+                "cost": game.next_move_cost(outdoor, overweight) if game.character else 0,
                 "minutes": stats.move_minutes(outdoor, overweight),
             }
             if exit_ is not None:

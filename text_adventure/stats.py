@@ -183,7 +183,9 @@ STAMINA_MIN_CAP = 60          # 体力上限的下限（体质与力量都只有
 STAMINA_COST_FLOOR = 0.5      # 行动消耗最多降到一半
 STAMINA_LOW_RATIO = 0.1       # 体力低于上限的这个比例就力竭
 EXHAUSTED_DAMAGE_PENALTY = -50  # 力竭时攻击力 -50%
-MOVE_COST_INDOOR = 2          # 建筑物内走一步的体力
+MOVE_COST_INDOOR = 1          # 建筑物内每走 INDOOR_STEPS_PER_COST 步消耗的体力
+INDOOR_STEPS_PER_COST = 10    # 建筑物内每 10 步才消耗一次体力
+WAIT_MINUTES = 1              # 战斗外原地等待一回合花的时间（分钟）
 MOVE_COST_OUTDOOR = 1         # 建筑物外走一步的体力
 MOVE_MINUTES_INDOOR = 1       # 建筑物内走一步花的时间（分钟）
 MOVE_MINUTES_OUTDOOR = 5      # 建筑物外走一步花的时间（分钟）
@@ -218,7 +220,7 @@ OVERWEIGHT_TRAVEL_MULTIPLIER = 2  # 战斗外超重：走路的体力消耗和�
 
 
 def move_cost(a, outdoor, overweight=False):
-    """走一个方向要花多少体力；超重翻倍。"""
+    """扣体力的那一步要花多少体力（室外每步都扣，室内每 10 步扣一次）；超重翻倍。"""
     base = MOVE_COST_OUTDOOR if outdoor else MOVE_COST_INDOOR
     cost = max(1, int(round(base * stamina_cost_multiplier(a))))
     return cost * OVERWEIGHT_TRAVEL_MULTIPLIER if overweight else cost

@@ -211,6 +211,7 @@ class Game:
             (["试攻击", "attack test"], self.cmd_attack_test),
             (["使用", "吃", "喝", "use"], self.cmd_use),
             (["休息", "睡", "rest"], self.cmd_rest),
+            (["等待", "wait"], self.cmd_wait),
             (["说话", "交谈", "对话", "talk"], self.cmd_talk),
             (["存档", "save"], self.cmd_save),
             (["读档", "load"], self.cmd_load),
@@ -229,6 +230,7 @@ class Game:
         self.worn = {slot: None for slot in self.world.wear_slot_names}  # 护甲、饰品、披风、背包
         self.stance = None  # 当前姿态 id
         self.turns = 0
+        self.indoor_steps = 0  # 室内已经走了几步（凑满 10 步扣一次体力）
         self.day = stats.START_DAY  # 计时器：第几天
         self.minutes = stats.START_MINUTES  # 计时器：当天已经过去的分钟数
         self._load_notice = ""  # 读档时若按新版本适配过，这里放一句提示
@@ -424,7 +426,7 @@ class Game:
         overweight = self.load_level() == "overweight"
         cost = 0
         if self.character:
-            cost = stats.move_cost(self.character.attributes, outdoor, overweight)
+            cost = self.next_move_cost(outdoor, overweight)
             if self.character.stamina < cost:
                 return (f"体力不够：走这一步要 {cost} 点，你只剩 {self.character.stamina} 点。\n"
                         f"先休息一下吧（例如：休息 60）。")
@@ -433,6 +435,8 @@ class Game:
         self.current_room = exit_
         self.visited.add(exit_)
         self.turns += 1
+        if not outdoor:
+            self.indoor_steps = (self.indoor_steps + 1) % stats.INDOOR_STEPS_PER_COST
         cost_note = ""
         if self.character:
             before = self.character.stamina
@@ -441,9 +445,16 @@ class Game:
             self.advance_time(minutes)
             # 这一步花了多少体力直接写进正文（文字栏里就能看到），
             # 不用再去悬停移动按钮看提示。控制台版和网页版共用这段。
-            cost_note = (f"（移动消耗 {cost} 点体力：{before} → {self.character.stamina}"
-                         f"/{stats.stamina_max(self.character.attributes)}，"
-                         f"用时 {format_duration(minutes)}" + ("，超重翻倍" if overweight else "") + "）")
+            extra = "，超重翻倍" if overweight else ""
+            if outdoor or cost:
+                where = "" if outdoor else f"，室内每 {stats.INDOOR_STEPS_PER_COST} 步扣一次"
+                cost_note = (f"（移动消耗 {cost} 点体力：{before} → {self.character.stamina}"
+                             f"/{stats.stamina_max(self.character.attributes)}{where}，"
+                             f"用时 {format_duration(minutes)}{extra}）")
+            else:
+                cost_note = (f"（室内移动：已走 {self.indoor_steps}/{stats.INDOOR_STEPS_PER_COST} 步，"
+                             f"走满扣 {stats.move_cost(self.character.attributes, False, overweight)} 点体力，"
+                             f"用时 {format_duration(minutes)}{extra}）")
         self._regenerate()
         text = self.describe_room()
         if cost_note:
@@ -594,6 +605,28 @@ class Game:
         if len(c.conditions) == before:
             return "身上没有这个异常状态。"
         return "异常状态已解除。"
+
+    def next_move_cost(self, outdoor, overweight=False):
+        """下一步要扣多少体力：室外每步都扣；室内只有凑满 10 步的那一步才扣。"""
+        cost = stats.move_cost(self.character.attributes, outdoor, overweight)
+        if outdoor or self.indoor_steps + 1 >= stats.INDOOR_STEPS_PER_COST:
+            return cost
+        return 0
+
+    def cmd_wait(self, arg):
+        """等待：战斗外原地等一回合（推进时间、计入生命恢复的回合）。
+        战斗中等待 = 结束当前回合，没用完的行动点保留（战斗流程做出来后接上）。"""
+        c = self.character
+        if not c:
+            return "还没有创建角色。"
+        hp_before = c.hp
+        self.turns += 1
+        self.advance_time(stats.WAIT_MINUTES)
+        self._regenerate()
+        text = f"你在原地等了一回合（{format_duration(stats.WAIT_MINUTES)}），现在是 {self.clock_text()}。"
+        if c.hp > hp_before:
+            text += f"\n生命恢复 {hp_before} → {c.hp}/{stats.max_hp(c.attributes, c.level)}。"
+        return text
 
     def _regenerate(self):
         """每隔一定回合按体质恢复生命。"""
@@ -1052,6 +1085,7 @@ class Game:
             "current_room": self.current_room,
             "inventory": self.inventory,
             "turns": self.turns,
+            "indoor_steps": self.indoor_steps,
             "day": self.day,
             "minutes": self.minutes,
             "visited": sorted(self.visited),
@@ -1105,6 +1139,7 @@ class Game:
             c.stamina = min(c.stamina, stats.stamina_max(c.attributes))
         self.current_room = state["current_room"]
         self.turns = state["turns"]
+        self.indoor_steps = state.get("indoor_steps", 0)
         self.day = state.get("day", stats.START_DAY)
         self.minutes = state.get("minutes", stats.START_MINUTES)
         self.visited = set(state.get("visited", [self.current_room]))
@@ -1234,6 +1269,7 @@ class Game:
             "  掷骰 <骰子>              掷骰，例如：掷骰 2d6+1\n"
             "  检定 <属性> <难度>        做一次属性检定（d20 + 属性×1.5 ≥ 难度），例如：检定 敏捷 15\n"
             "  试攻击 <闪避> <护甲>       用手上的武器试一次攻击（命中 + 伤害），例如：试攻击 15 3\n"
+            "  等待 / wait             原地等一回合（战斗外 1 分钟，也算生命恢复的回合）\n"
             "  休息 <时长>             恢复体力并推进时间，例如：休息 30、休息 2小时（1~480 分钟）\n"
             "                          体力满了也能休息，只是时间照样过去\n"
             "  说话 <人>               和 NPC 交谈\n"

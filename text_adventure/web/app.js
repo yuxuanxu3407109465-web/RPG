@@ -931,7 +931,7 @@
       '" step="1" value="' + restMinutes + '" title="拖动选择休息时长">' +
       '<div class="rest-readout"><span id="rest-label">' + esc(fmtMinutes(restMinutes)) + '</span>' +
       '<button type="button" class="btn small primary" id="rest-go">' + icon('rest') +
-      '<span>休息</span></button></div>' +
+      '<span>休息</span></button>' + btn('等待', '等待 1 回合', 'rest', 'small') + '</div>' +
       '<div class="rest-chips">';
     (rest.presets || []).forEach(function (preset) {
       html += '<button type="button" class="chip-btn" data-rest-preset="' + preset.minutes + '">' +
