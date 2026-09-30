@@ -77,13 +77,21 @@ def widen_crit_range(crit_range, multiplier):
 
 
 # 武器持握方式（Game.grip_style 返回 id）；技能效果用 grip 限定生效条件
-GRIPS = {"unarmed": "徒手", "one_hand": "单手", "dual_wield": "双持", "two_hand": "双手"}
+GRIPS = {"unarmed": "徒手", "one_hand": "单手", "dual_wield": "双持", "two_hand": "双手", "shield": "持盾"}
+
+BLOCKS_PER_TURN = 1  # 持盾时每回合默认能格挡几次
+
+
+def block_modifier(a):
+    """格挡修正 =（力量 ÷ 2 + 感知 ÷ 2）× 1.5，每一步都向下取整。"""
+    return math.floor((a["strength"] // 2 + a["perception"] // 2) * Fraction(CHECK_MODIFIER_MULTIPLIER))
 
 # 被动技能效果类型（skill_trees.json 里技能的 effects）
 PASSIVE_EFFECTS = {
     "crit_range_multiplier": "暴击范围倍数",  # 多个同时生效时相乘
     "armor_ignore": "无视护甲",  # 多个同时生效时相加
-    "offhand_attack_ap_percent": "副手追击行动点",  # 主手攻击后，副手追击的行动点 = 普通攻击 × 这个百分比
+    "offhand_attack_ap_percent": "副手追击行动点",
+    "extra_blocks": "每回合额外格挡次数",  # 多个同时生效时相加  # 主手攻击后，副手追击的行动点 = 普通攻击 × 这个百分比
 }
 
 

@@ -326,7 +326,7 @@ class Session:
         name = data["name"]
         if items.is_usable(data):
             return {"cmd": "使用 " + name, "label": "使用"}
-        if data.get("weapon") or self.world.wear_candidates(item_id):
+        if data.get("weapon") or "shield" in data or self.world.wear_candidates(item_id):
             return {"cmd": "装备 " + name, "label": "装备"}
         return {"cmd": "查看 " + name, "label": "查看"}
 

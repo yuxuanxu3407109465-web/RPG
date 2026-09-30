@@ -45,6 +45,7 @@ class AttackResult:
     hit: bool
     crit: bool  # 暴击已确认
     text: str  # 给玩家看的掷骰过程（可能有两行：命中 + 暴击确认）
+    total: float = 0  # 第一次命中判定的 d20 + 精准（格挡要和它比）
 
 
 def crit_min(crit_range):
@@ -94,12 +95,28 @@ class Dice:
         命中且掷出的点数落在武器的暴击范围内（例如 19-20）时，再掷一次确认：
         第二次也命中就是暴击，没命中就按普通命中处理。"""
         value, hit, text = self._attack_roll(accuracy, dodge)
+        total = value + accuracy
         if not hit or value < crit_min(crit_range):
-            return AttackResult(hit, False, text)
+            return AttackResult(hit, False, text, total)
         text += f"，落在暴击范围（{crit_range}）内！"
         _, confirmed, confirm_text = self._attack_roll(accuracy, dodge)
         verdict = "暴击！" if confirmed else "没能确认，按普通命中处理"
-        return AttackResult(True, confirmed, f"{text}\n确认暴击：{confirm_text} → {verdict}")
+        return AttackResult(True, confirmed, f"{text}\n确认暴击：{confirm_text} → {verdict}", total)
+
+    def block(self, modifier, attack_total):
+        """格挡检定：d20 + 格挡修正，敌人这次的命中（d20 + 精准）小于它就挡住。
+        掷出 20 必定挡住，掷出 1 必定挡不住。"""
+        value = self.rng.randint(1, 20)
+        if value == 20:
+            return CheckResult(True, True, "🛡 格挡：d20 = 20 → 必定挡住")
+        if value == 1:
+            return CheckResult(False, True, "🛡 格挡：d20 = 1 → 必定挡不住")
+        total = value + modifier
+        blocked = attack_total < total
+        sign = "<" if blocked else "≥"
+        return CheckResult(blocked, False,
+                           f"🛡 格挡：d20 = {value} + 格挡修正 {modifier} = {total}，"
+                           f"敌方命中 {format_number(attack_total)} {sign} {total} → {'挡住了！' if blocked else '没挡住'}")
 
     def _attack_roll(self, accuracy, dodge):
         """掷一次命中判定，返回 (骰子点数, 是否命中, 过程文字)。"""

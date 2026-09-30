@@ -383,6 +383,33 @@
       "description": "双持时激活：下一次攻击（包括技能）由两把武器同时发起，行动点消耗等于这次攻击 / 技能本身的消耗；两把武器分别掷命中和伤害。另一把武器强制视为所用技能对应的武器类型，并同样应用该技能的效果（例如主手长刃、副手短刃：用长刃技能时副手视为长刃，用短刃技能时主手视为短刃）。激活后效果会一直保留到下一次攻击，不能重复激活叠加，脱离战斗后清除。这一击既不触发连击，也不算副手出过手。",
       "cooldown": 1,
       "ap_cost": 3
+    },
+    {
+      "id": "shield_double_block",
+      "tree": "weapon_mastery",
+      "branch": "shield",
+      "name": "双重格挡",
+      "cost": 1,
+      "description": "持盾时，每回合可以格挡的次数从 1 次增加到 2 次。",
+      "effects": [
+        {
+          "type": "extra_blocks",
+          "value": 1,
+          "grip": "shield"
+        }
+      ]
+    },
+    {
+      "id": "shield_bash",
+      "tree": "weapon_mastery",
+      "branch": "shield",
+      "name": "盾击",
+      "type": "active",
+      "cost": 1,
+      "grip": "shield",
+      "ap_cost": 3,
+      "cooldown": 1,
+      "description": "用盾牌猛击敌人，造成 1d4 伤害；目标要进行体质检定，失败则下回合最后一个行动。"
     }
   ],
   "stances": [

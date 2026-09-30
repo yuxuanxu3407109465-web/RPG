@@ -214,6 +214,7 @@ class Game:
             (["检定", "check"], self.cmd_check),
             (["试攻击", "attack test"], self.cmd_attack_test),
             (["敌人", "enemy"], self.cmd_enemy),
+            (["试受击", "defend test"], self.cmd_defend_test),
             (["使用", "吃", "喝", "use"], self.cmd_use),
             (["休息", "睡", "rest"], self.cmd_rest),
             (["等待", "wait"], self.cmd_wait),
@@ -749,6 +750,8 @@ class Game:
         active = "、".join(f"{x['name']}（{x['effect']}）" for x in conditions) if conditions else "无"
         return (sheet
                 + f"\n\n【装备与姿态】\n  持握：{self.grip_name()}{passives}\n{weapons}\n{armor_line}\n{gear_line}"
+                + (f"\n  格挡：每回合 {self.blocks_per_turn()} 次，格挡修正 {stats.block_modifier(self.character.attributes)}"
+                   f"（力量÷2 + 感知÷2）×1.5" if self.blocks_per_turn() else "")
                 + f"\n  姿态：{stance['name'] if stance else '无'}"
                 + f"\n  行动点消耗：普通攻击 {stats.ATTACK_AP_COST}{self._offhand_cost_text()}、"
                   f"移动 1 格 {self._move_cost_text()}、使用物品 {stats.USE_ITEM_AP_COST}"
@@ -780,7 +783,11 @@ class Game:
         return self.world.items[item_id].get("weapon") if item_id else None
 
     def _wielded_types(self):
-        return {self._weapon(i)["type"] for i in self.equipment.values() if i}
+        return {self._weapon(i)["type"] for i in self.equipment.values() if self._weapon(i)}
+
+    def _shield(self, item_id):
+        """是不是盾牌（物品带 shield 字段就算，内容可以是空的）。"""
+        return bool(item_id) and "shield" in self.world.items[item_id]
 
     def _current_stance(self):
         return self.skill_trees.stance(self.stance) if self.stance else None
@@ -856,11 +863,13 @@ class Game:
         if self.world.wear_candidates(item_id):
             before = self.load_level()  # 换背包会改变减重率
             return self._wear(item_id) + self._load_change_note(before)
+        if item_id in self.equipment.values():
+            return f"你已经拿着{name}了。"
+        if self._shield(item_id):
+            return self._equip_shield(item_id)
         weapon = self._weapon(item_id)
         if not weapon:
             return f"{name}没法装备。"
-        if item_id in self.equipment.values():
-            return f"你已经拿着{name}了。"
 
         two_handed = weapon.get("hands", 1) == 2
         main = self.equipment["main_hand"]
@@ -881,6 +890,19 @@ class Game:
             self.equipment["main_hand"], where = item_id, "主手"
 
         text = f"你把{name}拿在{where}。"
+        if put_away:
+            text = "你收起了" + "、".join(self.world.items[i]["name"] for i in put_away) + "，" + text
+        return text + self._check_stance()
+
+    def _equip_shield(self, item_id):
+        """盾牌固定拿在副手；原来副手的东西收起来，拿着双手武器的话也要放下。"""
+        main, off = self.equipment["main_hand"], self.equipment["off_hand"]
+        put_away = {off} if off else set()
+        if main and main == off:  # 双手武器
+            put_away = {main}
+            self.equipment["main_hand"] = None
+        self.equipment["off_hand"] = item_id
+        text = f"你把{self.world.items[item_id]['name']}拿在副手。"
         if put_away:
             text = "你收起了" + "、".join(self.world.items[i]["name"] for i in put_away) + "，" + text
         return text + self._check_stance()
@@ -951,6 +973,8 @@ class Game:
     def grip_style(self):
         """武器持握方式（stats.GRIPS 的 id）：徒手、单手（另一只手空着）、双持、双手。持盾等盾牌做出来后再加。"""
         main, off = self.equipment["main_hand"], self.equipment["off_hand"]
+        if self._shield(off):
+            return "shield"
         if not main and not off:
             return "unarmed"
         if main and main == off:
@@ -990,6 +1014,12 @@ class Game:
         names = "、".join(name for name, _ in self.passive_effects("offhand_attack_ap_percent"))
         return f"（主手攻击后副手追击 {cost}，{names}）"
 
+    def blocks_per_turn(self):
+        """持盾时每回合能格挡几次（被动技能可以增加）；没拿盾是 0。"""
+        if self.grip_style() != "shield":
+            return 0
+        return stats.BLOCKS_PER_TURN + sum(value for _, value in self.passive_effects("extra_blocks"))
+
     def armor_ignore(self):
         """攻击时无视的护甲值（被动技能相加）。"""
         return sum(value for _, value in self.passive_effects("armor_ignore"))
@@ -1008,7 +1038,7 @@ class Game:
         if main and main == off:
             held = [("双手", main)]
         else:
-            held = [(hand, i) for hand, i in (("主手", main), ("副手", off)) if i]
+            held = [(hand, i) for hand, i in (("主手", main), ("副手", off)) if self._weapon(i)]
         if not held:
             held = [("徒手", None)]
         summary = []
@@ -1136,6 +1166,32 @@ class Game:
             steps.append(f"护甲 −{armor}")
         damage = stats.final_damage(roll.total, modifiers, effective_armor, crit)
         return "，".join(steps) + f" → 造成 {damage} 点伤害", damage
+
+    def cmd_defend_test(self, arg):
+        """试受击：让一个敌人打你一次，看闪避、格挡、护甲的效果（不会真的扣你的生命）。"""
+        if not self.character:
+            return "还没有创建角色。"
+        enemy = self._parse_enemy(arg) if arg else None
+        if not enemy:
+            names = "、".join(t["name"] for t in self.enemies.templates.values())
+            return f"用法：试受击 敌人 等阶，例如：试受击 壮尸 精英（已有的敌人：{names}）"
+        c = self.character
+        result = self.dice.attack(enemy.accuracy(), self.dodge(), enemy.crit_range())
+        lines = [f"{enemy.name}用{enemy.attack['name']}攻击你（你的闪避 {self.dodge():g}、护甲 {self.armor_total()}）：",
+                 result.text]
+        if result.hit and self.blocks_per_turn():
+            block = self.dice.block(stats.block_modifier(c.attributes), result.total)
+            lines.append(block.text + f"（每回合可格挡 {self.blocks_per_turn()} 次）")
+            if block.success:
+                return "\n".join(lines + ["（测试，不会真的扣你的生命）"])
+        if result.hit:
+            weapon = {"name": enemy.attack["name"], "damage": enemy.attack["damage"],
+                      "damage_modifiers": enemy.damage_modifiers()}
+            text, damage = self._roll_damage(weapon, self.armor_total(), result.crit)
+            hp_max = stats.max_hp(c.attributes, c.level)
+            lines += [text, f"你的生命 {c.hp} → {max(0, c.hp - damage)}/{hp_max}"]
+        lines.append("（测试，不会真的扣你的生命）")
+        return "\n".join(lines)
 
     def cmd_roll(self, arg):
         roll = self.dice.roll(arg or "1d20")
@@ -1378,6 +1434,7 @@ class Game:
             "  试攻击 <闪避> <护甲>       用手上的武器试一次攻击（命中 + 伤害），例如：试攻击 15 3\n"
             "  试攻击 <敌人> <等阶>       对敌人试一次攻击，例如：试攻击 僵尸 精英\n"
             "  敌人 <名字> <等阶>         随机生成一个敌人看看资料，例如：敌人 疾尸 精英\n"
+            "  试受击 <敌人> <等阶>       让敌人打你一次，看闪避 / 格挡 / 护甲（不扣血），例如：试受击 壮尸\n"
             "  等待 / wait             原地等一回合（战斗外 1 分钟，也算生命恢复的回合）\n"
             "  休息 <时长>             恢复体力并推进时间，例如：休息 30、休息 2小时（1~480 分钟）\n"
             "                          体力满了也能休息，只是时间照样过去\n"

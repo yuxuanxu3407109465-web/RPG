@@ -48,6 +48,8 @@ class SkillTrees:
             for r in s.get("requires", []):
                 if r not in skill_ids:
                     raise ValueError(f"{where}：前置技能 {r} 不存在")
+            if s.get("grip") and s["grip"] not in stats.GRIPS:
+                raise ValueError(f"{where}：持握方式要是 {'、'.join(stats.GRIPS)} 之一")
             for effect in s.get("effects", []):
                 if effect.get("type") not in stats.PASSIVE_EFFECTS:
                     raise ValueError(f"{where}：效果类型要是 {'、'.join(stats.PASSIVE_EFFECTS)} 之一")
@@ -176,6 +178,8 @@ def _format_skill(character, skill, tree, trees, options, weapon_types):
         status = "[可学习]" if not unmet else "[需要 " + "、".join(unmet) + "]"
     kind = "【主动】" if skill.get("type") == "active" else ""
     weapon = f"（需要手持{weapon_types[skill['weapon_type']]}武器）" if skill.get("weapon_type") else ""
+    if skill.get("grip"):
+        weapon += f"（需要{stats.GRIPS[skill['grip']]}）"
     if skill.get("ap_cost"):
         weapon += f"（消耗 {skill['ap_cost']} 行动点）"
     if skill.get("cooldown"):

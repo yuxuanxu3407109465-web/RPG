@@ -89,7 +89,8 @@
         }
       },
       "items": [
-        "machete"
+        "machete",
+        "riot_shield"
       ],
       "npcs": [],
       "blocked": "墙壁",
@@ -280,6 +281,17 @@
         "class": "light",
         "value": 2
       }
+    },
+    "riot_shield": {
+      "name": "防暴盾牌",
+      "aliases": [
+        "盾牌",
+        "盾",
+        "shield"
+      ],
+      "description": "一面透明的聚碳酸酯防暴盾，边缘有几道深深的抓痕。",
+      "weight": 4,
+      "shield": {}
     }
   },
   "npcs": {
