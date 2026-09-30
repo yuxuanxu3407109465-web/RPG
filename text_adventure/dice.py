@@ -1,22 +1,16 @@
-"""抛骰系统：掷任意骰子（如 2d6+1），以及 D20 / D100 两种检定规则。
+"""抛骰系统：掷任意骰子（如 2d6+1），以及统一用 d20 的攻击判定和属性检定。
 
-检定统一用"成功率"（百分比）来调用，具体用哪种骰子由 data/rules.json 决定：
-  D100：掷 1~100，小于等于成功率即成功
-  D20 ：成功率换算成调整值，掷 1d20 + 调整值，大于等于难度 11 即成功
-两种方式的成功概率一致（D20 以 5% 为一档），只是手感和显示不同。
-两种方式都有大成功和大失败：无论成功率多少，大成功必定成功，大失败必定失败。
+攻击：d20 + 精准 > 闪避 即命中；命中且落在武器暴击范围内时再掷一次确认暴击。
+检定：d20 + 属性修正（属性值 × 1.5）> 难度 即成功。
+两者都是掷出 20 必定成功、掷出 1 必定失败。
 """
 
-import json
-import math
 import random
 import re
 from dataclasses import dataclass
-from pathlib import Path
 
 DICE_PATTERN = re.compile(r"^(\d*)d(\d+)([+-]\d+)?$")
 CRIT_RANGE_PATTERN = re.compile(r"^(\d+)(?:-20)?$")  # 暴击范围："19-20" 或 "20"
-D20_BASE_DC = 11  # 调整值为 0 时的难度，正好是 50%
 
 
 @dataclass
@@ -41,7 +35,7 @@ class Roll:
 @dataclass
 class CheckResult:
     success: bool
-    critical: bool  # 大成功或大失败
+    critical: bool  # 掷出 20 或 1
     text: str  # 给玩家看的掷骰过程
 
 
@@ -57,12 +51,13 @@ def crit_min(crit_range):
     return int(CRIT_RANGE_PATTERN.match(crit_range).group(1))
 
 
+def format_number(value):
+    """16.0 显示成 16，16.5 保持 16.5。"""
+    return f"{value:g}"
+
+
 class Dice:
-    def __init__(self, rules_path, rng=None):
-        rules = json.loads(Path(rules_path).read_text(encoding="utf-8"))["dice"]
-        self.system = rules["system"]
-        self.d100_crit_success = rules["d100_critical_success_max"]
-        self.d100_crit_fail = rules["d100_critical_failure_min"]
+    def __init__(self, rng=None):
         self.rng = rng or random.Random()
 
     def roll(self, expression):
@@ -79,15 +74,22 @@ class Dice:
         rolls = [self.rng.randint(1, sides) for _ in range(count)]
         return Roll(expression, rolls, modifier)
 
-    def check(self, chance):
-        """按当前骰子系统做一次检定，chance 是成功率（%）。"""
-        if self.system == "d20":
-            return self._check_d20(chance)
-        return self._check_d100(chance)
+    def check(self, modifier, difficulty, label="修正"):
+        """属性检定：d20 + 修正 > 难度 即成功；掷出 20 必定成功，掷出 1 必定失败。"""
+        value = self.rng.randint(1, 20)
+        if value == 20:
+            return CheckResult(True, True, "🎲 d20 = 20 → 必定成功")
+        if value == 1:
+            return CheckResult(False, True, "🎲 d20 = 1 → 必定失败")
+        total = value + modifier
+        success = total > difficulty
+        sign = ">" if success else "≤"
+        text = (f"🎲 d20 = {value} + {label} {format_number(modifier)} = {format_number(total)} "
+                f"{sign} 难度 {format_number(difficulty)} → {'成功' if success else '失败'}")
+        return CheckResult(success, False, text)
 
     def attack(self, accuracy, dodge, crit_range="20"):
-        """攻击判定（不受骰子系统设置影响，固定用 d20）：d20 + 精准 > 闪避 即命中。
-        掷出 20 必定命中，掷出 1 必定落空。
+        """攻击判定：d20 + 精准 > 闪避 即命中。掷出 20 必定命中，掷出 1 必定落空。
         命中且掷出的点数落在武器的暴击范围内（例如 19-20）时，再掷一次确认：
         第二次也命中就是暴击，没命中就按普通命中处理。"""
         value, hit, text = self._attack_roll(accuracy, dodge)
@@ -111,36 +113,3 @@ class Dice:
         text = (f"🎲 d20 = {value} + 精准 {format_number(accuracy)} = {format_number(total)} "
                 f"{sign} 闪避 {format_number(dodge)} → {'命中' if hit else '未命中'}")
         return value, hit, text
-
-    def _check_d100(self, chance):
-        value = self.rng.randint(1, 100)
-        if value <= self.d100_crit_success:
-            return CheckResult(True, True, f"🎲 d100 = {value} → 大成功！")
-        if value >= self.d100_crit_fail:
-            return CheckResult(False, True, f"🎲 d100 = {value} → 大失败！")
-        success = value <= chance
-        sign = "≤" if success else ">"
-        return CheckResult(success, False, f"🎲 d100 = {value} {sign} {chance} → {'成功' if success else '失败'}")
-
-    def _check_d20(self, chance):
-        modifier = d20_modifier(chance)
-        value = self.rng.randint(1, 20)
-        if value == 20:
-            return CheckResult(True, True, "🎲 d20 = 20 → 大成功！")
-        if value == 1:
-            return CheckResult(False, True, "🎲 d20 = 1 → 大失败！")
-        total = value + modifier
-        success = total >= D20_BASE_DC
-        sign = "≥" if success else "<"
-        text = f"🎲 d20 = {value}，{modifier:+d} = {total} {sign} {D20_BASE_DC} → {'成功' if success else '失败'}"
-        return CheckResult(success, False, text)
-
-
-def format_number(value):
-    """16.0 显示成 16，16.5 保持 16.5。"""
-    return f"{value:g}"
-
-
-def d20_modifier(chance):
-    """成功率换算成 D20 调整值：50% 为 +0，每 5% 为 1 点（四舍五入）。"""
-    return math.floor((chance - 50) / 5 + 0.5)

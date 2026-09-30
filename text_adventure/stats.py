@@ -160,8 +160,17 @@ def skill_points_per_level(a):
 
 
 def companion_limit(a):
-    """最多能带几个同伴。"""
-    return a["charisma"] // 3
+    """最多能带几个同伴：魅力每比 3 多 2 点多带 1 个（3 → 0、5 → 1、7 → 2、9 → 3）。"""
+    return max(0, (a["charisma"] - 3) // 2)
+
+
+CHECK_MODIFIER_MULTIPLIER = 1.5  # 属性检定的修正值 = 属性值 × 1.5
+
+
+def check_modifier(a, attribute_id):
+    """属性检定修正值，可能带 .5（例如敏捷 7 → 10.5）。"""
+    value = a[attribute_id] * CHECK_MODIFIER_MULTIPLIER
+    return int(value) if value == int(value) else value
 
 
 # ---------- 体力与时间 ----------

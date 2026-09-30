@@ -245,7 +245,7 @@ class Session:
         self.world = World(BASE_DIR / "data" / "world.json")
         self.options = CharacterOptions(BASE_DIR / "data" / "character_options.json")
         self.skill_trees = SkillTrees(BASE_DIR / "data" / "skill_trees.json")
-        self.dice = Dice(BASE_DIR / "data" / "rules.json")
+        self.dice = Dice()
         self.game = Game(
             self.world, self.options, self.skill_trees, self.dice,
             BASE_DIR / "saves" / "save.json",

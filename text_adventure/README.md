@@ -79,7 +79,6 @@ python3 main.py
 | `data/world.json` | 地点、物品、NPC、对话、地图位置 |
 | `data/character_options.json` | 属性、背景、预设同伴、成长数值 |
 | `data/skill_trees.json` | 技能树、分支、技能、姿态 |
-| `data/rules.json` | 骰子系统设置 |
 
 大部分游戏内容都写在 `data/` 里的 JSON 文件中，加地点、物品、技能通常不需要改代码。
 

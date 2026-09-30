@@ -3,6 +3,7 @@
 import json
 import math
 import os
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -208,7 +209,6 @@ class Game:
             (["掷骰", "roll"], self.cmd_roll),
             (["检定", "check"], self.cmd_check),
             (["试攻击", "attack test"], self.cmd_attack_test),
-            (["骰子系统", "dice"], self.cmd_dice_system),
             (["使用", "吃", "喝", "use"], self.cmd_use),
             (["休息", "睡", "rest"], self.cmd_rest),
             (["说话", "交谈", "对话", "talk"], self.cmd_talk),
@@ -1003,26 +1003,29 @@ class Game:
             return "格式不对。例如：掷骰 1d20、掷骰 2d6+1、掷骰 d100"
         return roll.describe()
 
-    def cmd_check(self, arg):
-        if not arg:
-            return "用法：检定 成功率，例如：检定 70（攻击命中请用“试攻击”）"
-        if not arg.isdigit():
-            return "请输入成功率数字，例如：检定 70（攻击命中请用“试攻击”）"
-        chance = int(arg)
-        result = self.dice.check(chance)
-        title = f"检定（成功率 {chance}%）"
-        if self.dice.system == "d20":
-            title += f"，D20 调整值 {dice_rules.d20_modifier(chance):+d}"
-        return f"{title}\n{result.text}"
+    def attribute_check(self, attribute_id, difficulty):
+        """属性检定：d20 + 属性 × 1.5 > 难度。以后开锁、说服这类检定都调用这个。"""
+        modifier = stats.check_modifier(self.character.attributes, attribute_id)
+        name = self.options.attribute_name(attribute_id)
+        return self.dice.check(modifier, difficulty, f"{name}修正")
 
-    def cmd_dice_system(self, arg):
-        if not arg:
-            return (f"当前骰子系统：{self.dice.system.upper()}。"
-                    "输入“骰子系统 d20”或“骰子系统 d100”切换（只在本次游戏中生效，默认值在 data/rules.json）")
-        if arg not in ("d20", "d100"):
-            return "只能切换成 d20 或 d100。"
-        self.dice.system = arg
-        return f"已切换为 {arg.upper()} 检定。"
+    def cmd_check(self, arg):
+        """检定 属性 难度：手动做一次属性检定（测试用）。"""
+        usage = "用法：检定 属性 难度，例如：检定 敏捷 15"
+        if not self.character:
+            return "还没有创建角色。"
+        match = re.match(r"^(\D+?)\s*(\d+)$", arg)
+        if not match:
+            return usage
+        name, difficulty = match.group(1).strip(), int(match.group(2))
+        attribute = next((a for a in self.options.attributes if name in (a["name"], a["id"])), None)
+        if not attribute:
+            return "没有这个属性。可以检定：" + "、".join(a["name"] for a in self.options.attributes)
+        a = self.character.attributes
+        result = self.attribute_check(attribute["id"], difficulty)
+        return (f"{attribute['name']}检定（修正 {stats.check_modifier(a, attribute['id']):g} = "
+                f"{attribute['name']} {a[attribute['id']]} × {stats.CHECK_MODIFIER_MULTIPLIER:g}），"
+                f"难度 {difficulty}：\n{result.text}")
 
     def cmd_talk(self, arg):
         npcs = self._room().get("npcs", [])
@@ -1225,9 +1228,8 @@ class Game:
             "  装备 <物品> / 卸下 <物品>  拿起或收起武器，穿戴或取下护甲、饰品、披风、背包\n"
             "  姿态 / 姿态 <名字>        查看或切换姿态，“姿态 取消”解除\n"
             "  掷骰 <骰子>              掷骰，例如：掷骰 2d6+1\n"
-            "  检定 <成功率>             做一次非战斗检定，例如：检定 70\n"
+            "  检定 <属性> <难度>        做一次属性检定（d20 + 属性×1.5 > 难度），例如：检定 敏捷 15\n"
             "  试攻击 <闪避> <护甲>       用手上的武器试一次攻击（命中 + 伤害），例如：试攻击 15 3\n"
-            "  骰子系统 <d20/d100>       查看或切换检定用的骰子\n"
             "  休息 <时长>             恢复体力并推进时间，例如：休息 30、休息 2小时（1~480 分钟）\n"
             "                          体力满了也能休息，只是时间照样过去\n"
             "  说话 <人>               和 NPC 交谈\n"

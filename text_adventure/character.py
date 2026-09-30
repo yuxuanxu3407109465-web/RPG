@@ -137,6 +137,8 @@ def format_sheet(character, options, items, carried_weight=None, tree_names=None
 
     lines.append("\n【属性】")
     lines.append("  " + "   ".join(f"{attr['name']} {a[attr['id']]}" for attr in options.attributes))
+    lines.append("  检定修正：" + "   ".join(
+        f"{attr['name']} +{stats.check_modifier(a, attr['id']):g}" for attr in options.attributes))
 
     capacity = stats.carry_capacity(a)
     weight = f"{carried_weight:g}/{capacity}" if carried_weight is not None else f"{capacity}"
@@ -307,7 +309,7 @@ class CharacterCreator:
 
     def _companions(self, limit):
         if limit == 0:
-            self.ask.print("\n【同伴】你的魅力太低（至少需要 3），没有人愿意跟你一起行动。")
+            self.ask.print("\n【同伴】你的魅力太低（至少需要 5），没有人愿意跟你一起行动。")
             return []
         self.ask.print(f"\n【同伴】要带一个同伴一起行动吗？（你的同伴上限：{limit}）")
         presets = self.options.companions

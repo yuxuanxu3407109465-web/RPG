@@ -29,7 +29,7 @@ def main():
     world = World(BASE_DIR / "data" / "world.json")
     options = CharacterOptions(BASE_DIR / "data" / "character_options.json")
     skill_trees = SkillTrees(BASE_DIR / "data" / "skill_trees.json")
-    dice = Dice(BASE_DIR / "data" / "rules.json")
+    dice = Dice()
     game = Game(world, options, skill_trees, dice, BASE_DIR / "saves" / "save.json")
     ask = Prompter()
 
