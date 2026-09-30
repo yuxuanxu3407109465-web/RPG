@@ -302,6 +302,28 @@ def attack_penalty(character):
 
 
 
+# ---------- 锐器技能的数值 ----------
+
+BLEED_DAMAGE = 4  # 每层流血每回合的伤害
+BLEED_TURNS = 3
+BLEED_STACKS_PER_HIT = 2  # 放血一次施加的层数
+
+
+def blade_armor_ignore(a):
+    """放血、卸刃无视的护甲点数 = 4 + 敏捷 ÷ 4。"""
+    return 4 + a["agility"] // 4
+
+
+def bleed_max_stacks(a):
+    """流血最多叠几层 = 施加者的敏捷。"""
+    return a["agility"]
+
+
+def sidestep_distance(a):
+    """撤步后撤的距离（米）= 4 + 敏捷 ÷ 4。"""
+    return 4 + a["agility"] // 4
+
+
 def psionic_heal(a, level):
     """灵愈的回复量 = 5 +（体质 ÷ 4）× 等级，向下取整。"""
     return 5 + (a["constitution"] // 4) * level
