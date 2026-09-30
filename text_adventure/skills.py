@@ -4,6 +4,8 @@
 技能用 branch 字段指定所属分支；不写 branch 的技能属于整棵树通用。
 
 技能的 type 为 active 时是主动技能（战斗中使用），不写就是被动技能。
+cooldown 是冷却回合数（算上使用的那一回合）。
+所有技能在没有特别声明的情况下，一律视为用主手武器发动。
 weapon_type 表示使用这个技能需要手持的武器类型。
 
 每个技能可以设置这些解锁条件（都可省略）：
@@ -173,6 +175,8 @@ def _format_skill(character, skill, tree, trees, options, weapon_types):
         status = "[可学习]" if not unmet else "[需要 " + "、".join(unmet) + "]"
     kind = "【主动】" if skill.get("type") == "active" else ""
     weapon = f"（需要手持{weapon_types[skill['weapon_type']]}武器）" if skill.get("weapon_type") else ""
+    if skill.get("cooldown"):
+        weapon += f"（冷却 {skill['cooldown']} 回合，含使用当回合）"
     lines = [f"  {kind}{skill['name']}  {skill.get('cost', 1)} 点  {status}", f"    {skill['description']}{weapon}"]
     lines += [f"    {line}" for line in skill_details(character, skill, trees, options)]
     return "\n".join(lines)
