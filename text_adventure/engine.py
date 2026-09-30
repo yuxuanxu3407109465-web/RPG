@@ -780,8 +780,7 @@ class Game:
                 "accuracy": total,
                 "stance_bonus": total - base,
                 "damage": self._weapon(item_id)["damage"] if item_id else stats.UNARMED_DAMAGE,
-                "crit_range": (self._weapon(item_id).get("crit_range") if item_id else None)
-                or stats.DEFAULT_CRIT_RANGE,
+                "crit_range": stats.crit_range(weapon_type, self._weapon(item_id)),
                 "damage_modifiers": self.damage_modifiers(weapon_type),
             })
         return summary

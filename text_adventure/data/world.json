@@ -237,8 +237,7 @@
       "weapon": {
         "type": "long_blade",
         "hands": 1,
-        "damage": "1d8",
-        "crit_range": "19-20"
+        "damage": "1d8"
       }
     }
   },

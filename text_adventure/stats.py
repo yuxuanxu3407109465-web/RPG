@@ -48,7 +48,22 @@ MELEE_WEAPON_TYPES = {"long_blade", "short_blade", "blunt", UNARMED}
 
 
 CRIT_DAMAGE_BONUS = 50  # 暴击额外伤害（%），在其他修正之后结算
-DEFAULT_CRIT_RANGE = "20"  # 武器没写暴击范围时只有掷出 20 才算
+# 各类武器的默认暴击范围；单件武器可以在 world.json 里用 crit_range 覆盖
+# （例如弯刀、反曲刀这类宽暴击范围的锐器写 "18-20"，基础伤害相应降到 1d6）
+CRIT_RANGES = {
+    "long_blade": "19-20",
+    "short_blade": "19-20",
+    "blunt": "20",
+    UNARMED: "20",  # 徒手按钝器算
+}
+DEFAULT_CRIT_RANGE = "20"  # 没列出的类型（例如枪械，尚未设计）
+
+
+def crit_range(weapon_type, weapon=None):
+    """武器的暴击范围：单件武器写了就用它的，否则按武器类型。"""
+    if weapon and weapon.get("crit_range"):
+        return weapon["crit_range"]
+    return CRIT_RANGES.get(weapon_type, DEFAULT_CRIT_RANGE)
 
 
 def damage_multiplier(modifiers, crit=False):
