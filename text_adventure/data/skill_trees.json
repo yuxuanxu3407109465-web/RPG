@@ -20,17 +20,7 @@
       "id": "blunt",
       "name": "钝器",
       "attribute": "strength",
-      "description": "棍棒、撬棍、锤子等沉重的近战武器。",
-      "branches": [
-        {
-          "id": "shield",
-          "name": "持盾"
-        },
-        {
-          "id": "two_handed",
-          "name": "双手"
-        }
-      ]
+      "description": "棍棒、撬棍、锤子等沉重的近战武器。"
     },
     {
       "id": "firearms",
@@ -89,6 +79,30 @@
       "name": "制造",
       "attribute": "intelligence",
       "description": "修理、改装、制作工具和武器。"
+    },
+    {
+      "id": "weapon_mastery",
+      "name": "武器掌握",
+      "attribute": null,
+      "description": "不同的武器持握方式：单手（另一只手空着）、双持、双手、持盾，各有专门的增益。",
+      "branches": [
+        {
+          "id": "one_hand",
+          "name": "单手"
+        },
+        {
+          "id": "dual_wield",
+          "name": "双持"
+        },
+        {
+          "id": "two_hand",
+          "name": "双手"
+        },
+        {
+          "id": "shield",
+          "name": "持盾"
+        }
+      ]
     },
     {
       "id": "psionics",

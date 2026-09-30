@@ -487,6 +487,7 @@ class Session:
                 for slot, i in game.equipment.items()
             },
             "stance": stance["name"] if stance else None,
+            "grip": game.grip_style(),
             "gear": [
                 {"slot": info["name"], "name": world.items[game.worn[slot]]["name"] if game.worn[slot] else None}
                 for slot, info in world.gear_slots.items()

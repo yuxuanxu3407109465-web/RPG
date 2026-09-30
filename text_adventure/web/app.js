@@ -221,7 +221,7 @@
     sk.trees.forEach(function (tree) {
       html += '<div class="tree-block">' +
         '<div class="tree-title"><h3>' + esc(tree.name) + '</h3>' +
-        '<span class="tag">' + esc(tree.attribute || '特殊') + '</span>' +
+        (tree.attribute || tree.special ? '<span class="tag">' + esc(tree.attribute || '特殊') + '</span>' : '') +
         (tree.unlocked ? '' : '<span class="tag">' + esc(tree.locked_message) + '</span>') +
         '</div>' +
         '<p class="tree-desc">' + esc(tree.description) + '</p>';
@@ -773,6 +773,7 @@
 
     if (state.equipment) {
       html += '<div class="section"><h4>' + icon('stance') + '装备</h4>';
+      html += '<div class="kv"><span class="k">持握</span><span class="v">' + esc(state.grip || '徒手') + '</span></div>';
       html += '<div class="kv"><span class="k">主手</span><span class="v">' + esc(state.equipment.main_hand || '空') + '</span></div>';
       html += '<div class="kv"><span class="k">副手</span><span class="v">' + esc(state.equipment.off_hand || '空') + '</span></div>';
       (state.gear || []).forEach(function (g) {

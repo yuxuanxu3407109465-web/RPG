@@ -743,7 +743,8 @@ class Game:
         conditions = self.conditions()
         active = "、".join(f"{x['name']}（{x['effect']}）" for x in conditions) if conditions else "无"
         return (sheet
-                + f"\n\n【装备与姿态】\n{weapons}\n{armor_line}\n{gear_line}\n  姿态：{stance['name'] if stance else '无'}"
+                + f"\n\n【装备与姿态】\n  持握：{self.grip_style()}\n{weapons}\n{armor_line}\n{gear_line}"
+                + f"\n  姿态：{stance['name'] if stance else '无'}"
                 + f"\n  行动点消耗：普通攻击 {stats.ATTACK_AP_COST}、移动 1 格 {self._move_cost_text()}、"
                   f"使用物品 {stats.USE_ITEM_AP_COST}"
                 + f"\n\n【时间】{self.clock_text()}\n【异常状态】{active}")
@@ -941,6 +942,17 @@ class Game:
         """闪避（含姿态加成）。"""
         bonuses = stances.stance_bonuses(self.character, self._current_stance(), self.skill_trees)
         return stats.dodge(self.character.attributes) + bonuses.get("dodge", 0)
+
+    def grip_style(self):
+        """武器持握方式：徒手、单手（另一只手空着）、双持、双手。持盾等盾牌做出来后再加。"""
+        main, off = self.equipment["main_hand"], self.equipment["off_hand"]
+        if not main and not off:
+            return "徒手"
+        if main and main == off:
+            return "双手"
+        if main and off:
+            return "双持"
+        return "单手"
 
     def _move_cost_text(self):
         """战斗中移动一格的行动点，超重翻倍，严重超重无法移动。"""

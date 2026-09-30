@@ -113,7 +113,9 @@ def learn(character, skill, trees, options):
 def _tree_title(tree, options):
     if tree.get("attribute"):
         return f"{tree['name']}（{options.attribute_name(tree['attribute'])}）"
-    return f"{tree['name']}（特殊）"
+    if tree.get("special"):
+        return f"{tree['name']}（特殊）"
+    return tree["name"]  # 不对应属性、也不特殊（例如武器掌握）
 
 
 def format_overview(character, trees, options):
