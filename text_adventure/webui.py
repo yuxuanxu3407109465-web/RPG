@@ -468,6 +468,8 @@ class Session:
                 "ap_per_turn": stats.ap_per_turn(c.attributes),
                 "ap_cap": stats.ap_cap(c.attributes),
                 "attack_cost": stats.ATTACK_AP_COST,
+                "move_cost": stats.MOVE_AP_COST,
+                "item_cost": stats.USE_ITEM_AP_COST,
                 "dodge": game.dodge(),
                 "initiative": stats.initiative(c.attributes),
                 "weapons": game.weapon_summary(),

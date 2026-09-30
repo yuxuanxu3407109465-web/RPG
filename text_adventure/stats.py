@@ -24,6 +24,9 @@ def melee_damage_bonus(a):
 AP_PER_AGILITY = 2  # 每回合获得的行动点 = 敏捷 × 2
 AP_CAP_MULTIPLIER = 2  # 没用完的行动点留到下回合，最多存到每回合获得量的 2 倍
 ATTACK_AP_COST = 6  # 一次普通攻击消耗的行动点
+MOVE_AP_COST = 1  # 战斗中每移动一格消耗的行动点
+USE_ITEM_AP_COST = 3  # 战斗中使用一次物品（例如用绷带包扎）消耗的行动点
+UNARMED_DAMAGE = None  # 徒手伤害骰，尚未确定
 DODGE_MULTIPLIER = 1.5
 UNARMED = "unarmed"  # 没拿武器时按徒手（武术）算
 
@@ -35,6 +38,16 @@ WEAPON_ATTRIBUTES = {
     "firearm": "perception",
     UNARMED: "constitution",
 }
+
+
+# 近战武器：吃力量伤害修正；枪械不吃
+MELEE_WEAPON_TYPES = {"long_blade", "short_blade", "blunt", UNARMED}
+
+
+def final_damage(raw, modifier_percent, armor):
+    """最终伤害：骰出的伤害 ×（1 + 各项修正之和），向下取整，再减去护甲值，最低为 0。"""
+    scaled = raw * (100 + modifier_percent) // 100
+    return max(0, scaled - armor)
 
 
 def ap_per_turn(a):

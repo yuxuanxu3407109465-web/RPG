@@ -132,6 +132,10 @@ class World:
         self.npcs = data["npcs"]
         self.map_areas = data.get("map_areas", [])
         self.weapon_types = data.get("weapon_types", {})  # 武器类型 id -> 显示名
+        for item_id, item in self.items.items():
+            weapon = item.get("weapon")
+            if weapon and not dice_rules.DICE_PATTERN.match(weapon.get("damage", "")):
+                raise ValueError(f"world.json 里的武器 {item_id}：伤害骰要写成 1d8、2d6 这样的格式")
 
 
 class Game:
@@ -591,9 +595,15 @@ class Game:
         sheet = format_sheet(
             self.character, self.options, self.world.items, self._carried_weight(), tree_names, bonuses
         )
+        def damage_text(w):
+            if not w["damage"]:
+                return "伤害未定"
+            total = sum(value for _, value in w["damage_modifiers"])
+            return f"伤害 {w['damage']}" + (f" {total:+d}%" if total else "")
+
         weapons = "\n".join(
             f"  {w['hand']} {w['name']}（{w['type']}）：精准 {w['accuracy']:g}（{w['attribute']}"
-            + (f"，含姿态 {w['stance_bonus']:+g}" if w["stance_bonus"] else "") + "）"
+            + (f"，含姿态 {w['stance_bonus']:+g}" if w["stance_bonus"] else "") + f"），{damage_text(w)}"
             for w in self.weapon_summary()
         )
         stance = self._current_stance()
@@ -601,7 +611,8 @@ class Game:
         active = "、".join(f"{x['name']}（{x['effect']}）" for x in conditions) if conditions else "无"
         return (sheet
                 + f"\n\n【装备与姿态】\n{weapons}\n  姿态：{stance['name'] if stance else '无'}"
-                + f"\n  普通攻击消耗 {stats.ATTACK_AP_COST} 行动点"
+                + f"\n  行动点消耗：普通攻击 {stats.ATTACK_AP_COST}、移动 1 格 {stats.MOVE_AP_COST}、"
+                  f"使用物品 {stats.USE_ITEM_AP_COST}"
                 + f"\n\n【时间】{self.clock_text()}\n【异常状态】{active}")
 
     def cmd_skills(self, arg):
@@ -764,22 +775,63 @@ class Game:
                 "attribute": self.options.attribute_name(stats.WEAPON_ATTRIBUTES[weapon_type]),
                 "accuracy": total,
                 "stance_bonus": total - base,
+                "damage": self._weapon(item_id)["damage"] if item_id else stats.UNARMED_DAMAGE,
+                "damage_modifiers": self.damage_modifiers(weapon_type),
             })
         return summary
+
+    def damage_modifiers(self, weapon_type):
+        """用某类武器攻击时的伤害修正（%），每项一个 (来源, 数值)，最后全部相加。"""
+        c = self.character
+        mods = []
+        if weapon_type in stats.MELEE_WEAPON_TYPES:
+            mods.append(("力量", stats.melee_damage_bonus(c.attributes)))
+        stance = self._current_stance()
+        if stance and stance["weapon_type"] == weapon_type:
+            bonus = stances.stance_bonuses(c, stance, self.skill_trees).get("melee_damage_bonus", 0)
+            mods.append((f"{stance['name']}姿态", bonus))
+        mods.append(("力竭", stats.attack_penalty(c)))
+        return [(name, value) for name, value in mods if value]
 
     def cmd_attack_test(self, arg):
         """试攻击：用主手武器（没拿就徒手）掷一次命中判定，还没有真正的敌人。"""
         if not self.character:
             return "还没有创建角色。"
+        usage = "用法：试攻击 目标闪避 目标护甲（例如：试攻击 15 3），不写闪避就用你自己的，不写护甲就是 0"
+        parts = arg.split()
         try:
-            target = float(arg) if arg else self.dodge()
+            target = float(parts[0]) if parts else self.dodge()
+            armor = int(parts[1]) if len(parts) > 1 else 0
         except ValueError:
-            return "用法：试攻击 目标闪避（例如：试攻击 15），不写就用你自己的闪避"
+            return usage
+        if len(parts) > 2:
+            return usage
         weapon = self.weapon_summary()[0]
         result = self.dice.attack(weapon["accuracy"], target)
-        return (f"用{weapon['name']}试攻击（{weapon['type']}，精准看{weapon['attribute']}），"
-                f"目标闪避 {dice_rules.format_number(target)}：\n{result.text}\n"
-                f"（一次普通攻击消耗 {stats.ATTACK_AP_COST} 行动点）")
+        lines = [
+            f"用{weapon['name']}试攻击（{weapon['type']}，精准看{weapon['attribute']}），"
+            f"目标闪避 {dice_rules.format_number(target)}、护甲 {armor}：",
+            result.text,
+        ]
+        if result.success:
+            lines.append(self._roll_damage(weapon, armor))
+        lines.append(f"（一次普通攻击消耗 {stats.ATTACK_AP_COST} 行动点）")
+        return "\n".join(lines)
+
+    def _roll_damage(self, weapon, armor):
+        """掷伤害并写出计算过程：骰子 → 修正 → 护甲。"""
+        if not weapon["damage"]:
+            return f"{weapon['name']}的伤害还没有定。"
+        roll = self.dice.roll(weapon["damage"])
+        total_mod = sum(value for _, value in weapon["damage_modifiers"])
+        damage = stats.final_damage(roll.total, total_mod, armor)
+        text = roll.describe()
+        if total_mod:
+            detail = "、".join(f"{name} {value:+d}%" for name, value in weapon["damage_modifiers"])
+            text += f"，修正 {total_mod:+d}%（{detail}）→ {roll.total * (100 + total_mod) // 100}"
+        if armor:
+            text += f"，护甲 −{armor}"
+        return text + f" → 造成 {damage} 点伤害"
 
     def cmd_roll(self, arg):
         roll = self.dice.roll(arg or "1d20")
@@ -991,7 +1043,7 @@ class Game:
             "  姿态 / 姿态 <名字>        查看或切换姿态，“姿态 取消”解除\n"
             "  掷骰 <骰子>              掷骰，例如：掷骰 2d6+1\n"
             "  检定 <成功率>             做一次非战斗检定，例如：检定 70\n"
-            "  试攻击 <目标闪避>          用手上的武器掷一次命中判定，例如：试攻击 15\n"
+            "  试攻击 <闪避> <护甲>       用手上的武器试一次攻击（命中 + 伤害），例如：试攻击 15 3\n"
             "  骰子系统 <d20/d100>       查看或切换检定用的骰子\n"
             "  休息 <时长>             恢复体力并推进时间，例如：休息 30、休息 2小时（1~480 分钟）\n"
             "                          体力满了也能休息，只是时间照样过去\n"

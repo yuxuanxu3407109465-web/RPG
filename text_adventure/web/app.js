@@ -734,12 +734,16 @@
       html += '<div class="kv"><span class="k">行动点</span><span class="v">每回合 ' + esc(cb.ap_per_turn) +
         '（上限 ' + esc(cb.ap_cap) + '）</span></div>';
       (cb.weapons || []).forEach(function (w) {
-        html += '<div class="kv"><span class="k">精准·' + esc(w.hand) + '</span><span class="v">' + esc(w.accuracy) +
-          '（' + esc(w.name) + '，' + esc(w.attribute) + '）</span></div>';
+        var mod = 0;
+        (w.damage_modifiers || []).forEach(function (m) { mod += m[1]; });
+        var dmg = w.damage ? w.damage + (mod ? ' ' + (mod > 0 ? '+' : '') + mod + '%' : '') : '未定';
+        html += '<div class="kv"><span class="k">' + esc(w.hand) + '·' + esc(w.name) + '</span><span class="v">精准 ' +
+          esc(w.accuracy) + ' · 伤害 ' + esc(dmg) + '</span></div>';
       });
       html += '<div class="kv"><span class="k">闪避</span><span class="v">' + esc(cb.dodge) + '</span></div>';
       html += '<div class="kv"><span class="k">先攻</span><span class="v">' + esc(cb.initiative) + '</span></div>';
-      html += '<div class="kv"><span class="k">普通攻击</span><span class="v">' + esc(cb.attack_cost) + ' 行动点</span></div>';
+      html += '<div class="kv"><span class="k">行动点消耗</span><span class="v">攻击 ' + esc(cb.attack_cost) +
+        ' · 移动 ' + esc(cb.move_cost) + '/格 · 物品 ' + esc(cb.item_cost) + '</span></div>';
       html += '</div>';
     }
 

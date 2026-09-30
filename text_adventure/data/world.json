@@ -153,7 +153,8 @@
       "weight": 3,
       "weapon": {
         "type": "blunt",
-        "hands": 1
+        "hands": 1,
+        "damage": "1d8"
       }
     },
     "canned_food": {
@@ -195,7 +196,8 @@
       "weight": 0.3,
       "weapon": {
         "type": "short_blade",
-        "hands": 1
+        "hands": 1,
+        "damage": "1d6"
       }
     },
     "energy_bar": {
@@ -234,7 +236,8 @@
       "weight": 1.2,
       "weapon": {
         "type": "long_blade",
-        "hands": 1
+        "hands": 1,
+        "damage": "1d8"
       }
     }
   },
