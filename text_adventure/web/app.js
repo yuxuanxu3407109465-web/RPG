@@ -734,9 +734,10 @@
       html += '<div class="kv"><span class="k">行动点</span><span class="v">每回合 ' + esc(cb.ap_per_turn) +
         '（上限 ' + esc(cb.ap_cap) + '）</span></div>';
       (cb.weapons || []).forEach(function (w) {
-        var mod = 0;
-        (w.damage_modifiers || []).forEach(function (m) { mod += m[1]; });
-        var dmg = w.damage ? w.damage + (mod ? ' ' + (mod > 0 ? '+' : '') + mod + '%' : '') : '未定';
+        var mult = 1;
+        (w.damage_modifiers || []).forEach(function (m) { mult *= (100 + m[1]) / 100; });
+        var dmg = w.damage ? w.damage + (mult !== 1 ? ' ×' + Number(mult.toFixed(3)) : '') +
+          '（暴击 ' + w.crit_range + '）' : '未定';
         html += '<div class="kv"><span class="k">' + esc(w.hand) + '·' + esc(w.name) + '</span><span class="v">精准 ' +
           esc(w.accuracy) + ' · 伤害 ' + esc(dmg) + '</span></div>';
       });

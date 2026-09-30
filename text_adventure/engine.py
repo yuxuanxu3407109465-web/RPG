@@ -1,6 +1,7 @@
 """文字冒险游戏引擎：负责世界数据、游戏状态和指令解析。"""
 
 import json
+import math
 import os
 import shutil
 from datetime import datetime
@@ -136,6 +137,8 @@ class World:
             weapon = item.get("weapon")
             if weapon and not dice_rules.DICE_PATTERN.match(weapon.get("damage", "")):
                 raise ValueError(f"world.json 里的武器 {item_id}：伤害骰要写成 1d8、2d6 这样的格式")
+            if weapon and not dice_rules.CRIT_RANGE_PATTERN.match(weapon.get("crit_range", "20")):
+                raise ValueError(f"world.json 里的武器 {item_id}：暴击范围要写成 19-20 或 20 这样的格式")
 
 
 class Game:
@@ -598,8 +601,9 @@ class Game:
         def damage_text(w):
             if not w["damage"]:
                 return "伤害未定"
-            total = sum(value for _, value in w["damage_modifiers"])
-            return f"伤害 {w['damage']}" + (f" {total:+d}%" if total else "")
+            multiplier = stats.damage_multiplier([value for _, value in w["damage_modifiers"]])
+            return (f"伤害 {w['damage']}" + (f" ×{float(multiplier):g}" if multiplier != 1 else "")
+                    + f"，暴击 {w['crit_range']}")
 
         weapons = "\n".join(
             f"  {w['hand']} {w['name']}（{w['type']}）：精准 {w['accuracy']:g}（{w['attribute']}"
@@ -776,6 +780,8 @@ class Game:
                 "accuracy": total,
                 "stance_bonus": total - base,
                 "damage": self._weapon(item_id)["damage"] if item_id else stats.UNARMED_DAMAGE,
+                "crit_range": (self._weapon(item_id).get("crit_range") if item_id else None)
+                or stats.DEFAULT_CRIT_RANGE,
                 "damage_modifiers": self.damage_modifiers(weapon_type),
             })
         return summary
@@ -807,31 +813,37 @@ class Game:
         if len(parts) > 2:
             return usage
         weapon = self.weapon_summary()[0]
-        result = self.dice.attack(weapon["accuracy"], target)
+        result = self.dice.attack(weapon["accuracy"], target, weapon["crit_range"])
         lines = [
             f"用{weapon['name']}试攻击（{weapon['type']}，精准看{weapon['attribute']}），"
             f"目标闪避 {dice_rules.format_number(target)}、护甲 {armor}：",
             result.text,
         ]
-        if result.success:
-            lines.append(self._roll_damage(weapon, armor))
+        if result.hit:
+            lines.append(self._roll_damage(weapon, armor, result.crit))
         lines.append(f"（一次普通攻击消耗 {stats.ATTACK_AP_COST} 行动点）")
         return "\n".join(lines)
 
-    def _roll_damage(self, weapon, armor):
-        """掷伤害并写出计算过程：骰子 → 修正 → 护甲。"""
+    def _roll_damage(self, weapon, armor, crit=False):
+        """掷伤害并写出计算过程：骰子 → 修正（相乘）→ 暴击 → 向上取整 → 护甲。"""
         if not weapon["damage"]:
             return f"{weapon['name']}的伤害还没有定。"
         roll = self.dice.roll(weapon["damage"])
-        total_mod = sum(value for _, value in weapon["damage_modifiers"])
-        damage = stats.final_damage(roll.total, total_mod, armor)
-        text = roll.describe()
-        if total_mod:
-            detail = "、".join(f"{name} {value:+d}%" for name, value in weapon["damage_modifiers"])
-            text += f"，修正 {total_mod:+d}%（{detail}）→ {roll.total * (100 + total_mod) // 100}"
+        modifiers = [value for _, value in weapon["damage_modifiers"]]
+        steps = [roll.describe()]
+        if modifiers:
+            detail = "×".join(f"{float(stats.damage_multiplier([v])):g}" for v in modifiers)
+            names = "、".join(f"{name} {value:+d}%" for name, value in weapon["damage_modifiers"])
+            steps.append(f"修正 ×{detail}（{names}）")
+        if crit:
+            steps.append(f"暴击 +{stats.CRIT_DAMAGE_BONUS}%")
+        exact = roll.total * stats.damage_multiplier(modifiers, crit)
+        if exact != roll.total:
+            steps[-1] += f" = {float(exact):g}，向上取整 {math.ceil(exact)}"
         if armor:
-            text += f"，护甲 −{armor}"
-        return text + f" → 造成 {damage} 点伤害"
+            steps.append(f"护甲 −{armor}")
+        damage = stats.final_damage(roll.total, modifiers, armor, crit)
+        return "，".join(steps) + f" → 造成 {damage} 点伤害"
 
     def cmd_roll(self, arg):
         roll = self.dice.roll(arg or "1d20")

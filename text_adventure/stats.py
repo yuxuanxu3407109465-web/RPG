@@ -3,6 +3,9 @@
 属性范围 1~10，5 是普通人水平。想调整平衡，直接改下面的公式。
 """
 
+import math
+from fractions import Fraction
+
 REGEN_INTERVAL = 10  # 每走多少回合恢复一次生命
 
 
@@ -44,10 +47,24 @@ WEAPON_ATTRIBUTES = {
 MELEE_WEAPON_TYPES = {"long_blade", "short_blade", "blunt", UNARMED}
 
 
-def final_damage(raw, modifier_percent, armor):
-    """最终伤害：骰出的伤害 ×（1 + 各项修正之和），向下取整，再减去护甲值，最低为 0。"""
-    scaled = raw * (100 + modifier_percent) // 100
-    return max(0, scaled - armor)
+CRIT_DAMAGE_BONUS = 50  # 暴击额外伤害（%），在其他修正之后结算
+DEFAULT_CRIT_RANGE = "20"  # 武器没写暴击范围时只有掷出 20 才算
+
+
+def damage_multiplier(modifiers, crit=False):
+    """各来源的修正（%）相乘，例如 +20% 和 +20% 是 ×1.2×1.2 = ×1.44；暴击再 ×1.5。
+    用分数计算，避免 5 × 1.2 算成 6.0000001 后被向上取整成 7。"""
+    multiplier = Fraction(1)
+    for percent in modifiers:
+        multiplier *= Fraction(100 + percent, 100)
+    if crit:
+        multiplier *= Fraction(100 + CRIT_DAMAGE_BONUS, 100)
+    return multiplier
+
+
+def final_damage(raw, modifiers, armor, crit=False):
+    """最终伤害：骰出的伤害 × 各项修正（相乘）×（暴击 1.5），向上取整，再减护甲，最低为 0。"""
+    return max(0, math.ceil(raw * damage_multiplier(modifiers, crit)) - armor)
 
 
 def ap_per_turn(a):

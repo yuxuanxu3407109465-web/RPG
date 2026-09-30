@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DICE_PATTERN = re.compile(r"^(\d*)d(\d+)([+-]\d+)?$")
+CRIT_RANGE_PATTERN = re.compile(r"^(\d+)(?:-20)?$")  # 暴击范围："19-20" 或 "20"
 D20_BASE_DC = 11  # 调整值为 0 时的难度，正好是 50%
 
 
@@ -42,6 +43,18 @@ class CheckResult:
     success: bool
     critical: bool  # 大成功或大失败
     text: str  # 给玩家看的掷骰过程
+
+
+@dataclass
+class AttackResult:
+    hit: bool
+    crit: bool  # 暴击已确认
+    text: str  # 给玩家看的掷骰过程（可能有两行：命中 + 暴击确认）
+
+
+def crit_min(crit_range):
+    """"19-20" -> 19，"20" -> 20。"""
+    return int(CRIT_RANGE_PATTERN.match(crit_range).group(1))
 
 
 class Dice:
@@ -72,20 +85,32 @@ class Dice:
             return self._check_d20(chance)
         return self._check_d100(chance)
 
-    def attack(self, accuracy, dodge):
+    def attack(self, accuracy, dodge, crit_range="20"):
         """攻击判定（不受骰子系统设置影响，固定用 d20）：d20 + 精准 > 闪避 即命中。
-        掷出 20 必定命中，掷出 1 必定落空。"""
+        掷出 20 必定命中，掷出 1 必定落空。
+        命中且掷出的点数落在武器的暴击范围内（例如 19-20）时，再掷一次确认：
+        第二次也命中就是暴击，没命中就按普通命中处理。"""
+        value, hit, text = self._attack_roll(accuracy, dodge)
+        if not hit or value < crit_min(crit_range):
+            return AttackResult(hit, False, text)
+        text += f"，落在暴击范围（{crit_range}）内！"
+        _, confirmed, confirm_text = self._attack_roll(accuracy, dodge)
+        verdict = "暴击！" if confirmed else "没能确认，按普通命中处理"
+        return AttackResult(True, confirmed, f"{text}\n确认暴击：{confirm_text} → {verdict}")
+
+    def _attack_roll(self, accuracy, dodge):
+        """掷一次命中判定，返回 (骰子点数, 是否命中, 过程文字)。"""
         value = self.rng.randint(1, 20)
         if value == 20:
-            return CheckResult(True, True, "🎲 d20 = 20 → 大成功，必定命中！")
+            return value, True, "🎲 d20 = 20 → 必定命中"
         if value == 1:
-            return CheckResult(False, True, "🎲 d20 = 1 → 大失败，必定落空！")
+            return value, False, "🎲 d20 = 1 → 必定落空"
         total = value + accuracy
         hit = total > dodge
         sign = ">" if hit else "≤"
         text = (f"🎲 d20 = {value} + 精准 {format_number(accuracy)} = {format_number(total)} "
                 f"{sign} 闪避 {format_number(dodge)} → {'命中' if hit else '未命中'}")
-        return CheckResult(hit, False, text)
+        return value, hit, text
 
     def _check_d100(self, chance):
         value = self.rng.randint(1, 100)
