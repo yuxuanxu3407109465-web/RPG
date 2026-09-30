@@ -354,8 +354,13 @@ FIREARM_BASE_RANGES = {
 
 
 def ranged_attack_range(a, base_range):
-    """远程武器的攻击范围（格）= 武器原始射程 + 感知。"""
-    return base_range + a["perception"]
+    """远程武器的攻击范围（格）= 武器原始射程 + 感知 ÷ 4（向下取整）。"""
+    return base_range + a["perception"] // 4
+
+
+def sight_range(a):
+    """角色的视野范围（格）= 感知 × 2。"""
+    return a["perception"] * 2
 
 
 def incinerate_range(a):
