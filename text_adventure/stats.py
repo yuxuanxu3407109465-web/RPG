@@ -89,13 +89,13 @@ SHIELD_BASH_DAMAGE = "1d4"  # 盾击伤害（近战，吃力量修正）
 
 
 def shield_bash_difficulty(a):
-    """盾击时目标体质检定的难度 = 攻击者（力量 + 体质）× 1.5，向下取整。"""
-    return math.floor((a["strength"] + a["constitution"]) * Fraction(CHECK_MODIFIER_MULTIPLIER))
+    """盾击时目标体质检定的难度 = 攻击者 体质 × 1.5（向下取整）+ 力量（和格挡修正同一个公式）。"""
+    return block_modifier(a)
 
 
 def block_modifier(a):
-    """格挡修正 =（力量 + 体质）× 1.5，向下取整。"""
-    return math.floor((a["strength"] + a["constitution"]) * Fraction(CHECK_MODIFIER_MULTIPLIER))
+    """格挡修正 = 体质 × 1.5（向下取整）+ 力量。"""
+    return check_modifier(a, "constitution") + a["strength"]
 
 # 被动技能效果类型（skill_trees.json 里技能的 effects）
 PASSIVE_EFFECTS = {

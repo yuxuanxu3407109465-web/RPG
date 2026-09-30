@@ -752,7 +752,7 @@ class Game:
         return (sheet
                 + f"\n\n【装备与姿态】\n  持握：{self.grip_name()}{passives}\n{weapons}\n{armor_line}\n{gear_line}"
                 + (f"\n  格挡：每回合 {self.blocks_per_turn()} 次，格挡修正 {stats.block_modifier(self.character.attributes)}"
-                   f"（力量 + 体质）×1.5" if self.blocks_per_turn() else "")
+                   f"（体质×1.5 + 力量）" if self.blocks_per_turn() else "")
                 + f"\n  姿态：{stance['name'] if stance else '无'}"
                 + f"\n  行动点消耗：普通攻击 {stats.ATTACK_AP_COST}{self._offhand_cost_text()}、"
                   f"移动 1 格 {self._move_cost_text()}、使用物品 {stats.USE_ITEM_AP_COST}"
@@ -1234,7 +1234,7 @@ class Game:
             f"你用盾牌猛击{enemy.name}（护甲 {enemy.armor}）：",
             text,
             f"{enemy.name} 生命 {enemy.max_hp} → {enemy.hp}/{enemy.max_hp}",
-            f"体质检定（难度 {difficulty} =（你的力量 {a['strength']} + 体质 {a['constitution']}）× 1.5）：",
+            f"体质检定（难度 {difficulty} = 你的体质 {a['constitution']} × 1.5 + 力量 {a['strength']}）：",
             check.text + f" → {enemy.name}{verdict}",
             f"（测试：真正使用时消耗 3 行动点，冷却 1 回合）",
         ])
