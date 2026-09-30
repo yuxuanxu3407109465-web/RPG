@@ -727,6 +727,11 @@ class Game:
         )
         if self.backpack_reduction():
             gear_line += f"（减重 {self.backpack_reduction()}%）"
+        active = self.passive_effects("crit_range_multiplier") + self.passive_effects("armor_ignore")
+        passives = ("（生效中：" + "、".join(sorted({name for name, _ in active})) + "）") if active else ""
+        if self.armor_ignore():
+            passives += f"，攻击无视 {self.armor_ignore()} 点护甲"
+
         def damage_text(w):
             if not w["damage"]:
                 return "伤害未定"
@@ -743,7 +748,7 @@ class Game:
         conditions = self.conditions()
         active = "、".join(f"{x['name']}（{x['effect']}）" for x in conditions) if conditions else "无"
         return (sheet
-                + f"\n\n【装备与姿态】\n  持握：{self.grip_style()}\n{weapons}\n{armor_line}\n{gear_line}"
+                + f"\n\n【装备与姿态】\n  持握：{self.grip_name()}{passives}\n{weapons}\n{armor_line}\n{gear_line}"
                 + f"\n  姿态：{stance['name'] if stance else '无'}"
                 + f"\n  行动点消耗：普通攻击 {stats.ATTACK_AP_COST}、移动 1 格 {self._move_cost_text()}、"
                   f"使用物品 {stats.USE_ITEM_AP_COST}"
@@ -944,15 +949,35 @@ class Game:
         return stats.dodge(self.character.attributes) + bonuses.get("dodge", 0)
 
     def grip_style(self):
-        """武器持握方式：徒手、单手（另一只手空着）、双持、双手。持盾等盾牌做出来后再加。"""
+        """武器持握方式（stats.GRIPS 的 id）：徒手、单手（另一只手空着）、双持、双手。持盾等盾牌做出来后再加。"""
         main, off = self.equipment["main_hand"], self.equipment["off_hand"]
         if not main and not off:
-            return "徒手"
+            return "unarmed"
         if main and main == off:
-            return "双手"
+            return "two_hand"
         if main and off:
-            return "双持"
-        return "单手"
+            return "dual_wield"
+        return "one_hand"
+
+    def grip_name(self):
+        return stats.GRIPS[self.grip_style()]
+
+    def passive_effects(self, effect_type):
+        """已学会、并且当前满足条件（持握方式）的被动效果：[(技能名, 数值), ...]。"""
+        if not self.character:
+            return []
+        grip = self.grip_style()
+        found = []
+        for skill_id in self.character.learned_skills:
+            skill = self.skill_trees.find_skill(skill_id)
+            for effect in (skill or {}).get("effects", []):
+                if effect["type"] == effect_type and effect.get("grip", grip) == grip:
+                    found.append((skill["name"], effect["value"]))
+        return found
+
+    def armor_ignore(self):
+        """攻击时无视的护甲值（被动技能相加）。"""
+        return sum(value for _, value in self.passive_effects("armor_ignore"))
 
     def _move_cost_text(self):
         """战斗中移动一格的行动点，超重翻倍，严重超重无法移动。"""
@@ -985,10 +1010,18 @@ class Game:
                 "accuracy": total,
                 "stance_bonus": total - base,
                 "damage": self._weapon(item_id)["damage"] if item_id else stats.UNARMED_DAMAGE,
-                "crit_range": stats.crit_range(weapon_type, self._weapon(item_id)),
+                "crit_range": self._crit_range(weapon_type, item_id),
                 "damage_modifiers": self.damage_modifiers(weapon_type),
             })
         return summary
+
+    def _crit_range(self, weapon_type, item_id):
+        """武器的暴击范围，再按被动技能扩大（例如精通重击：单手持用时翻倍）。"""
+        crit = stats.crit_range(weapon_type, self._weapon(item_id))
+        multiplier = 1
+        for _, value in self.passive_effects("crit_range_multiplier"):
+            multiplier *= value
+        return stats.widen_crit_range(crit, multiplier) if multiplier != 1 else crit
 
     def damage_modifiers(self, weapon_type):
         """用某类武器攻击时的伤害修正（%），每项一个 (来源, 数值)，最后全部相加。"""
@@ -1056,7 +1089,7 @@ class Game:
             result.text,
         ]
         if result.hit:
-            damage_text, damage = self._roll_damage(weapon, armor, result.crit)
+            damage_text, damage = self._roll_damage(weapon, armor, result.crit, self.armor_ignore())
             lines.append(damage_text)
             if enemy and weapon["damage"]:
                 enemy.hp = max(0, enemy.hp - damage)
@@ -1065,8 +1098,8 @@ class Game:
         lines.append(f"（一次普通攻击消耗 {stats.ATTACK_AP_COST} 行动点）")
         return "\n".join(lines)
 
-    def _roll_damage(self, weapon, armor, crit=False):
-        """掷伤害并写出计算过程：骰子 → 修正（相乘）→ 暴击 → 向下取整 → 护甲。"""
+    def _roll_damage(self, weapon, armor, crit=False, armor_ignore=0):
+        """掷伤害并写出计算过程：骰子 → 修正（相乘）→ 暴击 → 向下取整 → 护甲（先扣掉无视的部分）。"""
         if not weapon["damage"]:
             return f"{weapon['name']}的伤害还没有定。", 0
         roll = self.dice.roll(weapon["damage"])
@@ -1081,9 +1114,12 @@ class Game:
         exact = roll.total * stats.damage_multiplier(modifiers, crit)
         if exact != roll.total:
             steps[-1] += f" = {float(exact):g}，向下取整 {math.floor(exact)}"
-        if armor:
+        effective_armor = max(0, armor - armor_ignore)
+        if armor and armor_ignore:
+            steps.append(f"护甲 {armor} 无视 {armor_ignore} → −{effective_armor}")
+        elif armor:
             steps.append(f"护甲 −{armor}")
-        damage = stats.final_damage(roll.total, modifiers, armor, crit)
+        damage = stats.final_damage(roll.total, modifiers, effective_armor, crit)
         return "，".join(steps) + f" → 造成 {damage} 点伤害", damage
 
     def cmd_roll(self, arg):

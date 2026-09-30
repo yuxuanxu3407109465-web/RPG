@@ -18,6 +18,7 @@ import json
 from pathlib import Path
 
 import stances
+import stats
 
 
 class SkillTrees:
@@ -44,6 +45,11 @@ class SkillTrees:
             for r in s.get("requires", []):
                 if r not in skill_ids:
                     raise ValueError(f"{where}：前置技能 {r} 不存在")
+            for effect in s.get("effects", []):
+                if effect.get("type") not in stats.PASSIVE_EFFECTS:
+                    raise ValueError(f"{where}：效果类型要是 {'、'.join(stats.PASSIVE_EFFECTS)} 之一")
+                if effect.get("grip") and effect["grip"] not in stats.GRIPS:
+                    raise ValueError(f"{where}：持握方式要是 {'、'.join(stats.GRIPS)} 之一")
             for stance_id in s.get("stance_effects", {}):
                 if stance_id not in {st["id"] for st in self.stances}:
                     raise ValueError(f"{where}：姿态 {stance_id} 不存在")

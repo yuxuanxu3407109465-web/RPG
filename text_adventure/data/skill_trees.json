@@ -327,6 +327,36 @@
       "name": "灵能入门",
       "cost": 1,
       "description": "（占位）"
+    },
+    {
+      "id": "one_hand_crit",
+      "tree": "weapon_mastery",
+      "branch": "one_hand",
+      "name": "精通重击",
+      "cost": 1,
+      "description": "单手持用武器（另一只手空着）时，暴击范围翻倍：18-20 → 15-20，19-20 → 17-20，20 → 19-20。",
+      "effects": [
+        {
+          "type": "crit_range_multiplier",
+          "value": 2,
+          "grip": "one_hand"
+        }
+      ]
+    },
+    {
+      "id": "one_hand_pierce",
+      "tree": "weapon_mastery",
+      "branch": "one_hand",
+      "name": "透甲",
+      "cost": 1,
+      "description": "单手持用武器（另一只手空着）时，攻击无视目标 5 点护甲。",
+      "effects": [
+        {
+          "type": "armor_ignore",
+          "value": 5,
+          "grip": "one_hand"
+        }
+      ]
     }
   ],
   "stances": [

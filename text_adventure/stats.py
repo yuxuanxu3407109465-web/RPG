@@ -69,6 +69,23 @@ CRIT_RANGES = {
 DEFAULT_CRIT_RANGE = "20"  # 没列出的类型（例如枪械，尚未设计）
 
 
+def widen_crit_range(crit_range, multiplier):
+    """暴击范围扩大到原来的几倍：18-20（3 个点数）翻倍是 6 个点数 → 15-20；最低到 2（掷出 1 必定落空）。"""
+    size = (21 - int(crit_range.split("-")[0])) * multiplier
+    low = max(2, 21 - size)
+    return "20" if low == 20 else f"{low}-20"
+
+
+# 武器持握方式（Game.grip_style 返回 id）；技能效果用 grip 限定生效条件
+GRIPS = {"unarmed": "徒手", "one_hand": "单手", "dual_wield": "双持", "two_hand": "双手"}
+
+# 被动技能效果类型（skill_trees.json 里技能的 effects）
+PASSIVE_EFFECTS = {
+    "crit_range_multiplier": "暴击范围倍数",  # 多个同时生效时相乘
+    "armor_ignore": "无视护甲",  # 多个同时生效时相加
+}
+
+
 def crit_range(weapon_type, weapon=None):
     """武器的暴击范围：单件武器写了就用它的，否则按武器类型。"""
     if weapon and weapon.get("crit_range"):
