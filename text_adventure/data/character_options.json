@@ -60,7 +60,7 @@
     "xp_per_level": 100,
     "explore_xp": 20,
     "starting_skill_points": 4,
-    "starting_perk_points": 0
+    "starting_perk_points": 2
   },
   "backgrounds": [
     {
@@ -125,7 +125,7 @@
     {
       "id": "lone_wolf",
       "name": "孤独之路",
-      "cost": 0,
+      "kind": "mixed",
       "description": "+4 点可支配属性点，+2 perk 点，但无法携带同伴。",
       "effects": {
         "attribute_points": 4,

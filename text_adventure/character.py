@@ -99,6 +99,12 @@ class CharacterOptions:
     def perk(self, perk_id):
         return next(p for p in self.perks if p["id"] == perk_id)
 
+    def perk_cost(self, perk):
+        """perk 的花费：写了 cost 就用它；没写时正面 perk（positive）花 1 点，有正有负的（mixed）不花点。"""
+        if "cost" in perk:
+            return perk["cost"]
+        return 1 if perk.get("kind", "positive") == "positive" else 0
+
     def perk_effect(self, perk_ids, key):
         """几个 perk 的某项效果：数值相加，开关类只要有一个是 True 就算。"""
         values = [self.perk(p).get("effects", {}).get(key) for p in perk_ids]
@@ -338,12 +344,12 @@ class CharacterCreator:
 
         def remaining(selection):
             return (base + self.options.perk_effect(selection, "perk_points")
-                    - sum(self.options.perk(p).get("cost", 0) for p in selection))
+                    - sum(self.options.perk_cost(self.options.perk(p)) for p in selection))
 
         self.ask.print("\n【Perk】开卡时可以用 perk 点选择特质（再选一次可以取消）。")
         while True:
             labels = [
-                ("【已选】" if p["id"] in chosen else "") + f"{p['name']}（消耗 {p.get('cost', 0)} 点）：{p['description']}"
+                ("【已选】" if p["id"] in chosen else "") + f"{p['name']}（消耗 {self.options.perk_cost(p)} 点）：{p['description']}"
                 for p in self.options.perks
             ]
             labels.append("完成")

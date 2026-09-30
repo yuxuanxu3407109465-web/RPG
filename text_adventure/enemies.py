@@ -163,6 +163,12 @@ class EnemyBook:
         else:
             mutations = list(forced_mutations)
         armor += sum(self.mutations[m].get("armor", 0) for m in mutations)
+        # 变异一律算 buff：属性加成挂在 buffs 上，不改原始属性
+        for m in mutations:
+            for attribute_id, value in self.mutations[m].get("attributes", {}).items():
+                buffs.setdefault(attribute_id, []).append((self.mutations[m]["name"], value))
+        attributes = stats.apply_buffs(base, buffs)
+        max_hp = stats.max_hp(attributes, level) + hp_bonus
         return Enemy(template_id, tier, name, level, attributes, max_hp, max_hp, attack, armor,
                      t.get("description", ""), weapon, armor_items, missing, base, buffs, mutations)
 
