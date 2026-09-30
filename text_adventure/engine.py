@@ -185,7 +185,7 @@ class Game:
         self.options = options
         self.skill_trees = skill_trees
         self.dice = dice
-        self.enemies = EnemyBook(world.data_dir / "enemies.json", [a["id"] for a in options.attributes])
+        self.enemies = EnemyBook(world.data_dir / "enemies.json", [a["id"] for a in options.attributes], world.items)
         # 存档分成几个槽：save1.json / save2.json / save3.json
         self.save_dir = Path(save_path).parent
         self.slot = 1
@@ -1001,7 +1001,7 @@ class Game:
             tier = next((t for t, info in stats.ENEMY_TIERS.items() if parts[1] in (t, info[0])), None)
             if not tier:
                 return None
-        return self.enemies.create(template_id, tier)
+        return self.enemies.create(template_id, tier, self.dice.rng)
 
     def cmd_enemy(self, arg):
         """敌人 <名字> <等阶>：查看敌人资料（测试用）。"""
@@ -1012,7 +1012,7 @@ class Game:
         enemy = self._parse_enemy(arg)
         if not enemy:
             return f"没找到这个敌人。已有的敌人：{names}；等阶：{tiers}。"
-        return format_enemy(enemy, self.options, self.world.weapon_types)
+        return format_enemy(enemy, self.options, self.world.weapon_types, self.world.items)
 
     def cmd_attack_test(self, arg):
         """试攻击：用手上第一件武器（没拿就徒手）试一次攻击，目标可以是数值，也可以是敌人。"""
@@ -1311,7 +1311,7 @@ class Game:
             "  检定 <属性> <难度>        做一次属性检定（d20 + 属性×1.5 ≥ 难度），例如：检定 敏捷 15\n"
             "  试攻击 <闪避> <护甲>       用手上的武器试一次攻击（命中 + 伤害），例如：试攻击 15 3\n"
             "  试攻击 <敌人> <等阶>       对敌人试一次攻击，例如：试攻击 僵尸 精英\n"
-            "  敌人 <名字> <等阶>         查看敌人资料，例如：敌人 僵尸 首领\n"
+            "  敌人 <名字> <等阶>         随机生成一个敌人看看资料，例如：敌人 疾尸 精英\n"
             "  等待 / wait             原地等一回合（战斗外 1 分钟，也算生命恢复的回合）\n"
             "  休息 <时长>             恢复体力并推进时间，例如：休息 30、休息 2小时（1~480 分钟）\n"
             "                          体力满了也能休息，只是时间照样过去\n"

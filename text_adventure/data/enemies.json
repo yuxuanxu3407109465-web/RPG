@@ -1,20 +1,48 @@
 {
   "enemies": {
-    "zombie": {
-      "name": "僵尸",
-      "aliases": ["丧尸", "zombie"],
-      "description": "（数值暂定，等设计后替换）拖着脚走路的感染者，皮肤发灰，嘴里发出含糊的嘶吼。",
+    "walker": {
+      "name": "行尸",
+      "aliases": ["僵尸", "丧尸", "普通僵尸", "walker"],
+      "description": "拖着脚走路的感染者，皮肤发灰，嘴里发出含糊的嘶吼。（属性暂定）",
       "level": 1,
-      "attributes": {
-        "strength": 5,
-        "agility": 3,
-        "constitution": 5,
-        "intelligence": 1,
-        "perception": 3,
-        "charisma": 1
-      },
+      "attributes": { "strength": 5, "agility": 5, "constitution": 5, "intelligence": 1, "perception": 1, "charisma": 1 },
       "attack": { "name": "抓咬", "type": "unarmed", "damage": "1d4" },
-      "armor": 0
+      "armless_attack_name": "撕咬",
+      "loadout": "common"
+    },
+    "runner": {
+      "name": "疾尸",
+      "aliases": ["快僵尸", "runner"],
+      "description": "瘦得只剩骨架的感染者，动作快得不像死人，但一碰就散架。（属性暂定）",
+      "level": 1,
+      "attributes": { "strength": 5, "agility": 7, "constitution": 3, "intelligence": 1, "perception": 1, "charisma": 1 },
+      "attack": { "name": "抓咬", "type": "unarmed", "damage": "1d4" },
+      "armless_attack_name": "撕咬",
+      "loadout": "common"
+    },
+    "brute": {
+      "name": "壮尸",
+      "aliases": ["胖僵尸", "brute"],
+      "description": "肿胀臃肿的感染者，走得很慢，挨好几下才会倒。（属性暂定）",
+      "level": 1,
+      "attributes": { "strength": 5, "agility": 3, "constitution": 7, "intelligence": 1, "perception": 1, "charisma": 1 },
+      "attack": { "name": "抓咬", "type": "unarmed", "damage": "1d4" },
+      "armless_attack_name": "撕咬",
+      "loadout": "common"
+    }
+  },
+  "loadouts": {
+    "common": {
+      "weapons": [
+        { "item": null, "weight": 70 },
+        { "item": "knife", "weight": 10 },
+        { "item": "crowbar", "weight": 10 },
+        { "item": "machete", "weight": 10 }
+      ],
+      "armor": [
+        { "item": "motorcycle_helmet", "chance": 15 }
+      ],
+      "limbs": { "missing_arm": 10, "missing_leg": 10 }
     }
   }
 }
