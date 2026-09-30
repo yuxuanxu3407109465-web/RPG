@@ -140,8 +140,8 @@ def initiative(a):
 
 
 def max_hp(a, level):
-    """生命值上限，每升一级增加等同体质的数值。"""
-    return 50 + a["constitution"] * 10 + (level - 1) * a["constitution"]
+    """生命值上限 = 10 + 等级 × 体质（1 级体质 5 为 15）。"""
+    return 10 + level * a["constitution"]
 
 
 def hp_regen(a):
@@ -178,8 +178,8 @@ def check_modifier(a, attribute_id):
 # 体力上限：体质、力量各每点 30（5+5 时正好 300）。属性上限 10 只约束
 # 创建角色时的分配，后期属性可以涨过 10，下面这些公式照样适用。
 
-STAMINA_PER_POINT = 30        # 体质 / 力量 每点给的体力上限
-STAMINA_MIN_CAP = 180         # 体力上限的下限（体质与力量都只有 3 时）
+STAMINA_PER_POINT = 10        # 体力上限 = 10 ×（体质 + 力量）
+STAMINA_MIN_CAP = 60          # 体力上限的下限（体质与力量都只有 3 时）
 STAMINA_COST_FLOOR = 0.5      # 行动消耗最多降到一半
 STAMINA_LOW_RATIO = 0.1       # 体力低于上限的这个比例就力竭
 EXHAUSTED_DAMAGE_PENALTY = -50  # 力竭时攻击力 -50%

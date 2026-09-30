@@ -1099,6 +1099,10 @@ class Game:
             # 旧存档没有体力，按满值补上
             if not self.character.stamina:
                 self.character.stamina = stats.stamina_max(self.character.attributes)
+            # 公式改过之后，旧存档里的生命 / 体力可能超过新上限，压回上限
+            c = self.character
+            c.hp = min(c.hp, stats.max_hp(c.attributes, c.level))
+            c.stamina = min(c.stamina, stats.stamina_max(c.attributes))
         self.current_room = state["current_room"]
         self.turns = state["turns"]
         self.day = state.get("day", stats.START_DAY)
