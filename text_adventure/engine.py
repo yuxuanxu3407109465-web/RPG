@@ -752,7 +752,7 @@ class Game:
         return (sheet
                 + f"\n\n【装备与姿态】\n  持握：{self.grip_name()}{passives}\n{weapons}\n{armor_line}\n{gear_line}"
                 + (f"\n  格挡：每回合 {self.blocks_per_turn()} 次，格挡修正 {stats.block_modifier(self.character.attributes)}"
-                   f"（力量÷2 + 感知÷2）×1.5" if self.blocks_per_turn() else "")
+                   f"（力量 + 体质）×1.5" if self.blocks_per_turn() else "")
                 + f"\n  姿态：{stance['name'] if stance else '无'}"
                 + f"\n  行动点消耗：普通攻击 {stats.ATTACK_AP_COST}{self._offhand_cost_text()}、"
                   f"移动 1 格 {self._move_cost_text()}、使用物品 {stats.USE_ITEM_AP_COST}"

@@ -94,8 +94,8 @@ def shield_bash_difficulty(a):
 
 
 def block_modifier(a):
-    """格挡修正 =（力量 ÷ 2 + 感知 ÷ 2）× 1.5，每一步都向下取整。"""
-    return math.floor((a["strength"] // 2 + a["perception"] // 2) * Fraction(CHECK_MODIFIER_MULTIPLIER))
+    """格挡修正 =（力量 + 体质）× 1.5，向下取整。"""
+    return math.floor((a["strength"] + a["constitution"]) * Fraction(CHECK_MODIFIER_MULTIPLIER))
 
 # 被动技能效果类型（skill_trees.json 里技能的 effects）
 PASSIVE_EFFECTS = {
