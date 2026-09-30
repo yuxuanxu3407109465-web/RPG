@@ -372,8 +372,8 @@ def ranged_attack_range(a, base_range):
 
 
 def sight_range(a):
-    """角色的视野范围（格）= 感知 × 2。"""
-    return a["perception"] * 2
+    """角色的视野范围（格）= 4 + 感知。"""
+    return 4 + a["perception"]
 
 
 def effective_ranged_range(a, base_range):
@@ -382,8 +382,8 @@ def effective_ranged_range(a, base_range):
 
 
 def incinerate_range(a):
-    """焚化的施放范围（格）= 感知 × 2。"""
-    return a["perception"] * 2
+    """焚化的施放范围（格）= 4 + 感知。"""
+    return 4 + a["perception"]
 
 
 def psionic_bolt_damage(level):
