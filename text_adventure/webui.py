@@ -287,6 +287,7 @@ class Session:
         """
         game = self.game
         result = []
+        overweight = game.load_level() == "overweight"
         for direction in DIRECTIONS_ALL:
             exit_ = room["exits"].get(direction)
             outdoor = bool(room.get("outdoor"))
@@ -296,8 +297,8 @@ class Session:
                 "state": "blocked",
                 "target": None,
                 "danger": None,
-                "cost": stats.move_cost(game.character.attributes, outdoor) if game.character else 0,
-                "minutes": stats.move_minutes(outdoor),
+                "cost": stats.move_cost(game.character.attributes, outdoor, overweight) if game.character else 0,
+                "minutes": stats.move_minutes(outdoor, overweight),
             }
             if exit_ is not None:
                 danger = None

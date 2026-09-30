@@ -205,15 +205,20 @@ def stamina_cost_multiplier(a):
     return max(STAMINA_COST_FLOOR, multiplier)
 
 
-def move_cost(a, outdoor):
-    """走一个方向要花多少体力。"""
+OVERWEIGHT_TRAVEL_MULTIPLIER = 2  # 战斗外超重：走路的体力消耗和时间都翻倍
+
+
+def move_cost(a, outdoor, overweight=False):
+    """走一个方向要花多少体力；超重翻倍。"""
     base = MOVE_COST_OUTDOOR if outdoor else MOVE_COST_INDOOR
-    return max(1, int(round(base * stamina_cost_multiplier(a))))
+    cost = max(1, int(round(base * stamina_cost_multiplier(a))))
+    return cost * OVERWEIGHT_TRAVEL_MULTIPLIER if overweight else cost
 
 
-def move_minutes(outdoor):
-    """走一个方向要花多少分钟。"""
-    return MOVE_MINUTES_OUTDOOR if outdoor else MOVE_MINUTES_INDOOR
+def move_minutes(outdoor, overweight=False):
+    """走一个方向要花多少分钟；超重翻倍。"""
+    minutes = MOVE_MINUTES_OUTDOOR if outdoor else MOVE_MINUTES_INDOOR
+    return minutes * OVERWEIGHT_TRAVEL_MULTIPLIER if overweight else minutes
 
 
 def rest_recovery(a, minutes):

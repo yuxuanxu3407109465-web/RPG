@@ -96,7 +96,7 @@ class CharacterOptions:
 
 
 def format_sheet(character, options, items, carried_weight=None, tree_names=None, bonuses=None,
-                 armor_penalty=0):
+                 armor_penalty=0, overweight=False):
     """角色卡：创建完成时确认用，游戏中也可以随时查看。bonuses 是姿态等带来的临时加成。"""
     a = character.attributes
     bonuses = bonuses or {}
@@ -148,8 +148,9 @@ def format_sheet(character, options, items, carried_weight=None, tree_names=None
         + (f"，重甲 −{armor_penalty}" if armor_penalty else "") + "）",
         f"  生命恢复 每 {stats.REGEN_INTERVAL} 回合 +{stats.hp_regen(a)}",
         f"  体力上限 {stamina_cap}    行动消耗 ×{stats.stamina_cost_multiplier(a):.2f}"
-        f"（移动：室内 {stats.move_cost(a, False)} 点 / {stats.move_minutes(False)} 分钟，"
-        f"室外 {stats.move_cost(a, True)} 点 / {stats.move_minutes(True)} 分钟）",
+        f"（移动：室内 {stats.move_cost(a, False, overweight)} 点 / {stats.move_minutes(False, overweight)} 分钟，"
+        f"室外 {stats.move_cost(a, True, overweight)} 点 / {stats.move_minutes(True, overweight)} 分钟"
+        + ("，超重翻倍" if overweight else "") + "）",
         f"  经验倍率 ×{stats.xp_multiplier(a):.1f}    每级技能点 {stats.skill_points_per_level(a)}",
     ]
     return "\n".join(lines)

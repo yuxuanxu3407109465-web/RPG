@@ -421,9 +421,10 @@ class Game:
                     f"超过上限的 {stats.IMMOBILE_WEIGHT_MULTIPLIER} 倍），一步也挪不动。先放下些东西吧。")
 
         outdoor = bool(room.get("outdoor"))
+        overweight = self.load_level() == "overweight"
         cost = 0
         if self.character:
-            cost = stats.move_cost(self.character.attributes, outdoor)
+            cost = stats.move_cost(self.character.attributes, outdoor, overweight)
             if self.character.stamina < cost:
                 return (f"体力不够：走这一步要 {cost} 点，你只剩 {self.character.stamina} 点。\n"
                         f"先休息一下吧（例如：休息 60）。")
@@ -436,13 +437,13 @@ class Game:
         if self.character:
             before = self.character.stamina
             self.character.stamina = max(0, before - cost)
-            minutes = stats.move_minutes(outdoor)
+            minutes = stats.move_minutes(outdoor, overweight)
             self.advance_time(minutes)
             # 这一步花了多少体力直接写进正文（文字栏里就能看到），
             # 不用再去悬停移动按钮看提示。控制台版和网页版共用这段。
             cost_note = (f"（移动消耗 {cost} 点体力：{before} → {self.character.stamina}"
                          f"/{stats.stamina_max(self.character.attributes)}，"
-                         f"用时 {format_duration(minutes)}）")
+                         f"用时 {format_duration(minutes)}" + ("，超重翻倍" if overweight else "") + "）")
         self._regenerate()
         text = self.describe_room()
         if cost_note:
@@ -674,7 +675,7 @@ class Game:
         bonuses = stances.stance_bonuses(self.character, self._current_stance(), self.skill_trees)
         sheet = format_sheet(
             self.character, self.options, self.world.items, self._carried_weight(), tree_names, bonuses,
-            self.armor_ap_penalty(),
+            self.armor_ap_penalty(), overweight=self.load_level() == "overweight",
         )
         worn = [(self.world.wear_slot_names[s], i) for s, i in self.worn.items() if i and self._armor(i)]
         armor_line = f"  护甲 {self.armor_total()}" + (
