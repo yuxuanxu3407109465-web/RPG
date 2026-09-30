@@ -1290,14 +1290,16 @@ class Game:
         if not enemy:
             return "用法：试先攻 敌人 等阶，例如：试先攻 疾尸 精英"
         advantage = self.options.perk_effect(self.character.perks, "initiative_advantage")
-        mine, my_text = self.dice.initiative(stats.initiative(self.character.attributes), advantage)
-        theirs, their_text = self.dice.initiative(enemy.initiative())
-        if mine == theirs:
-            verdict = "平手（平手时谁先动尚未设计）"
-        else:
-            verdict = "你先行动" if mine > theirs else f"{enemy.name}先行动"
-        return "\n".join([f"你：{my_text}" + ("（警觉：优势）" if advantage else ""),
-                          f"{enemy.name}：{their_text}", f"→ {verdict}"])
+        lines = []
+        while True:  # 平手就重掷（警觉的优势照样生效），直到分出先后
+            mine, my_text = self.dice.initiative(stats.initiative(self.character.attributes), advantage)
+            theirs, their_text = self.dice.initiative(enemy.initiative())
+            lines += [f"你：{my_text}" + ("（警觉：优势）" if advantage else ""), f"{enemy.name}：{their_text}"]
+            if mine != theirs:
+                break
+            lines.append("平手，重新掷一次：")
+        lines.append("→ 你先行动" if mine > theirs else f"→ {enemy.name}先行动")
+        return "\n".join(lines)
 
     def cmd_roll(self, arg):
         roll = self.dice.roll(arg or "1d20")
