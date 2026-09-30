@@ -487,13 +487,13 @@
       "id": "psionic_bolt",
       "tree": "psionics",
       "branch": "evocation",
-      "name": "灵火弹",
+      "name": "内焚",
       "type": "active",
       "cost": 1,
       "ap_cost": 6,
       "cooldown": 1,
       "value": "psionic_bolt",
-      "description": "向一个敌人射出一团灵能火焰：不掷命中、必定命中（因此也不会暴击），造成 6 + 等级 × 2 点火焰伤害（不受护甲减免），并施加 2 层灼烧。只能对敌人使用。"
+      "description": "直接在一个敌人体内点燃灵能火焰：不掷命中、必定命中（因此也不会暴击），造成 6 + 等级 × 2 点火焰伤害（不受护甲减免），并施加 2 层灼烧。只能对敌人使用。"
     },
     {
       "id": "psionic_flame",
