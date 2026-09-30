@@ -186,8 +186,7 @@
       "type": "active",
       "cost": 1,
       "weapon_type": "short_blade",
-      "ap_cost": 6,
-      "cooldown": 2,
+      "cooldown": 1,
       "description": "对目标发起一次攻击，目标身上每有一层持续伤害（流血、灼烧等），这次攻击的伤害就 +10%（层数相加，例如 5 层 +50%，再和其他来源的修正相乘）。",
       "attack": true
     },
@@ -473,8 +472,7 @@
       "type": "active",
       "cost": 1,
       "grip": "shield",
-      "ap_cost": 3,
-      "cooldown": 1,
+      "ap_cost": 6,
       "description": "用盾牌猛击敌人，造成 1d4 伤害（近战，吃力量修正）；目标要进行体质检定，难度 = 你的体质 × 1.5 + 力量，失败则下回合最后一个行动。",
       "attack": true
     },
@@ -548,8 +546,6 @@
       "name": "焚化",
       "type": "active",
       "cost": 1,
-      "ap_cost": 6,
-      "cooldown": 1,
       "value": "psionic_bolt",
       "description": "直接在范围内（4 + 感知 格）一个敌人的体内点燃灵能火焰：不掷命中、必定命中（因此也不会暴击），造成 6 + 等级 点火焰伤害（不受护甲减免），并施加 2 层灼烧。只能对敌人使用。",
       "attack": true
