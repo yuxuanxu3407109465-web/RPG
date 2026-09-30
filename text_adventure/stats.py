@@ -108,6 +108,25 @@ PASSIVE_EFFECTS = {
 }
 
 
+# 装备等阶：以“普通”为基准，每高一阶护甲值 +1，每低一阶 −1
+QUALITIES = {"worn": ("破旧", -1), "normal": ("普通", 0), "fine": ("精良", 1), "legendary": ("传说", 2)}
+
+
+def quality_name(item):
+    return QUALITIES[item.get("quality", "normal")][0]
+
+
+def armor_value(item):
+    """护甲实际提供的护甲值 = 基础值 + 等阶加成，最低 0。"""
+    armor = item["armor"]
+    return max(0, armor["value"] + QUALITIES[item.get("quality", "normal")][1])
+
+
+def sight_range_with(a, penalty=0):
+    """视野范围（格）减去装备带来的惩罚，最低 0。"""
+    return max(0, sight_range(a) - penalty)
+
+
 def crit_range(weapon_type, weapon=None):
     """武器的暴击范围：单件武器写了就用它的，否则按武器类型。"""
     if weapon and weapon.get("crit_range"):

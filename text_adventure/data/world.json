@@ -90,7 +90,10 @@
       },
       "items": [
         "machete",
-        "riot_shield"
+        "riot_shield",
+        "riot_vest",
+        "riot_helmet",
+        "riot_greaves"
       ],
       "npcs": [],
       "blocked": "墙壁",
@@ -108,7 +111,9 @@
       },
       "items": [
         "crowbar",
-        "motorcycle_helmet"
+        "motorcycle_helmet",
+        "riding_jacket",
+        "riding_pants"
       ],
       "npcs": [],
       "blocked": "障碍物",
@@ -274,12 +279,12 @@
         "头盔",
         "helmet"
       ],
-      "description": "一顶全盔，面罩裂了一道缝，但外壳还算结实。",
+      "description": "一顶摩托车全盔，面罩裂了一道缝，但外壳还算结实。（轻甲套装：骑行护具）",
       "weight": 1.5,
       "armor": {
         "slot": "head",
         "class": "light",
-        "value": 2
+        "value": 1
       }
     },
     "riot_shield": {
@@ -292,6 +297,72 @@
       "description": "一面透明的聚碳酸酯防暴盾，边缘有几道深深的抓痕。",
       "weight": 4,
       "shield": {}
+    },
+    "riding_jacket": {
+      "name": "骑行夹克",
+      "aliases": [
+        "夹克"
+      ],
+      "weight": 2,
+      "description": "内衬护板的机车夹克，肩肘都有硬壳。（轻甲套装：骑行护具）",
+      "armor": {
+        "slot": "body",
+        "class": "light",
+        "value": 3
+      }
+    },
+    "riding_pants": {
+      "name": "骑行护裤",
+      "aliases": [
+        "护裤"
+      ],
+      "weight": 1.5,
+      "description": "膝盖和胯部缝着护具的骑行裤。（轻甲套装：骑行护具）",
+      "armor": {
+        "slot": "legs",
+        "class": "light",
+        "value": 2
+      }
+    },
+    "riot_vest": {
+      "name": "防暴护甲",
+      "aliases": [
+        "防暴背心"
+      ],
+      "weight": 8,
+      "description": "警用防暴服的胸甲部分，分量很沉。（重甲套装：防暴装备）",
+      "armor": {
+        "slot": "body",
+        "class": "heavy",
+        "value": 6,
+        "ap_penalty": 3
+      }
+    },
+    "riot_helmet": {
+      "name": "防暴头盔",
+      "weight": 2.5,
+      "description": "带面罩的防暴头盔，护得严实，但挡住了不少视线。（重甲套装：防暴装备）",
+      "armor": {
+        "slot": "head",
+        "class": "heavy",
+        "value": 2,
+        "ap_penalty": 1,
+        "sight_penalty": 2
+      }
+    },
+    "riot_greaves": {
+      "name": "防暴护腿",
+      "aliases": [
+        "护腿"
+      ],
+      "weight": 5,
+      "description": "从大腿护到脚背的硬质护腿。（重甲套装：防暴装备）",
+      "armor": {
+        "slot": "legs",
+        "class": "heavy",
+        "value": 4,
+        "ap_penalty": 2
+      }
     }
   },
   "npcs": {

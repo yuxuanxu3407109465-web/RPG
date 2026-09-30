@@ -473,7 +473,7 @@ class Session:
                 "armor": game.armor_total(),
                 "worn": [
                     {"slot": world.armor_slots[s], "name": world.items[i]["name"],
-                     "value": world.items[i]["armor"]["value"]}
+                     "value": stats.armor_value(world.items[i])}
                     for s, i in game.worn.items() if i and world.items[i].get("armor")
                 ],
                 "attack_cost": stats.ATTACK_AP_COST,
@@ -483,6 +483,7 @@ class Session:
                 "item_cost": stats.USE_ITEM_AP_COST,
                 "dodge": game.dodge(),
                 "initiative": stats.initiative(c.attributes),
+                "sight": game.sight_range(),
                 "weapons": game.weapon_summary(),
             },
             "equipment": {

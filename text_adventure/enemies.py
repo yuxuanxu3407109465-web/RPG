@@ -133,7 +133,7 @@ class EnemyBook:
         if weapon and self.items[weapon]["weapon"].get("hands", 1) > arms:
             weapon = None  # 胳膊不够，拿不了这件武器
         armor_items = [e["item"] for e in table.get("armor", []) if rng.random() * 100 < e["chance"]]
-        armor = sum(self.items[i]["armor"]["value"] for i in armor_items)
+        armor = sum(stats.armor_value(self.items[i]) for i in armor_items)
 
         if weapon:
             w = self.items[weapon]["weapon"]
@@ -179,7 +179,7 @@ def format_enemy(enemy, options, weapon_types, items):
     mods = enemy.damage_modifiers()
     multiplier = stats.damage_multiplier([value for _, value in mods])
     damage = enemy.attack["damage"] + (f" ×{float(multiplier):g}" if multiplier != 1 else "")
-    armor = "、".join(f"{items[i]['name']} +{items[i]['armor']['value']}" for i in enemy.armor_items)
+    armor = "、".join(f"{items[i]['name']} +{stats.armor_value(items[i])}" for i in enemy.armor_items)
     lines = [
         f"======== {enemy.name}（{enemy.tier_name}，{enemy.level} 级） ========",
         enemy.description,

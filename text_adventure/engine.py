@@ -158,7 +158,9 @@ class World:
                     raise ValueError(f"{where}：类别要是 {'、'.join(stats.ARMOR_CLASSES)} 之一")
                 name, low, high = stats.ARMOR_CLASSES[armor["class"]]
                 if not low <= armor.get("value", 0) <= high:
-                    raise ValueError(f"{where}：{name}的护甲值要在 {low}~{high} 之间")
+                    raise ValueError(f"{where}：{name}的基础护甲值要在 {low}~{high} 之间")
+            if item.get("quality", "normal") not in stats.QUALITIES:
+                raise ValueError(f"world.json 里的物品 {item_id}：等阶要是 {'、'.join(stats.QUALITIES)} 之一")
             gear = item.get("gear")
             if gear:
                 where = f"world.json 里的装备 {item_id}"
@@ -721,7 +723,8 @@ class Game:
         )
         worn = [(self.world.wear_slot_names[s], i) for s, i in self.worn.items() if i and self._armor(i)]
         armor_line = f"  护甲 {self.armor_total()}" + (
-            "：" + "、".join(f"{slot} {self.world.items[i]['name']} +{self._armor(i)['value']}" for slot, i in worn)
+            "：" + "、".join(f"{slot} {self.item_display_name(i)} +{stats.armor_value(self.world.items[i])}"
+                            for slot, i in worn)
             if worn else "：什么也没穿")
         gear_line = "  " + "    ".join(
             f"{info['name']} " + (self.world.items[self.worn[slot]]["name"] if self.worn[slot] else "空")
@@ -754,6 +757,7 @@ class Game:
                 + (f"\n  格挡：每回合 {self.blocks_per_turn()} 次，格挡修正 {stats.block_modifier(self.character.attributes)}"
                    f"（体质×1.5 + 力量）" if self.blocks_per_turn() else "")
                 + f"\n  姿态：{stance['name'] if stance else '无'}"
+                + f"\n  视野 {self.sight_range()} 格" + (f"（护甲 −{self.armor_sight_penalty()}）" if self.armor_sight_penalty() else "")
                 + f"\n  行动点消耗：普通攻击 {stats.ATTACK_AP_COST}{self._offhand_cost_text()}、"
                   f"移动 1 格 {self._move_cost_text()}、使用物品 {stats.USE_ITEM_AP_COST}"
                 + f"\n\n【时间】{self.clock_text()}\n【异常状态】{active}")
@@ -815,7 +819,21 @@ class Game:
 
     def armor_total(self):
         """身上所有部位的护甲值之和。"""
-        return sum(self._armor(i)["value"] for i in self.worn.values() if self._armor(i))
+        return sum(stats.armor_value(self.world.items[i]) for i in self.worn.values() if self._armor(i))
+
+    def armor_sight_penalty(self):
+        """身上护甲带来的视野减少量（每件的 sight_penalty 相加）。"""
+        return sum(self._armor(i).get("sight_penalty", 0) for i in self.worn.values() if self._armor(i))
+
+    def sight_range(self):
+        """视野范围 = 4 + 感知 − 护甲的视野惩罚。"""
+        return stats.sight_range_with(self.character.attributes, self.armor_sight_penalty())
+
+    def item_display_name(self, item_id):
+        """装备名字前加上等阶（普通的不加），例如“精良 防暴护甲”。"""
+        item = self.world.items[item_id]
+        quality = item.get("quality", "normal")
+        return item["name"] if quality == "normal" else f"{stats.quality_name(item)} {item['name']}"
 
     def armor_ap_penalty(self):
         """身上重甲带来的每回合行动点减少量（每件重甲的 ap_penalty 相加）。"""
@@ -834,9 +852,12 @@ class Game:
         armor = self._armor(item_id)
         if armor:
             class_name = stats.ARMOR_CLASSES[armor["class"]][0]
-            text = f"你穿上了{name}（{slot_name}，{class_name}，护甲 +{armor['value']}"
+            text = (f"你穿上了{self.item_display_name(item_id)}（{slot_name}，{class_name}，"
+                    f"护甲 +{stats.armor_value(self.world.items[item_id])}")
             if armor.get("ap_penalty"):
                 text += f"，每回合行动点 −{armor['ap_penalty']}"
+            if armor.get("sight_penalty"):
+                text += f"，视野 −{armor['sight_penalty']}"
             text += f"）。现在总护甲 {self.armor_total()}。"
         else:
             reduction = self.world.items[item_id]["gear"].get("weight_reduction")
