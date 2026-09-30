@@ -325,8 +325,7 @@
       "modifiers": [
         {
           "stat": "melee_damage_bonus",
-          "base": 10,
-          "per_attribute": 2
+          "base": 20
         }
       ]
     },
@@ -339,8 +338,7 @@
       "modifiers": [
         {
           "stat": "dodge",
-          "base": 5,
-          "per_attribute": 1
+          "base": 3
         }
       ]
     },
@@ -353,8 +351,7 @@
       "modifiers": [
         {
           "stat": "accuracy",
-          "base": 5,
-          "per_attribute": 1
+          "base": 2
         }
       ]
     }

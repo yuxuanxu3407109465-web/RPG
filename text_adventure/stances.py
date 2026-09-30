@@ -45,10 +45,10 @@ def describe_granted(character, skill, trees, options):
         parts = []
         for m in stance["modifiers"]:
             name, unit = STAT_NAMES[m["stat"]]
-            formula = f"{m['base']}"
-            if m.get("per_attribute") and attribute_name:
-                formula += f" + {attribute_name}×{m['per_attribute']}"
-            parts.append(f"{name} {values[m['stat']]:+d}{unit}（{formula}）")
+            text = f"{name} {values[m['stat']]:+d}{unit}"
+            if m.get("per_attribute") and attribute_name:  # 随属性变化时才附上公式
+                text += f"（{m['base']} + {attribute_name}×{m['per_attribute']}）"
+            parts.append(text)
         lines.append(f"[{stance['name']}] " + "、".join(parts) + f"：{stance['description']}")
     return lines
 

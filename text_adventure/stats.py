@@ -22,7 +22,7 @@ def melee_damage_bonus(a):
 
 AP_PER_AGILITY = 2  # 每回合获得的行动点 = 敏捷 × 2
 AP_CAP_MULTIPLIER = 2  # 没用完的行动点留到下回合，最多存到每回合获得量的 2 倍
-ATTACK_AP_COST = 3  # 一次普通攻击消耗的行动点
+ATTACK_AP_COST = 6  # 一次普通攻击消耗的行动点
 DODGE_MULTIPLIER = 1.5
 UNARMED = "unarmed"  # 没拿武器时按徒手（武术）算
 
