@@ -325,7 +325,7 @@ def sidestep_distance(a):
 
 
 def psionic_bolt_damage(level):
-    """灵焰冲击（灵能·塑能系）的火焰伤害 = 6 + 等级 × 2。"""
+    """灵火弹（灵能·塑能系）的火焰伤害 = 6 + 等级 × 2。"""
     return 6 + level * 2
 
 
