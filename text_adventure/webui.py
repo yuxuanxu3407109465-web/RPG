@@ -32,7 +32,7 @@ import stats
 from character import CharacterCreator, CharacterOptions, Prompter, check_attributes
 from dice import Dice
 from engine import (
-    DIRECTION_NAMES, REST_MINUTES_MAX, REST_MINUTES_MIN, SLOT_COUNT, Game, World,
+    DIRECTION_NAMES, DIRECTIONS, REST_MINUTES_MAX, REST_MINUTES_MIN, SLOT_COUNT, Game, World,
 )
 from skills import SkillTrees, skill_details, tree_unlocked, unmet_requirements
 
@@ -76,7 +76,7 @@ def is_move(text):
     text = text.strip()
     if not text:
         return False
-    if text in DIRECTION_NAMES:  # 直接输入“东”“north”这种
+    if text.lower() in DIRECTIONS:  # 直接输入“东”“n”“north”这种
         return True
     return text.startswith(MOVE_WORDS) or text.split()[0:1] == ["go"]
 
@@ -473,7 +473,9 @@ class Session:
                     for s, i in game.worn.items() if i and world.items[i].get("armor")
                 ],
                 "attack_cost": stats.ATTACK_AP_COST,
-                "move_cost": stats.MOVE_AP_COST,
+                "move_cost": (lambda cost: "无法移动" if cost is None else
+                              f"{cost}/格" + ("（超重）" if cost != stats.MOVE_AP_COST else ""))(
+                    stats.move_ap_cost(game._carried_weight(), stats.carry_capacity(c.attributes))),
                 "item_cost": stats.USE_ITEM_AP_COST,
                 "dodge": game.dodge(),
                 "initiative": stats.initiative(c.attributes),

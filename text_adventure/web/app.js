@@ -749,7 +749,7 @@
       html += '<div class="kv"><span class="k">闪避</span><span class="v">' + esc(cb.dodge) + '</span></div>';
       html += '<div class="kv"><span class="k">先攻</span><span class="v">' + esc(cb.initiative) + '</span></div>';
       html += '<div class="kv"><span class="k">行动点消耗</span><span class="v">攻击 ' + esc(cb.attack_cost) +
-        ' · 移动 ' + esc(cb.move_cost) + '/格 · 物品 ' + esc(cb.item_cost) + '</span></div>';
+        ' · 移动 ' + esc(cb.move_cost) + ' · 物品 ' + esc(cb.item_cost) + '</span></div>';
       html += '</div>';
     }
 

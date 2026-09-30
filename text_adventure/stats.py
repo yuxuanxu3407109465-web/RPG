@@ -28,6 +28,8 @@ AP_PER_AGILITY = 2  # 每回合获得的行动点 = 敏捷 × 2
 AP_CAP_MULTIPLIER = 2  # 没用完的行动点留到下回合，最多存到每回合获得量的 2 倍
 ATTACK_AP_COST = 6  # 一次普通攻击消耗的行动点
 MOVE_AP_COST = 1  # 战斗中每移动一格消耗的行动点
+OVERWEIGHT_MOVE_AP_COST = 2  # 超重时移动能力减半：每格 2 点
+IMMOBILE_WEIGHT_MULTIPLIER = 2  # 超过负重上限的 2 倍就完全无法移动
 USE_ITEM_AP_COST = 3  # 战斗中使用一次物品（例如用绷带包扎）消耗的行动点
 UNARMED_DAMAGE = "1d4"  # 徒手伤害骰
 
@@ -87,6 +89,23 @@ def damage_multiplier(modifiers, crit=False):
 def final_damage(raw, modifiers, armor, crit=False):
     """最终伤害：骰出的伤害 × 各项修正（相乘）×（暴击 1.5），向上取整，再减护甲，最低为 0。"""
     return max(0, math.ceil(raw * damage_multiplier(modifiers, crit)) - armor)
+
+
+def load_level(weight, capacity):
+    """负重状态：normal（正常）、overweight（超过上限）、immobile（超过上限 2 倍，无法移动）。"""
+    if weight > capacity * IMMOBILE_WEIGHT_MULTIPLIER:
+        return "immobile"
+    if weight > capacity:
+        return "overweight"
+    return "normal"
+
+
+def move_ap_cost(weight, capacity):
+    """战斗中移动一格的行动点；无法移动时返回 None。"""
+    level = load_level(weight, capacity)
+    if level == "immobile":
+        return None
+    return OVERWEIGHT_MOVE_AP_COST if level == "overweight" else MOVE_AP_COST
 
 
 def ap_per_turn(a, armor_penalty=0):

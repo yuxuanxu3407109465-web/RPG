@@ -415,6 +415,11 @@ class Game:
                 return exit_.get("blocked_message", "你过不去。")
             exit_ = exit_["to"]
 
+        if self.load_level() == "immobile":
+            capacity = stats.carry_capacity(self.character.attributes)
+            return (f"你背的东西太重了（负重 {self._carried_weight():g}/{capacity} kg，"
+                    f"超过上限的 {stats.IMMOBILE_WEIGHT_MULTIPLIER} 倍），一步也挪不动。先放下些东西吧。")
+
         outdoor = bool(room.get("outdoor"))
         cost = 0
         if self.character:
@@ -541,7 +546,37 @@ class Game:
                 "effect": f"攻击力 {stats.EXHAUSTED_DAMAGE_PENALTY}%",
                 "note": "体力低于上限的 10%，恢复体力即可解除",
             })
+        level = self.load_level()
+        if level != "normal":
+            active.append(self._load_condition(level))
         return active
+
+    def load_level(self):
+        """当前负重状态（normal / overweight / immobile），见 stats.load_level。"""
+        if not self.character:
+            return "normal"
+        return stats.load_level(self._carried_weight(), stats.carry_capacity(self.character.attributes))
+
+    def _load_condition(self, level):
+        capacity = stats.carry_capacity(self.character.attributes)
+        weight = f"负重 {self._carried_weight():g}/{capacity} kg"
+        if level == "immobile":
+            return {"id": "immobile", "name": "严重超重", "source": "weight",
+                    "effect": "完全无法移动",
+                    "note": f"{weight}，超过上限的 {stats.IMMOBILE_WEIGHT_MULTIPLIER} 倍，放下些东西才能走"}
+        return {"id": "overweight", "name": "超重", "source": "weight",
+                "effect": f"移动能力减半（战斗中每格 {stats.OVERWEIGHT_MOVE_AP_COST} 行动点）",
+                "note": f"{weight}，放下些东西即可解除"}
+
+    def _load_change_note(self, before):
+        """负重状态变了就补一句提示（拿东西、换背包之后用）。"""
+        after = self.load_level()
+        if after == before:
+            return ""
+        if after == "normal":
+            return "\n负重恢复正常。"
+        condition = self._load_condition(after)
+        return f"\n你现在{condition['name']}了：{condition['effect']}。（{condition['note']}）"
 
     def clear_condition(self, condition_id):
         """清除异常状态（留给以后的解毒剂之类道具调用）。
@@ -585,14 +620,11 @@ class Game:
         item_id = self._match(arg, items, self.world.items)
         if not item_id:
             return "这里没有这样东西。"
-        if self.character:
-            capacity = stats.carry_capacity(self.character.attributes)
-            weight = self.world.items[item_id].get("weight", 1)
-            if self._carried_weight(weight) > capacity:
-                return f"太重了，背不动。（负重 {self._carried_weight():g}/{capacity} kg）"
+        # 超重也能拿，只是会影响移动（见 stats.load_level）
+        before = self.load_level()
         items.remove(item_id)
         self.inventory.append(item_id)
-        return f"你拿起了{self.world.items[item_id]['name']}。"
+        return f"你拿起了{self.world.items[item_id]['name']}。" + self._load_change_note(before)
 
     def cmd_drop(self, arg):
         if not arg:
@@ -600,10 +632,12 @@ class Game:
         item_id = self._match(arg, self.inventory, self.world.items)
         if not item_id:
             return "你身上没有这样东西。"
+        before = self.load_level()
         self._unequip(item_id)
         self.inventory.remove(item_id)
         self.room_items[self.current_room].append(item_id)
-        return f"你放下了{self.world.items[item_id]['name']}。" + self._check_stance()
+        return (f"你放下了{self.world.items[item_id]['name']}。" + self._check_stance()
+                + self._load_change_note(before))
 
     def cmd_use(self, arg):
         """使用物品。效果写在物品数据的 use 字段里，见 items.py。"""
@@ -669,7 +703,7 @@ class Game:
         active = "、".join(f"{x['name']}（{x['effect']}）" for x in conditions) if conditions else "无"
         return (sheet
                 + f"\n\n【装备与姿态】\n{weapons}\n{armor_line}\n{gear_line}\n  姿态：{stance['name'] if stance else '无'}"
-                + f"\n  行动点消耗：普通攻击 {stats.ATTACK_AP_COST}、移动 1 格 {stats.MOVE_AP_COST}、"
+                + f"\n  行动点消耗：普通攻击 {stats.ATTACK_AP_COST}、移动 1 格 {self._move_cost_text()}、"
                   f"使用物品 {stats.USE_ITEM_AP_COST}"
                 + f"\n\n【时间】{self.clock_text()}\n【异常状态】{active}")
 
@@ -773,7 +807,8 @@ class Game:
             return "你身上没有这样东西。"
         name = self.world.items[item_id]["name"]
         if self.world.wear_candidates(item_id):
-            return self._wear(item_id)
+            before = self.load_level()  # 换背包会改变减重率
+            return self._wear(item_id) + self._load_change_note(before)
         weapon = self._weapon(item_id)
         if not weapon:
             return f"{name}没法装备。"
@@ -811,11 +846,12 @@ class Game:
         item_id = self._match(arg, held + worn, self.world.items)
         if not item_id:
             return "你身上没装备这样东西。"
+        before = self.load_level()
         self._unequip(item_id)
+        if item_id in worn and not self._armor(item_id):
+            return f"你取下了{self.world.items[item_id]['name']}。" + self._load_change_note(before)
         if item_id in worn and self._armor(item_id):
             return f"你脱下了{self.world.items[item_id]['name']}。现在总护甲 {self.armor_total()}。"
-        if item_id in worn:
-            return f"你取下了{self.world.items[item_id]['name']}。"
         return f"你收起了{self.world.items[item_id]['name']}。" + self._check_stance()
 
     def cmd_stance(self, arg):
@@ -864,6 +900,14 @@ class Game:
         """闪避（含姿态加成）。"""
         bonuses = stances.stance_bonuses(self.character, self._current_stance(), self.skill_trees)
         return stats.dodge(self.character.attributes) + bonuses.get("dodge", 0)
+
+    def _move_cost_text(self):
+        """战斗中移动一格的行动点，超重翻倍，严重超重无法移动。"""
+        capacity = stats.carry_capacity(self.character.attributes)
+        cost = stats.move_ap_cost(self._carried_weight(), capacity)
+        if cost is None:
+            return "无法移动（严重超重）"
+        return f"{cost}（超重）" if cost != stats.MOVE_AP_COST else f"{cost}"
 
     def weapon_summary(self):
         """手上每件武器（没拿就是徒手）的精准，角色卡和网页版共用。"""
