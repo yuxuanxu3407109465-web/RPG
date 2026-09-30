@@ -256,7 +256,7 @@ class Game:
         self.character = character
         background = self.options.background(character.background)
         self.inventory = list(background.get("starting_items", []))
-        character.hp = stats.max_hp(character.attributes, character.level)
+        character.hp = self.options.max_hp(character)
         character.stamina = stats.stamina_max(character.attributes)
 
     # ---------- 存档槽位 ----------
@@ -634,14 +634,14 @@ class Game:
         self._regenerate()
         text = f"你在原地等了一回合（{format_duration(stats.WAIT_MINUTES)}），现在是 {self.clock_text()}。"
         if c.hp > hp_before:
-            text += f"\n生命恢复 {hp_before} → {c.hp}/{stats.max_hp(c.attributes, c.level)}。"
+            text += f"\n生命恢复 {hp_before} → {c.hp}/{self.options.max_hp(c)}。"
         return text
 
     def _regenerate(self):
         """每隔一定回合按体质恢复生命。"""
         c = self.character
         if c and self.turns % stats.REGEN_INTERVAL == 0:
-            c.hp = min(stats.max_hp(c.attributes, c.level), c.hp + stats.hp_regen(c.attributes))
+            c.hp = min(self.options.max_hp(c), c.hp + stats.hp_regen(c.attributes))
 
     def _carried_weight(self, extra=0):
         """背包里所有东西的重量（extra 是准备拿起来的东西），按背着的背包的减重率打折。"""
@@ -742,7 +742,7 @@ class Game:
                 return "伤害未定"
             multiplier = stats.damage_multiplier([value for _, value in w["damage_modifiers"]])
             return (f"伤害 {w['damage']}" + (f" ×{float(multiplier):g}" if multiplier != 1 else "")
-                    + f"，暴击 {w['crit_range']}")
+                    + f"，暴击 {w['crit_range']}" + (f"，射程 {w['range']}" if w.get("range") else ""))
 
         weapons = "\n".join(
             f"  {w['hand']} {w['name']}（{w['type']}）：精准 {w['accuracy']:g}（{w['attribute']}"
@@ -828,7 +828,8 @@ class Game:
 
     def sight_range(self):
         """视野范围 = 4 + 感知 − 护甲的视野惩罚。"""
-        return stats.sight_range_with(self.character.attributes, self.armor_sight_penalty())
+        bonus = self.options.perk_effect(self.character.perks, "sight_bonus")  # 警觉 +2
+        return stats.sight_range_with(self.character.attributes, self.armor_sight_penalty()) + bonus
 
     def item_display_name(self, item_id):
         """装备名字前加上等阶（普通的不加），例如“精良 防暴护甲”。"""
@@ -893,6 +894,8 @@ class Game:
         weapon = self._weapon(item_id)
         if not weapon:
             return f"{name}没法装备。"
+        if self.options.perk_effect(self.character.perks, "no_weapons") if self.character else False:
+            return f"你是踢腿的武道家，不用武器——{name}拿在手上反而碍事。"
 
         two_handed = weapon.get("hands", 1) == 2
         main = self.equipment["main_hand"]
@@ -1073,18 +1076,24 @@ class Game:
             total = self.accuracy(weapon_type, poor) + quality
             summary.append({
                 "hand": hand,
-                "name": self.item_display_name(item_id) if item_id else "拳脚",
+                "name": self.item_display_name(item_id) if item_id else self._unarmed_attack()["name"],
                 "type": self.world.weapon_types[weapon_type],
                 "weapon_type": weapon_type,
                 "attribute": self.options.attribute_name(stats.WEAPON_ATTRIBUTES[weapon_type]),
                 "accuracy": total,
                 "stance_bonus": total - base - quality,
                 "quality_bonus": quality,
-                "damage": stats.weapon_damage(self.world.items[item_id]) if item_id else stats.UNARMED_DAMAGE,
+                "damage": stats.weapon_damage(self.world.items[item_id]) if item_id else self._unarmed_attack()["damage"],
+                "range": None if item_id else self._unarmed_attack().get("range"),
                 "crit_range": self._crit_range(weapon_type, item_id),
                 "damage_modifiers": self.damage_modifiers(weapon_type),
             })
         return summary
+
+    def _unarmed_attack(self):
+        """空手时的攻击：默认拳脚 1d4；踢腿的武道家改成踢击（1d8，射程 2）。"""
+        kick = self.options.perk_effect(self.character.perks, "unarmed_attack") if self.character else None
+        return kick or {"name": "拳脚", "damage": stats.UNARMED_DAMAGE}
 
     def _crit_range(self, weapon_type, item_id):
         """武器的暴击范围，再按被动技能扩大（例如精通重击：单手持用时翻倍）。"""
@@ -1239,7 +1248,7 @@ class Game:
             weapon = {"name": enemy.attack["name"], "damage": enemy.attack["damage"],
                       "damage_modifiers": enemy.damage_modifiers()}
             text, damage = self._roll_damage(weapon, self.armor_total(), result.crit)
-            hp_max = stats.max_hp(c.attributes, c.level)
+            hp_max = self.options.max_hp(c)
             lines += [text, f"你的生命 {c.hp} → {max(0, c.hp - damage)}/{hp_max}"]
         lines.append("（测试，不会真的扣你的生命）")
         return "\n".join(lines)
@@ -1374,13 +1383,13 @@ class Game:
                 k: max(stats.ATTRIBUTE_MIN, min(stats.ATTRIBUTE_MAX, v)) for k, v in self.character.attributes.items()
             }
             if not self.character.hp:
-                self.character.hp = stats.max_hp(self.character.attributes, self.character.level)
+                self.character.hp = self.options.max_hp(self.character)
             # 旧存档没有体力，按满值补上
             if not self.character.stamina:
                 self.character.stamina = stats.stamina_max(self.character.attributes)
             # 公式改过之后，旧存档里的生命 / 体力可能超过新上限，压回上限
             c = self.character
-            c.hp = min(c.hp, stats.max_hp(c.attributes, c.level))
+            c.hp = min(c.hp, self.options.max_hp(c))
             c.stamina = min(c.stamina, stats.stamina_max(c.attributes))
         self.current_room = state["current_room"]
         self.turns = state["turns"]

@@ -443,7 +443,7 @@ class Session:
                 "level": c.level,
                 "xp": c.xp,
                 "hp": c.hp,
-                "hp_max": stats.max_hp(c.attributes, c.level),
+                "hp_max": self.options.max_hp(c),
                 "skill_points": c.skill_points,
                 "attributes": [
                     {"id": a["id"], "name": a["name"], "value": c.attributes.get(a["id"], 0)}

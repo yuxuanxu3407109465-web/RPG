@@ -235,9 +235,9 @@ def initiative(a):
     return a["agility"] + a["perception"]
 
 
-def max_hp(a, level):
-    """生命值上限 = 10 +（体质 ÷ 2）× 等级。"""
-    return 10 + (a["constitution"] // 2) * level
+def max_hp(a, level, bonus_per_level=0):
+    """生命值上限 = 10 +（体质 ÷ 2 + 每级额外加成）× 等级（顽强：每级额外 +2）。"""
+    return 10 + (a["constitution"] // 2 + bonus_per_level) * level
 
 
 def hp_regen(a):
@@ -451,7 +451,7 @@ def xp_to_next_level(level, options):
 
 def gain_xp(character, amount, options):
     """获得经验（受智力倍率影响），可能连升多级。返回要显示给玩家的文字。"""
-    gained = math.floor(amount * Fraction(xp_multiplier(character.attributes)).limit_denominator(100))
+    gained = math.floor(amount * options.xp_multiplier(character))
     character.xp += gained
     lines = [f"获得 {gained} 点经验。"]
     while character.xp >= xp_to_next_level(character.level, options):
@@ -459,7 +459,7 @@ def gain_xp(character, amount, options):
         character.level += 1
         points = skill_points_per_level(character.attributes)
         character.skill_points += points
-        character.hp = max_hp(character.attributes, character.level)
+        character.hp = options.max_hp(character)
         lines.append(
             f"★ 升级了！现在是 {character.level} 级，生命值回满，获得 {points} 个技能点。"
         )

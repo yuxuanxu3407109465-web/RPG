@@ -132,6 +132,58 @@
         "perk_points": 2,
         "no_companions": true
       }
+    },
+    {
+      "id": "precocious",
+      "name": "早熟",
+      "kind": "mixed",
+      "description": "+2 点可支配属性点，但经验获取降低 20%。",
+      "effects": {
+        "attribute_points": 2,
+        "xp_percent": -20
+      }
+    },
+    {
+      "id": "lethal",
+      "name": "致命",
+      "kind": "positive",
+      "description": "每次攻击命中时有 5% 的概率立刻杀死目标（对首领改为这一击伤害 +100%）。",
+      "effects": {
+        "instant_kill_percent": 5
+      }
+    },
+    {
+      "id": "alert",
+      "name": "警觉",
+      "kind": "positive",
+      "description": "视野范围 +2，先攻检定获得优势。",
+      "effects": {
+        "sight_bonus": 2,
+        "initiative_advantage": true
+      }
+    },
+    {
+      "id": "tough",
+      "name": "顽强",
+      "kind": "positive",
+      "description": "每个等级的生命上限额外 +2。",
+      "effects": {
+        "hp_per_level": 2
+      }
+    },
+    {
+      "id": "kick_master",
+      "name": "踢腿的武道家",
+      "kind": "mixed",
+      "description": "无法使用枪械和近战武器；徒手攻击变为踢击（1d8，攻击射程 2）。",
+      "effects": {
+        "no_weapons": true,
+        "unarmed_attack": {
+          "name": "踢击",
+          "damage": "1d8",
+          "range": 2
+        }
+      }
     }
   ]
 }

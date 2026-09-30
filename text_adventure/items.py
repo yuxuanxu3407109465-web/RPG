@@ -38,7 +38,7 @@ def _effect_stamina(game, character, effect):
 
 
 def _effect_hp(game, character, effect):
-    cap = stats.max_hp(character.attributes, character.level)
+    cap = game.options.max_hp(character)
     before = character.hp
     character.hp = min(cap, character.hp + _amount(effect, cap))
     return f"生命值 +{character.hp - before}（{character.hp}/{cap}）"

@@ -2,6 +2,7 @@
 
 import json
 from dataclasses import asdict, dataclass, field
+from fractions import Fraction
 from pathlib import Path
 from typing import Dict, List
 
@@ -111,7 +112,19 @@ class CharacterOptions:
         values = [v for v in values if v is not None]
         if values and isinstance(values[0], bool):
             return any(values)
+        if values and isinstance(values[0], dict):
+            return values[0]  # 例如踢击这种“替换攻击方式”的效果
         return sum(values)
+
+    def max_hp(self, character):
+        """玩家的生命上限（含顽强这类 perk 的每级加成）。"""
+        return stats.max_hp(character.attributes, character.level,
+                            self.perk_effect(character.perks, "hp_per_level"))
+
+    def xp_multiplier(self, character):
+        """经验倍率 = 智力倍率 × perk 倍率（早熟 −20%），不同来源相乘。"""
+        intelligence = Fraction(stats.xp_multiplier(character.attributes)).limit_denominator(100)
+        return intelligence * Fraction(100 + self.perk_effect(character.perks, "xp_percent"), 100)
 
     def companion_limit(self, character):
         """同伴上限：魅力决定；选了“无法携带同伴”的 perk 就是 0。"""
@@ -133,7 +146,7 @@ def format_sheet(character, options, items, carried_weight=None, tree_names=None
         value = ("+" if signed and base + extra >= 0 else "") + total + unit
         return value + (f"（含姿态 {extra:+g}）" if extra else "")
     background = options.background(character.background)
-    hp_max = stats.max_hp(a, character.level)
+    hp_max = options.max_hp(character)
     stamina_cap = stats.stamina_max(a)
     stamina_now = character.stamina or stamina_cap
     lines = [
@@ -181,7 +194,7 @@ def format_sheet(character, options, items, carried_weight=None, tree_names=None
         f"每步 {stats.move_minutes(False, overweight)} 分钟，"
         f"室外每步 {stats.move_cost(a, True, overweight)} 点、{stats.move_minutes(True, overweight)} 分钟"
         + ("，超重翻倍" if overweight else "") + "）",
-        f"  经验倍率 ×{stats.xp_multiplier(a):.1f}    每级技能点 {stats.skill_points_per_level(a)}",
+        f"  经验倍率 ×{float(options.xp_multiplier(character)):g}    每级技能点 {stats.skill_points_per_level(a)}",
     ]
     return "\n".join(lines)
 
@@ -282,7 +295,7 @@ class CharacterCreator:
             character = self._create()
             self.ask.print("\n" + format_sheet(character, self.options, self.items, tree_names=self.tree_names))
             if self.ask.confirm("\n确认使用这个角色吗？"):
-                character.hp = stats.max_hp(character.attributes, character.level)
+                character.hp = self.options.max_hp(character)
                 character.stamina = stats.stamina_max(character.attributes)
                 return character
             self.ask.print("\n好的，重新创建。")
