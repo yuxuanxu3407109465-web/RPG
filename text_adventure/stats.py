@@ -22,8 +22,10 @@ STRENGTH_DAMAGE_PERCENT = 10  # 力量每比 5 多 / 少 1 点，近战伤害 ±
 
 def melee_damage_bonus(a, per_point=STRENGTH_DAMAGE_PERCENT):
     """近战伤害加成（%）：力量每比 5 多 1 点 +10%，每少 1 点 −10%（力量 3 为 −20%）。
-    适用于所有近战武器（锐器、钝器、武术），不适用于枪械。per_point 可被技能改（势大力沉：15）。"""
-    return (a["strength"] - 5) * per_point
+    适用于所有近战武器（锐器、钝器、武术），不适用于枪械。
+    per_point 可被技能改（势大力沉：15），但只放大加值：力量低于 5 时的惩罚始终按每点 10% 算。"""
+    diff = a["strength"] - 5
+    return diff * (per_point if diff > 0 else STRENGTH_DAMAGE_PERCENT)
 
 
 # ---------- 战斗（d20：d20 + 精准 ≥ 闪避 即命中） ----------
