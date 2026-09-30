@@ -232,8 +232,8 @@ def dodge(a):
 
 
 def initiative(a):
-    """先攻 = 敏捷 + 感知，数值高的先行动。"""
-    return a["agility"] + a["perception"]
+    """先攻值 =（敏捷 + 感知）× 1.5，向下取整。战斗开始时掷先攻检定：1d20 + 先攻值，高的先行动。"""
+    return math.floor((a["agility"] + a["perception"]) * Fraction(CHECK_MODIFIER_MULTIPLIER))
 
 
 def max_hp(a, level, bonus_per_level=0):

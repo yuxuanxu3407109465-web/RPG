@@ -218,6 +218,7 @@ class Game:
             (["敌人", "enemy"], self.cmd_enemy),
             (["试受击", "defend test"], self.cmd_defend_test),
             (["试盾击", "bash test"], self.cmd_bash_test),
+            (["试先攻", "initiative test"], self.cmd_initiative_test),
             (["使用", "吃", "喝", "use"], self.cmd_use),
             (["休息", "睡", "rest"], self.cmd_rest),
             (["等待", "wait"], self.cmd_wait),
@@ -1281,6 +1282,23 @@ class Game:
             f"（测试：真正使用时消耗 3 行动点，冷却 1 回合）",
         ])
 
+    def cmd_initiative_test(self, arg):
+        """试先攻：你和一个敌人各掷一次先攻检定，看谁先动。"""
+        if not self.character:
+            return "还没有创建角色。"
+        enemy = self._parse_enemy(arg) if arg else None
+        if not enemy:
+            return "用法：试先攻 敌人 等阶，例如：试先攻 疾尸 精英"
+        advantage = self.options.perk_effect(self.character.perks, "initiative_advantage")
+        mine, my_text = self.dice.initiative(stats.initiative(self.character.attributes), advantage)
+        theirs, their_text = self.dice.initiative(enemy.initiative())
+        if mine == theirs:
+            verdict = "平手（平手时谁先动尚未设计）"
+        else:
+            verdict = "你先行动" if mine > theirs else f"{enemy.name}先行动"
+        return "\n".join([f"你：{my_text}" + ("（警觉：优势）" if advantage else ""),
+                          f"{enemy.name}：{their_text}", f"→ {verdict}"])
+
     def cmd_roll(self, arg):
         roll = self.dice.roll(arg or "1d20")
         if not roll:
@@ -1529,6 +1547,7 @@ class Game:
             "  试受击 <敌人> <等阶>       让敌人打你一次，看闪避 / 格挡 / 护甲（不扣血），例如：试受击 壮尸\n"
             "                          末尾加“劣势”模拟敌人处于劣势，例如：试受击 疾尸 精英 劣势\n"
             "  试盾击 <敌人> <等阶>       持盾时对敌人试一次盾击，例如：试盾击 壮尸 精英\n"
+            "  试先攻 <敌人> <等阶>       和敌人各掷一次先攻检定，例如：试先攻 疾尸\n"
             "  等待 / wait             原地等一回合（战斗外 1 分钟，也算生命恢复的回合）\n"
             "  休息 <时长>             恢复体力并推进时间，例如：休息 30、休息 2小时（1~480 分钟）\n"
             "                          体力满了也能休息，只是时间照样过去\n"

@@ -90,6 +90,17 @@ class Dice:
                 f"{sign} 难度 {format_number(difficulty)} → {'成功' if success else '失败'}")
         return CheckResult(success, False, text)
 
+    def initiative(self, value, advantage=False):
+        """先攻检定：1d20 + 先攻值（警觉：2d20 取高）。返回 (结果, 过程文字)。"""
+        if advantage:
+            rolls = (self.rng.randint(1, 20), self.rng.randint(1, 20))
+            roll, dice = max(rolls), f"2d20 取高（{rolls[0]}、{rolls[1]}）"
+        else:
+            roll = self.rng.randint(1, 20)
+            dice = "d20"
+        total = roll + value
+        return total, f"🎲 先攻：{dice} = {roll} + 先攻值 {value} = {total}"
+
     def attack(self, accuracy, dodge, crit_range="20", disadvantage=False, advantage=False):
         """攻击判定：d20 + 精准 ≥ 闪避 即命中。掷出 20 必定命中，掷出 1 必定落空。
         命中且掷出的点数落在武器的暴击范围内（例如 19-20）时，再掷一次确认：
