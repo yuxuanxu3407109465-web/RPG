@@ -17,10 +17,13 @@ def carry_capacity(a):
     return 10 + a["strength"] * 4
 
 
-def melee_damage_bonus(a):
+STRENGTH_DAMAGE_PERCENT = 10  # 力量每比 5 多 / 少 1 点，近战伤害 ±10%
+
+
+def melee_damage_bonus(a, per_point=STRENGTH_DAMAGE_PERCENT):
     """近战伤害加成（%）：力量每比 5 多 1 点 +10%，每少 1 点 −10%（力量 3 为 −20%）。
-    适用于所有近战武器（锐器、钝器、武术），不适用于枪械。"""
-    return (a["strength"] - 5) * 10
+    适用于所有近战武器（锐器、钝器、武术），不适用于枪械。per_point 可被技能改（势大力沉：15）。"""
+    return (a["strength"] - 5) * per_point
 
 
 # ---------- 战斗（d20：d20 + 精准 ≥ 闪避 即命中） ----------
@@ -97,7 +100,8 @@ PASSIVE_EFFECTS = {
     "crit_range_multiplier": "暴击范围倍数",  # 多个同时生效时相乘
     "armor_ignore": "无视护甲",  # 多个同时生效时相加
     "offhand_attack_ap_percent": "副手追击行动点",
-    "extra_blocks": "每回合额外格挡次数",  # 多个同时生效时相加  # 主手攻击后，副手追击的行动点 = 普通攻击 × 这个百分比
+    "extra_blocks": "每回合额外格挡次数",  # 多个同时生效时相加
+    "strength_damage_percent": "每点力量的伤害修正",  # 取最高的那个  # 主手攻击后，副手追击的行动点 = 普通攻击 × 这个百分比
 }
 
 
