@@ -352,7 +352,7 @@ class Session:
                     "cost": skill.get("cost", 1),
                     "description": skill["description"],
                     "active": skill.get("type") == "active",
-                    "cooldown": skill_rules.cooldown(skill),
+                    "cooldown": skill_rules.cooldown_text(skill),
                     "ap_cost": skill_rules.ap_cost(skill),
                     "weapon": self.world.weapon_types.get(weapon, weapon) if weapon else "",
                     "details": skill_details(c, skill, trees, self.options),
