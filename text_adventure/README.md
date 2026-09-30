@@ -74,10 +74,12 @@ python3 main.py
 | `stats.py` | 属性衍生数值、经验与升级的公式 |
 | `skills.py` | 技能树：解锁条件、学习、显示 |
 | `stances.py` | 姿态（长刃分支） |
+| `enemies.py` | 敌人：按模板生成，精英 / 首领加成 |
 | `dice.py` | 抛骰与 D20 / D100 检定 |
 | `map_view.py` | 文字地图 |
 | `data/world.json` | 地点、物品、NPC、对话、地图位置 |
 | `data/character_options.json` | 属性、背景、预设同伴、成长数值 |
+| `data/enemies.json` | 敌人模板 |
 | `data/skill_trees.json` | 技能树、分支、技能、姿态 |
 
 大部分游戏内容都写在 `data/` 里的 JSON 文件中，加地点、物品、技能通常不需要改代码。

@@ -14,6 +14,7 @@ import skills
 import stances
 import stats
 from character import Character, format_sheet
+from enemies import EnemyBook, format_enemy
 from map_view import render_map
 
 # 各种写法 -> 内部方向名
@@ -126,6 +127,7 @@ class World:
 
     def __init__(self, path):
         data = json.loads(Path(path).read_text(encoding="utf-8"))
+        self.data_dir = Path(path).parent  # 其他数据文件（如 enemies.json）和它放在一起
         self.title = data["title"]
         self.intro = data["intro"]
         self.start_room = data["start_room"]
@@ -183,6 +185,7 @@ class Game:
         self.options = options
         self.skill_trees = skill_trees
         self.dice = dice
+        self.enemies = EnemyBook(world.data_dir / "enemies.json", [a["id"] for a in options.attributes])
         # 存档分成几个槽：save1.json / save2.json / save3.json
         self.save_dir = Path(save_path).parent
         self.slot = 1
@@ -209,6 +212,7 @@ class Game:
             (["掷骰", "roll"], self.cmd_roll),
             (["检定", "check"], self.cmd_check),
             (["试攻击", "attack test"], self.cmd_attack_test),
+            (["敌人", "enemy"], self.cmd_enemy),
             (["使用", "吃", "喝", "use"], self.cmd_use),
             (["休息", "睡", "rest"], self.cmd_rest),
             (["等待", "wait"], self.cmd_wait),
@@ -984,35 +988,72 @@ class Game:
         mods.append(("力竭", stats.attack_penalty(c)))
         return [(name, value) for name, value in mods if value]
 
+    def _parse_enemy(self, arg):
+        """“僵尸 精英”这种写法 -> 生成的敌人；不是敌人名就返回 None。"""
+        parts = arg.split()
+        if not parts:
+            return None
+        template_id = self.enemies.find(parts[0])
+        if not template_id:
+            return None
+        tier = "normal"
+        if len(parts) > 1:
+            tier = next((t for t, info in stats.ENEMY_TIERS.items() if parts[1] in (t, info[0])), None)
+            if not tier:
+                return None
+        return self.enemies.create(template_id, tier)
+
+    def cmd_enemy(self, arg):
+        """敌人 <名字> <等阶>：查看敌人资料（测试用）。"""
+        tiers = "、".join(info[0] for info in stats.ENEMY_TIERS.values())
+        names = "、".join(t["name"] for t in self.enemies.templates.values())
+        if not arg:
+            return f"已有的敌人：{names}。用法：敌人 名字 等阶（{tiers}），例如：敌人 僵尸 精英"
+        enemy = self._parse_enemy(arg)
+        if not enemy:
+            return f"没找到这个敌人。已有的敌人：{names}；等阶：{tiers}。"
+        return format_enemy(enemy, self.options, self.world.weapon_types)
+
     def cmd_attack_test(self, arg):
-        """试攻击：用主手武器（没拿就徒手）掷一次命中判定，还没有真正的敌人。"""
+        """试攻击：用手上第一件武器（没拿就徒手）试一次攻击，目标可以是数值，也可以是敌人。"""
         if not self.character:
             return "还没有创建角色。"
-        usage = "用法：试攻击 目标闪避 目标护甲（例如：试攻击 15 3），不写闪避就用你自己的，不写护甲就是 0"
-        parts = arg.split()
-        try:
-            target = float(parts[0]) if parts else self.dodge()
-            armor = int(parts[1]) if len(parts) > 1 else 0
-        except ValueError:
-            return usage
-        if len(parts) > 2:
-            return usage
+        usage = ("用法：试攻击 目标闪避 目标护甲（例如：试攻击 15 3），或者 试攻击 敌人 等阶"
+                 "（例如：试攻击 僵尸 精英）；不写就用你自己的闪避、护甲 0")
+        enemy = self._parse_enemy(arg) if arg and not arg.split()[0].replace(".", "").isdigit() else None
+        if enemy:
+            target, armor = enemy.dodge(), enemy.armor
+        else:
+            parts = arg.split()
+            try:
+                target = float(parts[0]) if parts else self.dodge()
+                armor = int(parts[1]) if len(parts) > 1 else 0
+            except ValueError:
+                return usage
+            if len(parts) > 2:
+                return usage
         weapon = self.weapon_summary()[0]
         result = self.dice.attack(weapon["accuracy"], target, weapon["crit_range"])
+        who = enemy.name if enemy else "目标"
         lines = [
-            f"用{weapon['name']}试攻击（{weapon['type']}，精准看{weapon['attribute']}），"
-            f"目标闪避 {dice_rules.format_number(target)}、护甲 {armor}：",
+            f"用{weapon['name']}试攻击{who}（{weapon['type']}，精准看{weapon['attribute']}），"
+            f"闪避 {dice_rules.format_number(target)}、护甲 {armor}：",
             result.text,
         ]
         if result.hit:
-            lines.append(self._roll_damage(weapon, armor, result.crit))
+            damage_text, damage = self._roll_damage(weapon, armor, result.crit)
+            lines.append(damage_text)
+            if enemy and weapon["damage"]:
+                enemy.hp = max(0, enemy.hp - damage)
+                lines.append(f"{enemy.name} 生命 {enemy.max_hp} → {enemy.hp}/{enemy.max_hp}"
+                             + ("，倒下了！" if enemy.hp == 0 else ""))
         lines.append(f"（一次普通攻击消耗 {stats.ATTACK_AP_COST} 行动点）")
         return "\n".join(lines)
 
     def _roll_damage(self, weapon, armor, crit=False):
         """掷伤害并写出计算过程：骰子 → 修正（相乘）→ 暴击 → 向上取整 → 护甲。"""
         if not weapon["damage"]:
-            return f"{weapon['name']}的伤害还没有定。"
+            return f"{weapon['name']}的伤害还没有定。", 0
         roll = self.dice.roll(weapon["damage"])
         modifiers = [value for _, value in weapon["damage_modifiers"]]
         steps = [roll.describe()]
@@ -1028,7 +1069,7 @@ class Game:
         if armor:
             steps.append(f"护甲 −{armor}")
         damage = stats.final_damage(roll.total, modifiers, armor, crit)
-        return "，".join(steps) + f" → 造成 {damage} 点伤害"
+        return "，".join(steps) + f" → 造成 {damage} 点伤害", damage
 
     def cmd_roll(self, arg):
         roll = self.dice.roll(arg or "1d20")
@@ -1269,6 +1310,8 @@ class Game:
             "  掷骰 <骰子>              掷骰，例如：掷骰 2d6+1\n"
             "  检定 <属性> <难度>        做一次属性检定（d20 + 属性×1.5 ≥ 难度），例如：检定 敏捷 15\n"
             "  试攻击 <闪避> <护甲>       用手上的武器试一次攻击（命中 + 伤害），例如：试攻击 15 3\n"
+            "  试攻击 <敌人> <等阶>       对敌人试一次攻击，例如：试攻击 僵尸 精英\n"
+            "  敌人 <名字> <等阶>         查看敌人资料，例如：敌人 僵尸 首领\n"
             "  等待 / wait             原地等一回合（战斗外 1 分钟，也算生命恢复的回合）\n"
             "  休息 <时长>             恢复体力并推进时间，例如：休息 30、休息 2小时（1~480 分钟）\n"
             "                          体力满了也能休息，只是时间照样过去\n"

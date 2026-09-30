@@ -250,6 +250,17 @@ def attack_penalty(character):
 
 
 
+# ---------- 敌人等阶 ----------
+
+PHYSICAL_ATTRIBUTES = ("strength", "agility", "constitution")  # 肉体属性
+# 等阶 id -> (名字, 肉体属性加成, 生命上限加成)；加成可以把属性推到 10 以上
+ENEMY_TIERS = {
+    "normal": ("普通", 0, 0),
+    "elite": ("精英", 3, 20),
+    "boss": ("首领", 6, 40),
+}
+
+
 # ---------- 经验与升级 ----------
 
 def xp_to_next_level(level, options):

@@ -1,0 +1,20 @@
+{
+  "enemies": {
+    "zombie": {
+      "name": "僵尸",
+      "aliases": ["丧尸", "zombie"],
+      "description": "（数值暂定，等设计后替换）拖着脚走路的感染者，皮肤发灰，嘴里发出含糊的嘶吼。",
+      "level": 1,
+      "attributes": {
+        "strength": 5,
+        "agility": 3,
+        "constitution": 5,
+        "intelligence": 1,
+        "perception": 3,
+        "charisma": 1
+      },
+      "attack": { "name": "抓咬", "type": "unarmed", "damage": "1d4" },
+      "armor": 0
+    }
+  }
+}
