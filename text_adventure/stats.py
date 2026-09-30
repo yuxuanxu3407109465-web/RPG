@@ -120,7 +120,7 @@ def damage_multiplier(modifiers, crit=False):
 
 
 # 伤害类型：护甲（伤害减免）只对物理伤害生效
-DAMAGE_TYPES = {"physical": "物理", "fire": "火焰"}
+DAMAGE_TYPES = {"physical": "物理", "fire": "火焰", "bleed": "流血"}
 
 
 def final_damage(raw, modifiers, armor, crit=False, damage_type="physical"):
@@ -304,7 +304,7 @@ def attack_penalty(character):
 
 # ---------- 锐器技能的数值 ----------
 
-BLEED_DAMAGE = 4  # 每层流血每回合的伤害
+BLEED_DAMAGE = 4  # 每层流血在目标回合开始时的伤害（流血伤害，不受护甲减免）
 BLEED_TURNS = 3
 BLEED_STACKS_PER_HIT = 2  # 放血一次施加的层数
 

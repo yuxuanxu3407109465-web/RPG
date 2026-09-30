@@ -4,8 +4,9 @@
 技能用 branch 字段指定所属分支；不写 branch 的技能属于整棵树通用。
 
 技能的 type 为 active 时是主动技能（战斗中使用），不写就是被动技能。
-ap_cost 是使用 / 激活这个技能本身消耗的行动点。
-cooldown 是冷却回合数：使用那一回合之后再等几回合（冷却 1 = 第 1 回合用，第 2 回合冷却，第 3 回合可以再用）。
+ap_cost 是使用 / 激活这个技能本身消耗的行动点；主动技能不写就默认 6（DEFAULT_AP_COST）。
+cooldown 是冷却回合数：使用那一回合之后再等几回合（冷却 1 = 第 1 回合用，第 2 回合冷却，第 3 回合可以再用）；
+主动技能不写就默认 1（DEFAULT_COOLDOWN），写 0 表示没有冷却。
 所有技能在没有特别声明的情况下，一律视为用主手武器发动。
 weapon_type 表示使用这个技能需要手持的武器类型。
 
@@ -22,6 +23,23 @@ from pathlib import Path
 
 import stances
 import stats
+
+DEFAULT_AP_COST = 6  # 主动技能没有特别说明时，默认花 6 行动点
+DEFAULT_COOLDOWN = 1  # 主动技能没有特别说明时，默认冷却 1 回合
+
+
+def ap_cost(skill):
+    """技能的行动点消耗；被动技能是 0。"""
+    if skill.get("type") != "active":
+        return skill.get("ap_cost", 0)
+    return skill.get("ap_cost", DEFAULT_AP_COST)
+
+
+def cooldown(skill):
+    """技能的冷却回合数；被动技能是 0。"""
+    if skill.get("type") != "active":
+        return skill.get("cooldown", 0)
+    return skill.get("cooldown", DEFAULT_COOLDOWN)
 
 
 class SkillTrees:
@@ -182,10 +200,10 @@ def _format_skill(character, skill, tree, trees, options, weapon_types):
     weapon = f"（需要手持{weapon_types[skill['weapon_type']]}武器）" if skill.get("weapon_type") else ""
     if skill.get("grip"):
         weapon += f"（需要{stats.GRIPS[skill['grip']]}）"
-    if skill.get("ap_cost"):
-        weapon += f"（消耗 {skill['ap_cost']} 行动点）"
-    if skill.get("cooldown"):
-        weapon += f"（冷却 {skill['cooldown']} 回合：使用后再等 {skill['cooldown']} 回合）"
+    if ap_cost(skill):
+        weapon += f"（消耗 {ap_cost(skill)} 行动点）"
+    if cooldown(skill):
+        weapon += f"（冷却 {cooldown(skill)} 回合：使用后再等 {cooldown(skill)} 回合）"
     lines = [f"  {kind}{skill['name']}  {skill.get('cost', 1)} 点  {status}", f"    {skill['description']}{weapon}"]
     lines += [f"    {line}" for line in skill_details(character, skill, trees, options)]
     return "\n".join(lines)
