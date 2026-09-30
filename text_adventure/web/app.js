@@ -732,7 +732,8 @@
       var cb = state.combat;
       html += '<div class="section"><h4>' + icon('stance') + '战斗</h4>';
       html += '<div class="kv"><span class="k">行动点</span><span class="v">每回合 ' + esc(cb.ap_per_turn) +
-        '（上限 ' + esc(cb.ap_cap) + '）</span></div>';
+        '（上限 ' + esc(cb.ap_cap) + (cb.armor_ap_penalty ? '，重甲 −' + esc(cb.armor_ap_penalty) : '') +
+        '）</span></div>';
       (cb.weapons || []).forEach(function (w) {
         var mult = 1;
         (w.damage_modifiers || []).forEach(function (m) { mult *= (100 + m[1]) / 100; });
@@ -741,6 +742,10 @@
         html += '<div class="kv"><span class="k">' + esc(w.hand) + '·' + esc(w.name) + '</span><span class="v">精准 ' +
           esc(w.accuracy) + ' · 伤害 ' + esc(dmg) + '</span></div>';
       });
+      html += '<div class="kv"><span class="k">护甲</span><span class="v">' + esc(cb.armor) +
+        ((cb.worn || []).length ? '（' + cb.worn.map(function (p) {
+          return esc(p.slot) + ' ' + esc(p.name) + ' +' + esc(p.value);
+        }).join('、') + '）' : '') + '</span></div>';
       html += '<div class="kv"><span class="k">闪避</span><span class="v">' + esc(cb.dodge) + '</span></div>';
       html += '<div class="kv"><span class="k">先攻</span><span class="v">' + esc(cb.initiative) + '</span></div>';
       html += '<div class="kv"><span class="k">行动点消耗</span><span class="v">攻击 ' + esc(cb.attack_cost) +

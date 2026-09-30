@@ -95,7 +95,8 @@ class CharacterOptions:
         return {a["id"]: self.attribute_rules["default"] for a in self.attributes}
 
 
-def format_sheet(character, options, items, carried_weight=None, tree_names=None, bonuses=None):
+def format_sheet(character, options, items, carried_weight=None, tree_names=None, bonuses=None,
+                 armor_penalty=0):
     """角色卡：创建完成时确认用，游戏中也可以随时查看。bonuses 是姿态等带来的临时加成。"""
     a = character.attributes
     bonuses = bonuses or {}
@@ -143,7 +144,8 @@ def format_sheet(character, options, items, carried_weight=None, tree_names=None
         "\n【衍生数值】",
         f"  负重 {weight} kg    近战伤害 {with_bonus('melee_damage_bonus', stats.melee_damage_bonus(a), signed=True)}",
         f"  闪避 {with_bonus('dodge', stats.dodge(a), unit='')}    先攻 {stats.initiative(a)}"
-        f"    行动点 每回合 {stats.ap_per_turn(a)}（上限 {stats.ap_cap(a)}）",
+        f"    行动点 每回合 {stats.ap_per_turn(a, armor_penalty)}（上限 {stats.ap_cap(a, armor_penalty)}"
+        + (f"，重甲 −{armor_penalty}" if armor_penalty else "") + "）",
         f"  生命恢复 每 {stats.REGEN_INTERVAL} 回合 +{stats.hp_regen(a)}",
         f"  体力上限 {stamina_cap}    行动消耗 ×{stats.stamina_cost_multiplier(a):.2f}"
         f"（移动：室内 {stats.move_cost(a, False)} 点 / {stats.move_minutes(False)} 分钟，"

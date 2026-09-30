@@ -29,7 +29,14 @@ AP_CAP_MULTIPLIER = 2  # 没用完的行动点留到下回合，最多存到每�
 ATTACK_AP_COST = 6  # 一次普通攻击消耗的行动点
 MOVE_AP_COST = 1  # 战斗中每移动一格消耗的行动点
 USE_ITEM_AP_COST = 3  # 战斗中使用一次物品（例如用绷带包扎）消耗的行动点
-UNARMED_DAMAGE = None  # 徒手伤害骰，尚未确定
+UNARMED_DAMAGE = "1d4"  # 徒手伤害骰
+
+# 护甲：每件护甲穿在一个部位，所有部位的护甲值相加，受到的伤害按总值固定减免
+ARMOR_CLASSES = {
+    "clothing": ("寻常服装", 0, 0),  # 类别 id -> (名字, 护甲值下限, 上限)
+    "light": ("轻甲", 1, 3),  # 按部位定：胸甲 3、鞋子 1
+    "heavy": ("重甲", 2, 6),  # 会降低每回合的行动点（每件的 ap_penalty）
+}
 DODGE_MULTIPLIER = 1.5
 UNARMED = "unarmed"  # 没拿武器时按徒手（武术）算
 
@@ -82,19 +89,19 @@ def final_damage(raw, modifiers, armor, crit=False):
     return max(0, math.ceil(raw * damage_multiplier(modifiers, crit)) - armor)
 
 
-def ap_per_turn(a):
-    """每回合获得的行动点。行动点只在战斗中存在，开战第一回合就获得。"""
-    return a["agility"] * AP_PER_AGILITY
+def ap_per_turn(a, armor_penalty=0):
+    """每回合获得的行动点 = 敏捷 × 2 − 重甲惩罚。行动点只在战斗中存在，开战第一回合就获得。"""
+    return max(0, a["agility"] * AP_PER_AGILITY - armor_penalty)
 
 
-def ap_cap(a):
-    """行动点上限。"""
-    return ap_per_turn(a) * AP_CAP_MULTIPLIER
+def ap_cap(a, armor_penalty=0):
+    """行动点上限 = 每回合获得量 × 2。"""
+    return ap_per_turn(a, armor_penalty) * AP_CAP_MULTIPLIER
 
 
-def gain_ap(a, current):
+def gain_ap(a, current, armor_penalty=0):
     """新回合开始：加上本回合的行动点，超出上限的部分作废。"""
-    return min(current + ap_per_turn(a), ap_cap(a))
+    return min(current + ap_per_turn(a, armor_penalty), ap_cap(a, armor_penalty))
 
 
 def accuracy(a, weapon_type):

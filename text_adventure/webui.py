@@ -57,7 +57,6 @@ STATIC_FILES = {
     "/icons.svg": ("icons.svg", "image/svg+xml; charset=utf-8"),
 }
 
-SLOT_NAMES = {"main_hand": "主手", "off_hand": "副手"}
 
 # 移动按钮永远显示这六个方向，能不能走由世界数据决定
 DIRECTIONS_ALL = ("north", "south", "east", "west", "up", "down")
@@ -326,7 +325,7 @@ class Session:
         name = data["name"]
         if items.is_usable(data):
             return {"cmd": "使用 " + name, "label": "使用"}
-        if data.get("weapon"):
+        if data.get("weapon") or data.get("armor"):
             return {"cmd": "装备 " + name, "label": "装备"}
         return {"cmd": "查看 " + name, "label": "查看"}
 
@@ -397,11 +396,10 @@ class Session:
         inventory = []
         for item_id in game.inventory:
             data = world.items[item_id]
-            slots = [SLOT_NAMES[s] for s, held in game.equipment.items() if held == item_id]
             inventory.append({
                 "id": item_id,
                 "name": data["name"],
-                "where": "双手" if len(slots) == 2 else "".join(slots),
+                "where": game.item_location(item_id),
                 "usable": items.is_usable(data),
                 "use_hint": (data.get("use") or {}).get("hint", ""),
                 "desc": data.get("description", ""),
@@ -465,8 +463,15 @@ class Session:
             "conditions": game.conditions(),
             "attack_penalty": stats.attack_penalty(c),
             "combat": {
-                "ap_per_turn": stats.ap_per_turn(c.attributes),
-                "ap_cap": stats.ap_cap(c.attributes),
+                "ap_per_turn": stats.ap_per_turn(c.attributes, game.armor_ap_penalty()),
+                "ap_cap": stats.ap_cap(c.attributes, game.armor_ap_penalty()),
+                "armor_ap_penalty": game.armor_ap_penalty(),
+                "armor": game.armor_total(),
+                "worn": [
+                    {"slot": world.armor_slots[s], "name": world.items[i]["name"],
+                     "value": world.items[i]["armor"]["value"]}
+                    for s, i in game.worn.items() if i
+                ],
                 "attack_cost": stats.ATTACK_AP_COST,
                 "move_cost": stats.MOVE_AP_COST,
                 "item_cost": stats.USE_ITEM_AP_COST,
