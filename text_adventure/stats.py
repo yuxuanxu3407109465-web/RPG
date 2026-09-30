@@ -316,6 +316,14 @@ BLEED_TURNS = 3
 BLEED_STACKS_PER_HIT = 2  # 放血一次施加的层数
 
 
+DOT_STACK_DAMAGE_PERCENT = 10  # 剜创：目标身上每层持续伤害，伤害 +10%
+
+
+def riposte_per_turn(a):
+    """反刃每回合能触发几次 = 敏捷 ÷ 4。"""
+    return a["agility"] // 4
+
+
 def blade_armor_ignore(a):
     """放血、卸刃无视的护甲点数 = 4 + 敏捷 ÷ 4。"""
     return 4 + a["agility"] // 4
@@ -361,6 +369,11 @@ def ranged_attack_range(a, base_range):
 def sight_range(a):
     """角色的视野范围（格）= 感知 × 2。"""
     return a["perception"] * 2
+
+
+def effective_ranged_range(a, base_range):
+    """实际能打多远：射程不能超过视野（以后可能加瞄准 / 侦察来突破）。"""
+    return min(ranged_attack_range(a, base_range), sight_range(a))
 
 
 def incinerate_range(a):
