@@ -1205,7 +1205,7 @@ class Game:
             return "用法：试盾击 敌人 等阶，例如：试盾击 壮尸 精英"
         a = self.character.attributes
         weapon = {"name": "盾击", "damage": stats.SHIELD_BASH_DAMAGE,
-                  "damage_modifiers": [(n, v) for n, v in self.damage_modifiers(stats.UNARMED) if n != "姿态"]}
+                  "damage_modifiers": self.damage_modifiers(stats.UNARMED)}  # 近战：力量、力竭
         text, damage = self._roll_damage(weapon, enemy.armor)
         enemy.hp = max(0, enemy.hp - damage)
         difficulty = stats.shield_bash_difficulty(a)
