@@ -28,17 +28,17 @@
     {
       "id": "strength",
       "name": "力量",
-      "description": "负重、近战伤害"
+      "description": "负重、近战伤害、钝器精准"
     },
     {
       "id": "agility",
       "name": "敏捷",
-      "description": "近战精准、闪避、先攻"
+      "description": "行动点、锐器精准、闪避、先攻"
     },
     {
       "id": "constitution",
       "name": "体质",
-      "description": "生命值、生命恢复"
+      "description": "生命值、生命恢复、武术精准"
     },
     {
       "id": "intelligence",
@@ -48,7 +48,7 @@
     {
       "id": "perception",
       "name": "感知",
-      "description": "远程精准、闪避、先攻"
+      "description": "枪械精准、闪避、先攻"
     },
     {
       "id": "charisma",

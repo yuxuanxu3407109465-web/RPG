@@ -167,6 +167,7 @@ class Game:
             (["姿态", "stance"], self.cmd_stance),
             (["掷骰", "roll"], self.cmd_roll),
             (["检定", "check"], self.cmd_check),
+            (["试攻击", "attack test"], self.cmd_attack_test),
             (["骰子系统", "dice"], self.cmd_dice_system),
             (["使用", "吃", "喝", "use"], self.cmd_use),
             (["休息", "睡", "rest"], self.cmd_rest),
@@ -590,17 +591,17 @@ class Game:
         sheet = format_sheet(
             self.character, self.options, self.world.items, self._carried_weight(), tree_names, bonuses
         )
-        main, off = self.equipment["main_hand"], self.equipment["off_hand"]
-        if main and main == off:
-            hands = f"双手 {self.world.items[main]['name']}"
-        else:
-            name = lambda i: self.world.items[i]["name"] if i else "空"
-            hands = f"主手 {name(main)}    副手 {name(off)}"
+        weapons = "\n".join(
+            f"  {w['hand']} {w['name']}（{w['type']}）：精准 {w['accuracy']:g}（{w['attribute']}"
+            + (f"，含姿态 {w['stance_bonus']:+g}" if w["stance_bonus"] else "") + "）"
+            for w in self.weapon_summary()
+        )
         stance = self._current_stance()
         conditions = self.conditions()
         active = "、".join(f"{x['name']}（{x['effect']}）" for x in conditions) if conditions else "无"
         return (sheet
-                + f"\n\n【装备与姿态】\n  {hands}\n  姿态：{stance['name'] if stance else '无'}"
+                + f"\n\n【装备与姿态】\n{weapons}\n  姿态：{stance['name'] if stance else '无'}"
+                + f"\n  普通攻击消耗 {stats.ATTACK_AP_COST} 行动点"
                 + f"\n\n【时间】{self.clock_text()}\n【异常状态】{active}")
 
     def cmd_skills(self, arg):
@@ -728,15 +729,57 @@ class Game:
 
     # ---------- 抛骰 ----------
 
-    def _check_stats(self):
-        """可以拿来做检定的数值（已含姿态加成）：名字 -> 成功率。"""
-        a = self.character.attributes
+    def accuracy(self, weapon_type):
+        """用某类武器攻击时的精准 =（武器对应属性）+（姿态加成，只加在姿态要求的武器上）。"""
+        base = stats.accuracy(self.character.attributes, weapon_type)
+        stance = self._current_stance()
+        if stance and stance["weapon_type"] == weapon_type:
+            base += stances.stance_bonuses(self.character, stance, self.skill_trees).get("accuracy", 0)
+        return base
+
+    def dodge(self):
+        """闪避（含姿态加成）。"""
         bonuses = stances.stance_bonuses(self.character, self._current_stance(), self.skill_trees)
-        return {
-            "近战精准": stats.melee_accuracy(a) + bonuses.get("melee_accuracy", 0),
-            "远程精准": stats.ranged_accuracy(a),
-            "闪避": stats.dodge(a) + bonuses.get("dodge", 0),
-        }
+        return stats.dodge(self.character.attributes) + bonuses.get("dodge", 0)
+
+    def weapon_summary(self):
+        """手上每件武器（没拿就是徒手）的精准，角色卡和网页版共用。"""
+        main, off = self.equipment["main_hand"], self.equipment["off_hand"]
+        if main and main == off:
+            held = [("双手", main)]
+        else:
+            held = [(hand, i) for hand, i in (("主手", main), ("副手", off)) if i]
+        if not held:
+            held = [("徒手", None)]
+        summary = []
+        for hand, item_id in held:
+            weapon_type = self._weapon(item_id)["type"] if item_id else stats.UNARMED
+            base = stats.accuracy(self.character.attributes, weapon_type)
+            total = self.accuracy(weapon_type)
+            summary.append({
+                "hand": hand,
+                "name": self.world.items[item_id]["name"] if item_id else "拳脚",
+                "type": self.world.weapon_types[weapon_type],
+                "weapon_type": weapon_type,
+                "attribute": self.options.attribute_name(stats.WEAPON_ATTRIBUTES[weapon_type]),
+                "accuracy": total,
+                "stance_bonus": total - base,
+            })
+        return summary
+
+    def cmd_attack_test(self, arg):
+        """试攻击：用主手武器（没拿就徒手）掷一次命中判定，还没有真正的敌人。"""
+        if not self.character:
+            return "还没有创建角色。"
+        try:
+            target = float(arg) if arg else self.dodge()
+        except ValueError:
+            return "用法：试攻击 目标闪避（例如：试攻击 15），不写就用你自己的闪避"
+        weapon = self.weapon_summary()[0]
+        result = self.dice.attack(weapon["accuracy"], target)
+        return (f"用{weapon['name']}试攻击（{weapon['type']}，精准看{weapon['attribute']}），"
+                f"目标闪避 {dice_rules.format_number(target)}：\n{result.text}\n"
+                f"（一次普通攻击消耗 {stats.ATTACK_AP_COST} 行动点）")
 
     def cmd_roll(self, arg):
         roll = self.dice.roll(arg or "1d20")
@@ -746,18 +789,12 @@ class Game:
 
     def cmd_check(self, arg):
         if not arg:
-            return "用法：检定 成功率（例如：检定 70），或者 检定 数值名（例如：检定 近战精准）"
-        if arg.isdigit():
-            name, chance = "", int(arg)
-        else:
-            if not self.character:
-                return "还没有创建角色。"
-            checkable = self._check_stats()
-            if arg not in checkable:
-                return "可以检定的数值：" + "、".join(checkable) + "，或者直接输入成功率。"
-            name, chance = arg, checkable[arg]
+            return "用法：检定 成功率，例如：检定 70（攻击命中请用“试攻击”）"
+        if not arg.isdigit():
+            return "请输入成功率数字，例如：检定 70（攻击命中请用“试攻击”）"
+        chance = int(arg)
         result = self.dice.check(chance)
-        title = f"{name}检定（成功率 {chance}%）" if name else f"检定（成功率 {chance}%）"
+        title = f"检定（成功率 {chance}%）"
         if self.dice.system == "d20":
             title += f"，D20 调整值 {dice_rules.d20_modifier(chance):+d}"
         return f"{title}\n{result.text}"
@@ -953,7 +990,8 @@ class Game:
             "  装备 <武器> / 卸下 <武器>  拿起或收起武器\n"
             "  姿态 / 姿态 <名字>        查看或切换姿态，“姿态 取消”解除\n"
             "  掷骰 <骰子>              掷骰，例如：掷骰 2d6+1\n"
-            "  检定 <成功率/数值名>       做一次检定，例如：检定 70、检定 近战精准\n"
+            "  检定 <成功率>             做一次非战斗检定，例如：检定 70\n"
+            "  试攻击 <目标闪避>          用手上的武器掷一次命中判定，例如：试攻击 15\n"
             "  骰子系统 <d20/d100>       查看或切换检定用的骰子\n"
             "  休息 <时长>             恢复体力并推进时间，例如：休息 30、休息 2小时（1~480 分钟）\n"
             "                          体力满了也能休息，只是时间照样过去\n"

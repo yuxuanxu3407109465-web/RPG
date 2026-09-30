@@ -100,11 +100,12 @@ def format_sheet(character, options, items, carried_weight=None, tree_names=None
     a = character.attributes
     bonuses = bonuses or {}
 
-    def with_bonus(stat, base, signed=False):
+    def with_bonus(stat, base, signed=False, unit="%"):
         """数值加上姿态加成，例如：95%（含姿态 +13）。"""
         extra = bonuses.get(stat, 0)
-        value = f"{base + extra:+d}%" if signed else f"{base + extra}%"
-        return value + (f"（含姿态 {extra:+d}）" if extra else "")
+        total = f"{base + extra:g}"
+        value = ("+" if signed and base + extra >= 0 else "") + total + unit
+        return value + (f"（含姿态 {extra:+g}）" if extra else "")
     background = options.background(character.background)
     hp_max = stats.max_hp(a, character.level)
     stamina_cap = stats.stamina_max(a)
@@ -141,8 +142,8 @@ def format_sheet(character, options, items, carried_weight=None, tree_names=None
     lines += [
         "\n【衍生数值】",
         f"  负重 {weight} kg    近战伤害 {with_bonus('melee_damage_bonus', stats.melee_damage_bonus(a), signed=True)}",
-        f"  近战精准 {with_bonus('melee_accuracy', stats.melee_accuracy(a))}    远程精准 {stats.ranged_accuracy(a)}%",
-        f"  闪避 {with_bonus('dodge', stats.dodge(a))}    先攻 {stats.initiative(a)}",
+        f"  闪避 {with_bonus('dodge', stats.dodge(a), unit='')}    先攻 {stats.initiative(a)}"
+        f"    行动点 每回合 {stats.ap_per_turn(a)}（上限 {stats.ap_cap(a)}）",
         f"  生命恢复 每 {stats.REGEN_INTERVAL} 回合 +{stats.hp_regen(a)}",
         f"  体力上限 {stamina_cap}    行动消耗 ×{stats.stamina_cost_multiplier(a):.2f}"
         f"（移动：室内 {stats.move_cost(a, False)} 点 / {stats.move_minutes(False)} 分钟，"

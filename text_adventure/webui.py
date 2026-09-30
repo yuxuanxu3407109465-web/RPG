@@ -464,6 +464,14 @@ class Session:
             },
             "conditions": game.conditions(),
             "attack_penalty": stats.attack_penalty(c),
+            "combat": {
+                "ap_per_turn": stats.ap_per_turn(c.attributes),
+                "ap_cap": stats.ap_cap(c.attributes),
+                "attack_cost": stats.ATTACK_AP_COST,
+                "dodge": game.dodge(),
+                "initiative": stats.initiative(c.attributes),
+                "weapons": game.weapon_summary(),
+            },
             "equipment": {
                 slot: (world.items[i]["name"] if i else None)
                 for slot, i in game.equipment.items()

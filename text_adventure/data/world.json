@@ -10,7 +10,9 @@
   "weapon_types": {
     "long_blade": "长刃",
     "short_blade": "短刃",
-    "blunt": "钝器"
+    "blunt": "钝器",
+    "firearm": "枪械",
+    "unarmed": "徒手"
   },
   "rooms": {
     "apartment": {

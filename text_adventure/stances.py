@@ -9,8 +9,8 @@
 # 姿态可以影响的数值：显示名、单位
 STAT_NAMES = {
     "melee_damage_bonus": ("近战伤害", "%"),
-    "melee_accuracy": ("近战精准", "%"),
-    "dodge": ("闪避", "%"),
+    "accuracy": ("精准", ""),  # 只加在姿态要求的那类武器上
+    "dodge": ("闪避", ""),
 }
 
 

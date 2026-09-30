@@ -728,6 +728,21 @@
     });
     html += '</div></div>';
 
+    if (state.combat) {
+      var cb = state.combat;
+      html += '<div class="section"><h4>' + icon('stance') + '战斗</h4>';
+      html += '<div class="kv"><span class="k">行动点</span><span class="v">每回合 ' + esc(cb.ap_per_turn) +
+        '（上限 ' + esc(cb.ap_cap) + '）</span></div>';
+      (cb.weapons || []).forEach(function (w) {
+        html += '<div class="kv"><span class="k">精准·' + esc(w.hand) + '</span><span class="v">' + esc(w.accuracy) +
+          '（' + esc(w.name) + '，' + esc(w.attribute) + '）</span></div>';
+      });
+      html += '<div class="kv"><span class="k">闪避</span><span class="v">' + esc(cb.dodge) + '</span></div>';
+      html += '<div class="kv"><span class="k">先攻</span><span class="v">' + esc(cb.initiative) + '</span></div>';
+      html += '<div class="kv"><span class="k">普通攻击</span><span class="v">' + esc(cb.attack_cost) + ' 行动点</span></div>';
+      html += '</div>';
+    }
+
     if (state.conditions && state.conditions.length) {
       html += '<div class="section"><h4>' + icon('x') + '异常状态</h4>';
       state.conditions.forEach(function (x) {

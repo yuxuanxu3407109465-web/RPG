@@ -18,23 +18,52 @@ def melee_damage_bonus(a):
     return (a["strength"] - 5) * 10
 
 
-def melee_accuracy(a):
-    """近战命中率（%）。"""
-    return 50 + a["agility"] * 4
+# ---------- 战斗（固定用 d20：d20 + 精准 > 闪避 即命中） ----------
+
+AP_PER_AGILITY = 2  # 每回合获得的行动点 = 敏捷 × 2
+AP_CAP_MULTIPLIER = 2  # 没用完的行动点留到下回合，最多存到每回合获得量的 2 倍
+ATTACK_AP_COST = 3  # 一次普通攻击消耗的行动点
+DODGE_MULTIPLIER = 1.5
+UNARMED = "unarmed"  # 没拿武器时按徒手（武术）算
+
+# 武器类型 -> 精准取哪项属性：锐器看敏捷、钝器看力量、枪械看感知、武术（徒手）看体质
+WEAPON_ATTRIBUTES = {
+    "long_blade": "agility",
+    "short_blade": "agility",
+    "blunt": "strength",
+    "firearm": "perception",
+    UNARMED: "constitution",
+}
 
 
-def ranged_accuracy(a):
-    """远程命中率（%）。"""
-    return 50 + a["perception"] * 4
+def ap_per_turn(a):
+    """每回合获得的行动点。行动点只在战斗中存在，开战第一回合就获得。"""
+    return a["agility"] * AP_PER_AGILITY
+
+
+def ap_cap(a):
+    """行动点上限。"""
+    return ap_per_turn(a) * AP_CAP_MULTIPLIER
+
+
+def gain_ap(a, current):
+    """新回合开始：加上本回合的行动点，超出上限的部分作废。"""
+    return min(current + ap_per_turn(a), ap_cap(a))
+
+
+def accuracy(a, weapon_type):
+    """精准 = 所用武器对应的属性值。"""
+    return a[WEAPON_ATTRIBUTES[weapon_type]]
 
 
 def dodge(a):
-    """闪避率（%）。"""
-    return a["agility"] * 2 + a["perception"]
+    """闪避 =（敏捷 + 感知）× 1.5，可能带 .5。"""
+    value = (a["agility"] + a["perception"]) * DODGE_MULTIPLIER
+    return int(value) if value == int(value) else value
 
 
 def initiative(a):
-    """先攻：战斗中谁先行动，数值高的先动。"""
+    """先攻 = 敏捷 + 感知，数值高的先行动。"""
     return a["agility"] + a["perception"]
 
 

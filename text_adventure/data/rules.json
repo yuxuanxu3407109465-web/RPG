@@ -1,6 +1,6 @@
 {
   "dice": {
-    "system": "d100",
+    "system": "d20",
     "d100_critical_success_max": 5,
     "d100_critical_failure_min": 96
   }

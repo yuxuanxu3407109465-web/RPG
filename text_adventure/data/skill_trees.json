@@ -352,7 +352,7 @@
       "description": "盯住一个对手，每一刀都更精准。",
       "modifiers": [
         {
-          "stat": "melee_accuracy",
+          "stat": "accuracy",
           "base": 5,
           "per_attribute": 1
         }

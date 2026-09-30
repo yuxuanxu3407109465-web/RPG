@@ -72,6 +72,21 @@ class Dice:
             return self._check_d20(chance)
         return self._check_d100(chance)
 
+    def attack(self, accuracy, dodge):
+        """攻击判定（不受骰子系统设置影响，固定用 d20）：d20 + 精准 > 闪避 即命中。
+        掷出 20 必定命中，掷出 1 必定落空。"""
+        value = self.rng.randint(1, 20)
+        if value == 20:
+            return CheckResult(True, True, "🎲 d20 = 20 → 大成功，必定命中！")
+        if value == 1:
+            return CheckResult(False, True, "🎲 d20 = 1 → 大失败，必定落空！")
+        total = value + accuracy
+        hit = total > dodge
+        sign = ">" if hit else "≤"
+        text = (f"🎲 d20 = {value} + 精准 {format_number(accuracy)} = {format_number(total)} "
+                f"{sign} 闪避 {format_number(dodge)} → {'命中' if hit else '未命中'}")
+        return CheckResult(hit, False, text)
+
     def _check_d100(self, chance):
         value = self.rng.randint(1, 100)
         if value <= self.d100_crit_success:
@@ -94,6 +109,11 @@ class Dice:
         sign = "≥" if success else "<"
         text = f"🎲 d20 = {value}，{modifier:+d} = {total} {sign} {D20_BASE_DC} → {'成功' if success else '失败'}"
         return CheckResult(success, False, text)
+
+
+def format_number(value):
+    """16.0 显示成 16，16.5 保持 16.5。"""
+    return f"{value:g}"
 
 
 def d20_modifier(chance):
