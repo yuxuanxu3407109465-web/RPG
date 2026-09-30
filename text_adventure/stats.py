@@ -331,6 +331,17 @@ def sidestep_distance(a):
     return 4 + a["agility"] // 4
 
 
+# ---------- 潜行 ----------
+
+SNEAK_ATTACK_DAMAGE_PERCENT = 100  # 暗袭：偷袭时伤害 +100%（伤害增益之后、暴击之前结算）
+STEALTH_RANGE_REDUCTION = 2  # 潜踪：目标的听觉范围和警觉范围各减 2 格
+
+
+def sneak_attack_accuracy_bonus(a):
+    """暗袭：偷袭时命中加值 =（敏捷 + 感知）÷ 2，向下取整。"""
+    return (a["agility"] + a["perception"]) // 2
+
+
 def psionic_bolt_damage(level):
     """焚化（灵能·塑能系）的火焰伤害 = 6 + 等级 × 2。"""
     return 6 + level * 2

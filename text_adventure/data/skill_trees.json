@@ -224,23 +224,19 @@
       "description": "（占位）"
     },
     {
-      "id": "stealth_1",
+      "id": "stealth_quiet",
       "tree": "stealth",
-      "name": "潜行入门",
+      "name": "潜踪",
       "cost": 1,
-      "description": "（占位）"
+      "description": "脚步更轻、动作更隐蔽：敌人察觉你的听觉范围（较远）和警觉范围（近身）各缩小 2 格。"
     },
     {
-      "id": "stealth_2",
+      "id": "sneak_attack",
       "tree": "stealth",
-      "name": "潜行进阶",
-      "cost": 2,
-      "requires": [
-        "stealth_1"
-      ],
-      "attribute_min": 6,
-      "level_min": 3,
-      "description": "（占位）"
+      "name": "暗袭",
+      "cost": 1,
+      "value": "sneak_attack",
+      "description": "对目标发起偷袭时，这次攻击的命中 +（敏捷 + 感知）÷ 2，伤害 +100%（在其他伤害增益之后、暴击之前结算）。"
     },
     {
       "id": "survival_1",
