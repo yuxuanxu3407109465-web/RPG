@@ -7,7 +7,7 @@
 ap_cost 是使用 / 激活这个技能本身消耗的行动点；主动技能不写就默认 6（DEFAULT_AP_COST），
 主动攻击技能（attack: true）默认 9（DEFAULT_ATTACK_AP_COST）。
 cooldown 是冷却回合数：使用那一回合之后再等几回合（冷却 1 = 第 1 回合用，第 2 回合冷却，第 3 回合可以再用）；
-主动技能不写就默认 1（DEFAULT_COOLDOWN）；主动攻击技能（attack: true）默认冷却到本回合结束（TURN_COOLDOWN）；
+主动技能不写就默认冷却到本回合结束（DEFAULT_COOLDOWN = TURN_COOLDOWN）；
 写 0 表示没有冷却。
 所有技能在没有特别声明的情况下，一律视为用主手武器发动。
 weapon_type 表示使用这个技能需要手持的武器类型。
@@ -27,8 +27,8 @@ import stances
 import stats
 
 DEFAULT_AP_COST = 6  # 主动技能没有特别说明时，默认花 6 行动点
-DEFAULT_COOLDOWN = 1  # 主动技能没有特别说明时，默认冷却 1 回合
 TURN_COOLDOWN = "turn"  # 冷却到本回合结束（本回合不能再用，下回合就能用）
+DEFAULT_COOLDOWN = TURN_COOLDOWN  # 主动技能没有特别说明时，默认冷却到本回合结束
 DEFAULT_ATTACK_COOLDOWN = TURN_COOLDOWN  # 主动攻击技能（attack: true）默认冷却到本回合结束
 DEFAULT_ATTACK_AP_COST = 9  # 主动攻击技能默认花 9 行动点
 
