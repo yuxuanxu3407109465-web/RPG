@@ -8,7 +8,8 @@
   weapons  按权重抽一件武器（item 为 null 表示空手，按徒手算）
   armor    每一项独立按 chance（%）判定有没有穿
   limbs    每条胳膊 / 腿独立按 missing_arm / missing_leg（%）判定是否缺失
-断了胳膊拿不了武器：两条都在才能用双手武器，只剩一条只能用单手武器，都没了只能撕咬。
+断了胳膊拿不了武器：两条都在才能用双手武器，只剩一条只能用单手武器，都没了只能撕咬
+（模板的 armless_attack；撕咬是劣质武器，poor: true，精准只按属性 × 1 算）。
 武器、护甲直接引用 world.json 里的物品，伤害、暴击范围、护甲值都跟玩家用的一样。
 """
 
@@ -43,7 +44,7 @@ class Enemy:
         return stats.ENEMY_TIERS[self.tier][0]
 
     def accuracy(self):
-        return stats.accuracy(self.attributes, self.attack["type"])
+        return stats.accuracy(self.attributes, self.attack["type"], self.attack.get("poor", False))
 
     def dodge(self):
         return stats.dodge(self.attributes)
@@ -83,6 +84,10 @@ class EnemyBook:
                 raise ValueError(f"{where}：攻击类型要是 {'、'.join(stats.WEAPON_ATTRIBUTES)} 之一")
             if not dice_rules.DICE_PATTERN.match(attack.get("damage", "")):
                 raise ValueError(f"{where}：伤害骰要写成 1d4、1d8 这样的格式")
+            armless = t.get("armless_attack")
+            if armless and (armless.get("type") not in stats.WEAPON_ATTRIBUTES
+                            or not dice_rules.DICE_PATTERN.match(armless.get("damage", ""))):
+                raise ValueError(f"{where}：armless_attack 的类型或伤害骰写得不对")
             if t.get("loadout") and t["loadout"] not in self.loadouts:
                 raise ValueError(f"{where}：随机装备表 {t['loadout']} 不存在")
         for loadout_id, table in self.loadouts.items():
@@ -131,8 +136,8 @@ class EnemyBook:
                 attack["crit_range"] = w["crit_range"]
         else:
             attack = dict(t["attack"])
-            if arms == 0 and t.get("armless_attack_name"):
-                attack["name"] = t["armless_attack_name"]
+            if arms == 0 and t.get("armless_attack"):
+                attack = dict(t["armless_attack"])  # 两条胳膊都没了：撕咬
         return Enemy(template_id, tier, name, level, attributes, max_hp, max_hp, attack, armor,
                      t.get("description", ""), weapon, armor_items, missing)
 

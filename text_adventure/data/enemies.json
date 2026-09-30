@@ -24,8 +24,14 @@
         "damage": "1d6",
         "crit_range": "20"
       },
-      "armless_attack_name": "撕咬",
-      "loadout": "common"
+      "loadout": "common",
+      "armless_attack": {
+        "name": "撕咬",
+        "type": "short_blade",
+        "damage": "1d4",
+        "crit_range": "20",
+        "poor": true
+      }
     },
     "runner": {
       "name": "疾尸",
@@ -49,8 +55,14 @@
         "damage": "1d6",
         "crit_range": "20"
       },
-      "armless_attack_name": "撕咬",
-      "loadout": "common"
+      "loadout": "common",
+      "armless_attack": {
+        "name": "撕咬",
+        "type": "short_blade",
+        "damage": "1d4",
+        "crit_range": "20",
+        "poor": true
+      }
     },
     "brute": {
       "name": "壮尸",
@@ -74,8 +86,14 @@
         "damage": "1d6",
         "crit_range": "20"
       },
-      "armless_attack_name": "撕咬",
-      "loadout": "common"
+      "loadout": "common",
+      "armless_attack": {
+        "name": "撕咬",
+        "type": "short_blade",
+        "damage": "1d4",
+        "crit_range": "20",
+        "poor": true
+      }
     }
   },
   "loadouts": {

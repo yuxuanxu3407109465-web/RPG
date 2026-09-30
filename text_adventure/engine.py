@@ -958,9 +958,9 @@ class Game:
 
     # ---------- 抛骰 ----------
 
-    def accuracy(self, weapon_type):
-        """用某类武器攻击时的精准 =（武器对应属性）+（姿态加成，只加在姿态要求的武器上）。"""
-        base = stats.accuracy(self.character.attributes, weapon_type)
+    def accuracy(self, weapon_type, poor=False):
+        """用某类武器攻击时的精准 =（武器对应属性 × 1.5，劣质武器 × 1）+（姿态加成，只加在姿态要求的武器上）。"""
+        base = stats.accuracy(self.character.attributes, weapon_type, poor)
         stance = self._current_stance()
         if stance and stance["weapon_type"] == weapon_type:
             base += stances.stance_bonuses(self.character, stance, self.skill_trees).get("accuracy", 0)
@@ -1045,8 +1045,9 @@ class Game:
         summary = []
         for hand, item_id in held:
             weapon_type = self._weapon(item_id)["type"] if item_id else stats.UNARMED
-            base = stats.accuracy(self.character.attributes, weapon_type)
-            total = self.accuracy(weapon_type)
+            poor = bool(item_id and self._weapon(item_id).get("poor"))
+            base = stats.accuracy(self.character.attributes, weapon_type, poor)
+            total = self.accuracy(weapon_type, poor)
             summary.append({
                 "hand": hand,
                 "name": self.world.items[item_id]["name"] if item_id else "拳脚",

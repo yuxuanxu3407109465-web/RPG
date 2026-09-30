@@ -156,8 +156,14 @@ def gain_ap(a, current, armor_penalty=0):
     return min(current + ap_per_turn(a, armor_penalty), ap_cap(a, armor_penalty))
 
 
-def accuracy(a, weapon_type):
-    """精准 = 所用武器对应的属性 × 1.5，向下取整（和属性修正一样）。"""
+POOR_ACCURACY_MULTIPLIER = 1  # 劣质武器（例如僵尸的撕咬）：精准只按属性 × 1 算
+
+
+def accuracy(a, weapon_type, poor=False):
+    """精准 = 所用武器对应的属性 × 1.5，向下取整（和属性修正一样）；劣质武器只 × 1。"""
+    attribute = a[WEAPON_ATTRIBUTES[weapon_type]]
+    if poor:
+        return math.floor(attribute * Fraction(POOR_ACCURACY_MULTIPLIER))
     return check_modifier(a, WEAPON_ATTRIBUTES[weapon_type])
 
 
