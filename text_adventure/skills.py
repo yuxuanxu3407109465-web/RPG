@@ -48,6 +48,8 @@ class SkillTrees:
             for r in s.get("requires", []):
                 if r not in skill_ids:
                     raise ValueError(f"{where}：前置技能 {r} 不存在")
+            if s.get("value") and s["value"] not in SKILL_VALUES:
+                raise ValueError(f"{where}：数值 {s['value']} 在 skills.SKILL_VALUES 里没有定义")
             if s.get("grip") and s["grip"] not in stats.GRIPS:
                 raise ValueError(f"{where}：持握方式要是 {'、'.join(stats.GRIPS)} 之一")
             for effect in s.get("effects", []):
@@ -189,9 +191,17 @@ def _format_skill(character, skill, tree, trees, options, weapon_types):
     return "\n".join(lines)
 
 
+# 技能数据里写 "value": "名字"，技能树就按角色当前属性算出数值显示
+SKILL_VALUES = {
+    "psionic_heal": lambda c: f"按你现在的属性：回复 {stats.psionic_heal(c.attributes, c.level)} 点生命",
+}
+
+
 def skill_details(character, skill, trees, options):
     """技能描述之外的详细数值：能获得的姿态（按当前属性算好），以及各姿态下的额外效果。"""
     details = stances.describe_granted(character, skill, trees, options)
+    if skill.get("value"):
+        details.append(SKILL_VALUES[skill["value"]](character))
     for stance_id, effect in skill.get("stance_effects", {}).items():
         details.append(f"[{trees.stance(stance_id)['name']}] {effect}")
     return details

@@ -296,6 +296,11 @@ def attack_penalty(character):
 
 
 
+def psionic_heal(a, level):
+    """灵愈的回复量 = 5 +（体质 ÷ 4）× 等级，向下取整。"""
+    return 5 + (a["constitution"] // 4) * level
+
+
 # ---------- 敌人等阶 ----------
 
 PHYSICAL_ATTRIBUTES = ("strength", "agility", "constitution")  # 肉体属性

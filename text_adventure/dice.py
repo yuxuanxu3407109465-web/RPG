@@ -90,11 +90,12 @@ class Dice:
                 f"{sign} 难度 {format_number(difficulty)} → {'成功' if success else '失败'}")
         return CheckResult(success, False, text)
 
-    def attack(self, accuracy, dodge, crit_range="20"):
+    def attack(self, accuracy, dodge, crit_range="20", disadvantage=False):
         """攻击判定：d20 + 精准 ≥ 闪避 即命中。掷出 20 必定命中，掷出 1 必定落空。
         命中且掷出的点数落在武器的暴击范围内（例如 19-20）时，再掷一次确认：
-        第二次也命中就是暴击，没命中就按普通命中处理。"""
-        value, hit, text = self._attack_roll(accuracy, dodge)
+        第二次也命中就是暴击，没命中就按普通命中处理。
+        disadvantage：攻击方处于劣势，命中判定掷 2d20 取低（确认暴击那一次不受影响）。"""
+        value, hit, text = self._attack_roll(accuracy, dodge, disadvantage)
         total = value + accuracy
         if not hit or value < crit_min(crit_range):
             return AttackResult(hit, False, text, total)
@@ -118,16 +119,22 @@ class Dice:
                            f"🛡 格挡：d20 = {value} + 格挡修正 {modifier} = {total}，"
                            f"敌方命中 {format_number(attack_total)} {sign} {total} → {'挡住了！' if blocked else '没挡住'}")
 
-    def _attack_roll(self, accuracy, dodge):
-        """掷一次命中判定，返回 (骰子点数, 是否命中, 过程文字)。"""
-        value = self.rng.randint(1, 20)
+    def _attack_roll(self, accuracy, dodge, disadvantage=False):
+        """掷一次命中判定，返回 (骰子点数, 是否命中, 过程文字)。劣势时掷两次取低。"""
+        if disadvantage:
+            rolls = (self.rng.randint(1, 20), self.rng.randint(1, 20))
+            value = min(rolls)
+            dice = f"2d20 取低（{rolls[0]}、{rolls[1]}）= {value}"
+        else:
+            value = self.rng.randint(1, 20)
+            dice = f"d20 = {value}"
         if value == 20:
-            return value, True, "🎲 d20 = 20 → 必定命中"
+            return value, True, f"🎲 {dice} → 必定命中"
         if value == 1:
-            return value, False, "🎲 d20 = 1 → 必定落空"
+            return value, False, f"🎲 {dice} → 必定落空"
         total = value + accuracy
         hit = total >= dodge
         sign = "≥" if hit else "<"
-        text = (f"🎲 d20 = {value} + 精准 {format_number(accuracy)} = {format_number(total)} "
+        text = (f"🎲 {dice} + 精准 {format_number(accuracy)} = {format_number(total)} "
                 f"{sign} 闪避 {format_number(dodge)} → {'命中' if hit else '未命中'}")
         return value, hit, text

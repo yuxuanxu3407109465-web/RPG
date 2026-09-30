@@ -322,13 +322,6 @@
       "description": "（占位）"
     },
     {
-      "id": "psionics_1",
-      "tree": "psionics",
-      "name": "灵能入门",
-      "cost": 1,
-      "description": "（占位）"
-    },
-    {
       "id": "one_hand_crit",
       "tree": "weapon_mastery",
       "branch": "one_hand",
@@ -410,6 +403,35 @@
       "ap_cost": 3,
       "cooldown": 1,
       "description": "用盾牌猛击敌人，造成 1d4 伤害（近战，吃力量修正）；目标要进行体质检定，难度 =（你的力量 + 体质）× 1.5，失败则下回合最后一个行动。"
+    },
+    {
+      "id": "psionic_haze",
+      "tree": "psionics",
+      "name": "灵雾",
+      "type": "active",
+      "cost": 1,
+      "ap_cost": 6,
+      "description": "周身泛起一层扭曲视线的灵能雾气：所有针对自己的攻击都处于劣势（命中判定掷 2d20 取低），持续到战斗结束。"
+    },
+    {
+      "id": "psionic_armor",
+      "tree": "psionics",
+      "name": "灵铠",
+      "type": "active",
+      "cost": 1,
+      "ap_cost": 6,
+      "description": "用灵能强化身体：自身力量 +2、敏捷 +2（buff），护甲 +4，持续到战斗结束。"
+    },
+    {
+      "id": "psionic_mend",
+      "tree": "psionics",
+      "name": "灵愈",
+      "type": "active",
+      "cost": 1,
+      "ap_cost": 6,
+      "cooldown": 1,
+      "value": "psionic_heal",
+      "description": "为一个目标回复 5 +（体质 ÷ 4）× 等级 点生命值（向下取整），并解除流血和中毒。"
     }
   ],
   "stances": [

@@ -1170,17 +1170,20 @@ class Game:
         return "，".join(steps) + f" → 造成 {damage} 点伤害", damage
 
     def cmd_defend_test(self, arg):
-        """试受击：让一个敌人打你一次，看闪避、格挡、护甲的效果（不会真的扣你的生命）。"""
+        """试受击：让一个敌人打你一次，看闪避、格挡、护甲的效果（不会真的扣你的生命）。
+        最后加“劣势”可以模拟灵雾：敌人的命中判定 2d20 取低。"""
         if not self.character:
             return "还没有创建角色。"
+        disadvantage = "劣势" in arg.split()
+        arg = " ".join(p for p in arg.split() if p != "劣势")
         enemy = self._parse_enemy(arg) if arg else None
         if not enemy:
             names = "、".join(t["name"] for t in self.enemies.templates.values())
             return f"用法：试受击 敌人 等阶，例如：试受击 壮尸 精英（已有的敌人：{names}）"
         c = self.character
-        result = self.dice.attack(enemy.accuracy(), self.dodge(), enemy.crit_range())
-        lines = [f"{enemy.name}用{enemy.attack['name']}攻击你（你的闪避 {self.dodge():g}、护甲 {self.armor_total()}）：",
-                 result.text]
+        result = self.dice.attack(enemy.accuracy(), self.dodge(), enemy.crit_range(), disadvantage)
+        lines = [f"{enemy.name}用{enemy.attack['name']}攻击你（你的闪避 {self.dodge():g}、护甲 {self.armor_total()}"
+                 + ("，它处于劣势" if disadvantage else "") + "）：", result.text]
         if result.hit and self.blocks_per_turn():
             block = self.dice.block(stats.block_modifier(c.attributes), result.total)
             lines.append(block.text + f"（每回合可格挡 {self.blocks_per_turn()} 次）")
@@ -1468,6 +1471,7 @@ class Game:
             "  试攻击 <敌人> <等阶>       对敌人试一次攻击，例如：试攻击 僵尸 精英\n"
             "  敌人 <名字> <等阶>         随机生成一个敌人看看资料，例如：敌人 疾尸 精英\n"
             "  试受击 <敌人> <等阶>       让敌人打你一次，看闪避 / 格挡 / 护甲（不扣血），例如：试受击 壮尸\n"
+            "                          末尾加“劣势”模拟敌人处于劣势，例如：试受击 疾尸 精英 劣势\n"
             "  试盾击 <敌人> <等阶>       持盾时对敌人试一次盾击，例如：试盾击 壮尸 精英\n"
             "  等待 / wait             原地等一回合（战斗外 1 分钟，也算生命恢复的回合）\n"
             "  休息 <时长>             恢复体力并推进时间，例如：休息 30、休息 2小时（1~480 分钟）\n"
