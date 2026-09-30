@@ -118,6 +118,15 @@
 - 借机攻击、护甲（及无视部分护甲）、缴械、持续状态（如流血：每回合掉血，持续 3 回合）。
 - 其余数值（重甲的行动点惩罚、各部位护甲值、距离单位、技能的行动点消耗、护甲无视比例、流血伤害等）尚未确定，实现时先询问，不要自行编造。
 
+### Perk（开卡特质）
+- 创建角色时在“背景”之后、“属性分配”之前选择，花 perk 点；可以反复点选 / 取消，perk 点不能为负。初始 perk 点 `progression.starting_perk_points`（暂定 0）。
+- 写在 `data/character_options.json` 的 `perks`：`cost`、`description`、`effects`。效果目前支持：`attribute_points`（额外可支配属性点，加到属性分配总数里）、`perk_points`（额外 perk 点）、`no_companions`（无法携带同伴，同伴上限为 0，`CharacterOptions.companion_limit`）。
+- 样品：**孤独之路**（消耗 0：+4 可支配属性点、+2 perk 点，无法携带同伴）。
+
+### 变异（僵尸独有）
+- 写在 `data/enemies.json` 的 `mutations`（名字、描述、效果），模板的 `mutations` 列表按 `chance`（%）随机带上（样品概率 10%，暂定）。效果目前支持 `armor`（加护甲）。
+- 样品：**表皮硬化**（护甲 +4）。测试：`敌人 行尸 精英 表皮硬化`（写了变异名就强制带上）。
+
 ### 敌人（框架已做，具体僵尸尚未设计）
 - 模板写在 `data/enemies.json`（属性、等级、攻击 `{name, type, damage}`、护甲、描述），规则在 `enemies.py`，启动时检查数据。
 - 敌人和玩家用同一套公式：生命、精准、闪避、先攻、行动点、力量伤害修正、暴击范围都一样。

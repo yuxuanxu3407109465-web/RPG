@@ -1120,22 +1120,30 @@ class Game:
         if not template_id:
             return None
         tier = "normal"
-        if len(parts) > 1:
-            tier = next((t for t, info in stats.ENEMY_TIERS.items() if parts[1] in (t, info[0])), None)
-            if not tier:
+        forced = None
+        for part in parts[1:]:
+            found_tier = next((t for t, info in stats.ENEMY_TIERS.items() if part in (t, info[0])), None)
+            mutation = self.enemies.find_mutation(part)
+            if found_tier:
+                tier = found_tier
+            elif mutation:
+                forced = (forced or []) + [mutation]  # 写了变异名就强制带上（测试用）
+            else:
                 return None
-        return self.enemies.create(template_id, tier, self.dice.rng)
+        return self.enemies.create(template_id, tier, self.dice.rng, forced)
 
     def cmd_enemy(self, arg):
         """敌人 <名字> <等阶>：查看敌人资料（测试用）。"""
         tiers = "、".join(info[0] for info in stats.ENEMY_TIERS.values())
         names = "、".join(t["name"] for t in self.enemies.templates.values())
         if not arg:
-            return f"已有的敌人：{names}。用法：敌人 名字 等阶（{tiers}），例如：敌人 僵尸 精英"
+            mutations = "、".join(m["name"] for m in self.enemies.mutations.values())
+            return (f"已有的敌人：{names}。用法：敌人 名字 等阶（{tiers}）变异，例如：敌人 僵尸 精英 表皮硬化"
+                    f"（变异：{mutations}；不写变异就按概率随机）")
         enemy = self._parse_enemy(arg)
         if not enemy:
             return f"没找到这个敌人。已有的敌人：{names}；等阶：{tiers}。"
-        return format_enemy(enemy, self.options, self.world.weapon_types, self.world.items)
+        return format_enemy(enemy, self.options, self.world.weapon_types, self.world.items, self.enemies)
 
     def cmd_attack_test(self, arg):
         """试攻击：用手上第一件武器（没拿就徒手）试一次攻击，目标可以是数值，也可以是敌人。"""

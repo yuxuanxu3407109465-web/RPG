@@ -40,6 +40,7 @@ class Enemy:
     missing_limbs: list = field(default_factory=list)  # 缺失的肢体（LIMBS 的 key）
     base_attributes: dict = field(default_factory=dict)  # 原始属性（不超过 10）
     buffs: dict = field(default_factory=dict)  # {属性 id: [(来源, 数值), ...]}
+    mutations: list = field(default_factory=list)  # 变异 id（僵尸独有的强化）
 
     @property
     def tier_name(self):
@@ -76,6 +77,7 @@ class EnemyBook:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         self.templates = data["enemies"]
         self.loadouts = data.get("loadouts", {})
+        self.mutations = data.get("mutations", {})  # 变异 id -> {name, description, armor ...}
         self.items = items
         for enemy_id, t in self.templates.items():
             where = f"enemies.json 里的敌人 {enemy_id}"
@@ -95,6 +97,9 @@ class EnemyBook:
             if armless and (armless.get("type") not in stats.WEAPON_ATTRIBUTES
                             or not dice_rules.DICE_PATTERN.match(armless.get("damage", ""))):
                 raise ValueError(f"{where}：armless_attack 的类型或伤害骰写得不对")
+            for entry in t.get("mutations", []):
+                if entry["id"] not in self.mutations:
+                    raise ValueError(f"{where}：变异 {entry['id']} 不存在")
             if t.get("loadout") and t["loadout"] not in self.loadouts:
                 raise ValueError(f"{where}：随机装备表 {t['loadout']} 不存在")
         for loadout_id, table in self.loadouts.items():
@@ -113,8 +118,12 @@ class EnemyBook:
                 return enemy_id
         return None
 
-    def create(self, template_id, tier, rng):
-        """生成一个敌人：模板属性 + 等阶加成 + 随机的武器、护甲、缺失肢体。"""
+    def find_mutation(self, name):
+        return next((m for m, info in self.mutations.items() if name in (m, info["name"])), None)
+
+    def create(self, template_id, tier, rng, forced_mutations=None):
+        """生成一个敌人：模板属性 + 等阶加成 + 随机的武器、护甲、缺失肢体、变异。
+        forced_mutations 给了就用它（测试用），否则按模板的 mutations 概率随机。"""
         t = self.templates[template_id]
         tier_name, physical_bonus, hp_bonus = stats.ENEMY_TIERS[tier]
         base = dict(t["attributes"])
@@ -140,8 +149,8 @@ class EnemyBook:
             w = self.items[weapon]["weapon"]
             item = self.items[weapon]
             quality = stats.quality_bonus(item)
-            name = item["name"] if not quality else f"{stats.quality_name(item)} {item['name']}"
-            attack = {"name": name, "type": w["type"], "damage": stats.weapon_damage(item),
+            weapon_name = item["name"] if not quality else f"{stats.quality_name(item)} {item['name']}"
+            attack = {"name": weapon_name, "type": w["type"], "damage": stats.weapon_damage(item),
                       "accuracy_bonus": quality}
             if w.get("crit_range"):
                 attack["crit_range"] = w["crit_range"]
@@ -149,8 +158,13 @@ class EnemyBook:
             attack = dict(t["attack"])
             if arms == 0 and t.get("armless_attack"):
                 attack = dict(t["armless_attack"])  # 两条胳膊都没了：撕咬
+        if forced_mutations is None:
+            mutations = [e["id"] for e in t.get("mutations", []) if rng.random() * 100 < e["chance"]]
+        else:
+            mutations = list(forced_mutations)
+        armor += sum(self.mutations[m].get("armor", 0) for m in mutations)
         return Enemy(template_id, tier, name, level, attributes, max_hp, max_hp, attack, armor,
-                     t.get("description", ""), weapon, armor_items, missing, base, buffs)
+                     t.get("description", ""), weapon, armor_items, missing, base, buffs, mutations)
 
     @staticmethod
     def _pick_weapon(entries, rng):
@@ -178,13 +192,15 @@ def _attribute_text(enemy, attr):
     return text
 
 
-def format_enemy(enemy, options, weapon_types, items):
+def format_enemy(enemy, options, weapon_types, items, book):
     """敌人资料卡。"""
     a = enemy.attributes
     mods = enemy.damage_modifiers()
     multiplier = stats.damage_multiplier([value for _, value in mods])
     damage = enemy.attack["damage"] + (f" ×{float(multiplier):g}" if multiplier != 1 else "")
     armor = "、".join(f"{items[i]['name']} +{stats.armor_value(items[i])}" for i in enemy.armor_items)
+    mutation_armor = [(book.mutations[m]["name"], book.mutations[m].get("armor", 0)) for m in enemy.mutations]
+    armor = "、".join(([armor] if armor else []) + [f"{n} +{v}" for n, v in mutation_armor if v])
     lines = [
         f"======== {enemy.name}（{enemy.tier_name}，{enemy.level} 级） ========",
         enemy.description,
@@ -195,5 +211,7 @@ def format_enemy(enemy, options, weapon_types, items):
         f"闪避 {dice_rules.format_number(enemy.dodge())}    先攻 {enemy.initiative()}"
         f"    行动点 每回合 {enemy.ap_per_turn()}（上限 {stats.ap_cap(a)}）",
         "肢体：" + ("缺了" + "、".join(LIMBS[x] for x in enemy.missing_limbs) if enemy.missing_limbs else "完整"),
+        "变异：" + ("、".join(f"{book.mutations[m]['name']}（{book.mutations[m]['description']}）" for m in enemy.mutations)
+                    if enemy.mutations else "无"),
     ]
     return "\n".join(line for line in lines if line)

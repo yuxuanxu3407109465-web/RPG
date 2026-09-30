@@ -32,6 +32,7 @@ class Character:
     skill_points: int = 0  # 还没使用的技能点
     learned_skills: List[str] = field(default_factory=list)  # 已学会的技能 id
     unlocked_trees: List[str] = field(default_factory=list)  # 背景解锁的特殊技能树 id（如灵能）
+    perks: List[str] = field(default_factory=list)  # 开卡时选的 perk id
     hp: int = 0
     stamina: int = 0  # 当前体力，上限由体质和力量推导（stats.stamina_max）
     # 异常状态列表。体力不足造成的力竭不放在这里，它由体力实时推导（stats.is_exhausted）
@@ -84,6 +85,7 @@ class CharacterOptions:
         self.progression = data["progression"]
         self.backgrounds = data["backgrounds"]
         self.companions = data["companions"]
+        self.perks = data.get("perks", [])
 
     def background(self, background_id):
         return next(b for b in self.backgrounds if b["id"] == background_id)
@@ -93,6 +95,23 @@ class CharacterOptions:
 
     def default_attributes(self):
         return {a["id"]: self.attribute_rules["default"] for a in self.attributes}
+
+    def perk(self, perk_id):
+        return next(p for p in self.perks if p["id"] == perk_id)
+
+    def perk_effect(self, perk_ids, key):
+        """几个 perk 的某项效果：数值相加，开关类只要有一个是 True 就算。"""
+        values = [self.perk(p).get("effects", {}).get(key) for p in perk_ids]
+        values = [v for v in values if v is not None]
+        if values and isinstance(values[0], bool):
+            return any(values)
+        return sum(values)
+
+    def companion_limit(self, character):
+        """同伴上限：魅力决定；选了“无法携带同伴”的 perk 就是 0。"""
+        if self.perk_effect(character.perks, "no_companions"):
+            return 0
+        return stats.companion_limit(character.attributes)
 
 
 def format_sheet(character, options, items, carried_weight=None, tree_names=None, bonuses=None,
@@ -127,7 +146,9 @@ def format_sheet(character, options, items, carried_weight=None, tree_names=None
     if character.unlocked_trees and tree_names:
         lines.append("  解锁技能树：" + "、".join(tree_names[t] for t in character.unlocked_trees))
 
-    limit = stats.companion_limit(a)
+    if character.perks:
+        lines.append("Perk：" + "、".join(options.perk(p)["name"] for p in character.perks))
+    limit = options.companion_limit(character)
     if character.companions:
         lines.append(f"同伴（上限 {limit}）：")
         for c in character.companions:
@@ -272,9 +293,16 @@ class CharacterCreator:
         self.ask.print("\n【样貌】自由描述你的外貌，比如发型、穿着、特征（直接回车跳过）")
         appearance = self.ask.text("样貌：", max_length=100, default="没什么特别的，扔进人群里就找不到。")
         background = self._background()
-        attributes = self._attributes()
-        companions = self._companions(stats.companion_limit(attributes))
+        perks = self._perks()
+        attributes = self._attributes(self.options.perk_effect(perks, "attribute_points"))
+        if self.options.perk_effect(perks, "no_companions"):
+            names = "、".join(self.options.perk(p)["name"] for p in perks if self.options.perk(p)["effects"].get("no_companions"))
+            self.ask.print(f"\n【同伴】你选择了{names}，不会带同伴。")
+            companions = []
+        else:
+            companions = self._companions(stats.companion_limit(attributes))
         character = Character(name, gender, age, height, appearance, background, attributes, companions)
+        character.perks = perks
         character.skill_points = self.options.progression["starting_skill_points"]
         character.unlocked_trees = list(self.options.background(background).get("unlocks_trees", []))
         return character
@@ -301,12 +329,41 @@ class CharacterCreator:
         index = self.ask.choice("选择编号：", labels)
         return self.options.backgrounds[index]["id"]
 
-    def _attributes(self):
-        return self.ask.attributes(
-            self.options.default_attributes(),
-            self.options.attribute_rules,
-            self.options.attributes,
-        )
+    def _perks(self):
+        """选 perk：可以反复点选 / 取消，perk 点不能变成负数；有的 perk 会给额外的 perk 点。"""
+        if not self.options.perks:
+            return []
+        base = self.options.progression.get("starting_perk_points", 0)
+        chosen = []
+
+        def remaining(selection):
+            return (base + self.options.perk_effect(selection, "perk_points")
+                    - sum(self.options.perk(p).get("cost", 0) for p in selection))
+
+        self.ask.print("\n【Perk】开卡时可以用 perk 点选择特质（再选一次可以取消）。")
+        while True:
+            labels = [
+                ("【已选】" if p["id"] in chosen else "") + f"{p['name']}（消耗 {p.get('cost', 0)} 点）：{p['description']}"
+                for p in self.options.perks
+            ]
+            labels.append("完成")
+            self.ask.print(f"\n剩余 perk 点：{remaining(chosen)}")
+            index = self.ask.choice("选择编号：", labels)
+            if index == len(self.options.perks):
+                return chosen
+            perk_id = self.options.perks[index]["id"]
+            trial = [p for p in chosen if p != perk_id] if perk_id in chosen else chosen + [perk_id]
+            if remaining(trial) < 0:
+                self.ask.print("  perk 点不够（取消这个会让已选的 perk 点数不够用）。")
+                continue
+            chosen = trial
+
+    def _attributes(self, extra_points=0):
+        rules = dict(self.options.attribute_rules)
+        rules["total"] += extra_points  # perk 可能给额外的可支配属性点
+        if extra_points:
+            self.ask.print(f"\n（perk 额外给了 {extra_points} 点可支配属性点）")
+        return self.ask.attributes(self.options.default_attributes(), rules, self.options.attributes)
 
     def _companions(self, limit):
         if limit == 0:

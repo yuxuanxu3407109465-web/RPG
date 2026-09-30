@@ -59,7 +59,8 @@
   "progression": {
     "xp_per_level": 100,
     "explore_xp": 20,
-    "starting_skill_points": 4
+    "starting_skill_points": 4,
+    "starting_perk_points": 0
   },
   "backgrounds": [
     {
@@ -118,6 +119,19 @@
       "age": 3,
       "relationship": "你养的狗",
       "appearance": "一只黄色的中华田园犬，耳朵一只立着一只耷拉着。"
+    }
+  ],
+  "perks": [
+    {
+      "id": "lone_wolf",
+      "name": "孤独之路",
+      "cost": 0,
+      "description": "+4 点可支配属性点，+2 perk 点，但无法携带同伴。",
+      "effects": {
+        "attribute_points": 4,
+        "perk_points": 2,
+        "no_companions": true
+      }
     }
   ]
 }

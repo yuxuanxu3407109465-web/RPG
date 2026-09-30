@@ -31,7 +31,13 @@
         "damage": "1d4",
         "crit_range": "20",
         "poor": true
-      }
+      },
+      "mutations": [
+        {
+          "id": "hardened_skin",
+          "chance": 10
+        }
+      ]
     },
     "runner": {
       "name": "疾尸",
@@ -62,7 +68,13 @@
         "damage": "1d4",
         "crit_range": "20",
         "poor": true
-      }
+      },
+      "mutations": [
+        {
+          "id": "hardened_skin",
+          "chance": 10
+        }
+      ]
     },
     "brute": {
       "name": "壮尸",
@@ -93,7 +105,13 @@
         "damage": "1d4",
         "crit_range": "20",
         "poor": true
-      }
+      },
+      "mutations": [
+        {
+          "id": "hardened_skin",
+          "chance": 10
+        }
+      ]
     }
   },
   "loadouts": {
@@ -126,6 +144,13 @@
         "missing_arm": 10,
         "missing_leg": 10
       }
+    }
+  },
+  "mutations": {
+    "hardened_skin": {
+      "name": "表皮硬化",
+      "description": "皮肤角质化，像一层甲壳：护甲 +4",
+      "armor": 4
     }
   }
 }
