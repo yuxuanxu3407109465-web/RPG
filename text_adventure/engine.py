@@ -1115,6 +1115,8 @@ class Game:
             return "还没有创建角色。"
         usage = ("用法：试攻击 目标闪避 目标护甲（例如：试攻击 15 3），或者 试攻击 敌人 等阶"
                  "（例如：试攻击 僵尸 精英）；不写就用你自己的闪避、护甲 0")
+        advantage = "优势" in arg.split()  # 模拟洞察：自己的攻击 2d20 取高
+        arg = " ".join(p for p in arg.split() if p != "优势")
         enemy = self._parse_enemy(arg) if arg and not arg.split()[0].replace(".", "").isdigit() else None
         if enemy:
             target, armor = enemy.dodge(), enemy.armor
@@ -1128,7 +1130,7 @@ class Game:
             if len(parts) > 2:
                 return usage
         weapon = self.weapon_summary()[0]
-        result = self.dice.attack(weapon["accuracy"], target, weapon["crit_range"])
+        result = self.dice.attack(weapon["accuracy"], target, weapon["crit_range"], advantage=advantage)
         who = enemy.name if enemy else "目标"
         lines = [
             f"用{weapon['name']}试攻击{who}（{weapon['type']}，精准看{weapon['attribute']}），"
@@ -1468,7 +1470,7 @@ class Game:
             "  掷骰 <骰子>              掷骰，例如：掷骰 2d6+1\n"
             "  检定 <属性> <难度>        做一次属性检定（d20 + 属性×1.5 ≥ 难度），例如：检定 敏捷 15\n"
             "  试攻击 <闪避> <护甲>       用手上的武器试一次攻击（命中 + 伤害），例如：试攻击 15 3\n"
-            "  试攻击 <敌人> <等阶>       对敌人试一次攻击，例如：试攻击 僵尸 精英\n"
+            "  试攻击 <敌人> <等阶>       对敌人试一次攻击，例如：试攻击 僵尸 精英（末尾加“优势”模拟优势）\n"
             "  敌人 <名字> <等阶>         随机生成一个敌人看看资料，例如：敌人 疾尸 精英\n"
             "  试受击 <敌人> <等阶>       让敌人打你一次，看闪避 / 格挡 / 护甲（不扣血），例如：试受击 壮尸\n"
             "                          末尾加“劣势”模拟敌人处于劣势，例如：试受击 疾尸 精英 劣势\n"

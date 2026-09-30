@@ -324,6 +324,11 @@ def sidestep_distance(a):
     return 4 + a["agility"] // 4
 
 
+def psionic_bolt_damage(level):
+    """灵焰冲击（灵能·塑能系）的火焰伤害 = 6 + 等级 × 2。"""
+    return 6 + level * 2
+
+
 def psionic_heal(a, level):
     """再生（灵能·生物系）的回复量 = 5 +（体质 ÷ 4）× 等级，向下取整。"""
     return 5 + (a["constitution"] // 4) * level

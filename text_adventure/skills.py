@@ -212,6 +212,7 @@ def _format_skill(character, skill, tree, trees, options, weapon_types):
 # 技能数据里写 "value": "名字"，技能树就按角色当前属性算出数值显示
 SKILL_VALUES = {
     "psionic_heal": lambda c: f"按你现在的属性：回复 {stats.psionic_heal(c.attributes, c.level)} 点生命",
+    "psionic_bolt": lambda c: f"按你现在的等级：造成 {stats.psionic_bolt_damage(c.level)} 点火焰伤害",
     "bleed": lambda c: (f"按你现在的属性：无视 {stats.blade_armor_ignore(c.attributes)} 点护甲，"
                         f"流血最多叠 {stats.bleed_max_stacks(c.attributes)} 层"),
     "long_slash": lambda c: (f"按你现在的属性：撤步后撤 {stats.sidestep_distance(c.attributes)} 米，"
