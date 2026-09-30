@@ -307,8 +307,8 @@ PHYSICAL_ATTRIBUTES = ("strength", "agility", "constitution")  # 肉体属性
 # 等阶 id -> (名字, 肉体属性加成, 生命上限加成)；属性加成算 buff，不改原始属性
 ENEMY_TIERS = {
     "normal": ("普通", 0, 0),
-    "elite": ("精英", 3, 20),
-    "boss": ("首领", 6, 40),
+    "elite": ("精英", 2, 20),
+    "boss": ("首领", 4, 40),
 }
 
 

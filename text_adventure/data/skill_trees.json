@@ -431,7 +431,7 @@
       "ap_cost": 6,
       "cooldown": 1,
       "value": "psionic_heal",
-      "description": "为一个目标回复 5 +（体质 ÷ 4）× 等级 点生命值（向下取整），并解除流血和中毒。"
+      "description": "为自己或一名同伴回复 5 +（你的体质 ÷ 4）× 等级 点生命值（向下取整），并解除流血和中毒。"
     }
   ],
   "stances": [
