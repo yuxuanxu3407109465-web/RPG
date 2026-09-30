@@ -1171,7 +1171,7 @@ class Game:
 
     def cmd_defend_test(self, arg):
         """试受击：让一个敌人打你一次，看闪避、格挡、护甲的效果（不会真的扣你的生命）。
-        最后加“劣势”可以模拟灵雾：敌人的命中判定 2d20 取低。"""
+        最后加“劣势”可以模拟预判：敌人的命中判定 2d20 取低。"""
         if not self.character:
             return "还没有创建角色。"
         disadvantage = "劣势" in arg.split()

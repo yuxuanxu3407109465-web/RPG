@@ -325,7 +325,7 @@ def sidestep_distance(a):
 
 
 def psionic_heal(a, level):
-    """灵愈的回复量 = 5 +（体质 ÷ 4）× 等级，向下取整。"""
+    """再生（灵能·生物系）的回复量 = 5 +（体质 ÷ 4）× 等级，向下取整。"""
     return 5 + (a["constitution"] // 4) * level
 
 
