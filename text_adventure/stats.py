@@ -140,9 +140,8 @@ def initiative(a):
 
 
 def max_hp(a, level):
-    """生命值上限 = 10 + 体质 +（等级 − 1）×（体质 ÷ 2，向下取整）。
-    1 级是 10 + 体质（体质 5 为 15），之后每升一级加 体质 ÷ 2。"""
-    return 10 + a["constitution"] + (level - 1) * (a["constitution"] // 2)
+    """生命值上限 = 10 +（体质 ÷ 2）× 等级。"""
+    return 10 + (a["constitution"] // 2) * level
 
 
 def hp_regen(a):
