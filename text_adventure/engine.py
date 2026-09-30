@@ -750,8 +750,8 @@ class Game:
         return (sheet
                 + f"\n\n【装备与姿态】\n  持握：{self.grip_name()}{passives}\n{weapons}\n{armor_line}\n{gear_line}"
                 + f"\n  姿态：{stance['name'] if stance else '无'}"
-                + f"\n  行动点消耗：普通攻击 {stats.ATTACK_AP_COST}、移动 1 格 {self._move_cost_text()}、"
-                  f"使用物品 {stats.USE_ITEM_AP_COST}"
+                + f"\n  行动点消耗：普通攻击 {stats.ATTACK_AP_COST}{self._offhand_cost_text()}、"
+                  f"移动 1 格 {self._move_cost_text()}、使用物品 {stats.USE_ITEM_AP_COST}"
                 + f"\n\n【时间】{self.clock_text()}\n【异常状态】{active}")
 
     def cmd_skills(self, arg):
@@ -974,6 +974,21 @@ class Game:
                 if effect["type"] == effect_type and effect.get("grip", grip) == grip:
                     found.append((skill["name"], effect["value"]))
         return found
+
+    def offhand_attack_cost(self):
+        """双持时主手攻击之后，副手追击一次的行动点；没有相关被动就是 None。"""
+        effects = self.passive_effects("offhand_attack_ap_percent")
+        if not effects:
+            return None
+        percent = min(value for _, value in effects)
+        return stats.ATTACK_AP_COST * percent // 100
+
+    def _offhand_cost_text(self):
+        cost = self.offhand_attack_cost()
+        if cost is None:
+            return ""
+        names = "、".join(name for name, _ in self.passive_effects("offhand_attack_ap_percent"))
+        return f"（主手攻击后副手追击 {cost}，{names}）"
 
     def armor_ignore(self):
         """攻击时无视的护甲值（被动技能相加）。"""

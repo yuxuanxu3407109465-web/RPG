@@ -83,6 +83,7 @@ GRIPS = {"unarmed": "徒手", "one_hand": "单手", "dual_wield": "双持", "two
 PASSIVE_EFFECTS = {
     "crit_range_multiplier": "暴击范围倍数",  # 多个同时生效时相乘
     "armor_ignore": "无视护甲",  # 多个同时生效时相加
+    "offhand_attack_ap_percent": "副手追击行动点",  # 主手攻击后，副手追击的行动点 = 普通攻击 × 这个百分比
 }
 
 
