@@ -157,8 +157,8 @@ def gain_ap(a, current, armor_penalty=0):
 
 
 def accuracy(a, weapon_type):
-    """精准 = 所用武器对应的属性值。"""
-    return a[WEAPON_ATTRIBUTES[weapon_type]]
+    """精准 = 所用武器对应的属性 × 1.5，向下取整（和属性修正一样）。"""
+    return check_modifier(a, WEAPON_ATTRIBUTES[weapon_type])
 
 
 def dodge(a):
