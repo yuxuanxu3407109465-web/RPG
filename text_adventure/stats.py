@@ -80,6 +80,12 @@ def widen_crit_range(crit_range, multiplier):
 GRIPS = {"unarmed": "徒手", "one_hand": "单手", "dual_wield": "双持", "two_hand": "双手", "shield": "持盾"}
 
 BLOCKS_PER_TURN = 1  # 持盾时每回合默认能格挡几次
+SHIELD_BASH_DAMAGE = "1d4"  # 盾击伤害（近战，吃力量修正）
+
+
+def shield_bash_difficulty(a):
+    """盾击时目标体质检定的难度 = 攻击者（力量 + 体质）× 1.5，向下取整。"""
+    return math.floor((a["strength"] + a["constitution"]) * Fraction(CHECK_MODIFIER_MULTIPLIER))
 
 
 def block_modifier(a):

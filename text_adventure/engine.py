@@ -215,6 +215,7 @@ class Game:
             (["试攻击", "attack test"], self.cmd_attack_test),
             (["敌人", "enemy"], self.cmd_enemy),
             (["试受击", "defend test"], self.cmd_defend_test),
+            (["试盾击", "bash test"], self.cmd_bash_test),
             (["使用", "吃", "喝", "use"], self.cmd_use),
             (["休息", "睡", "rest"], self.cmd_rest),
             (["等待", "wait"], self.cmd_wait),
@@ -1193,6 +1194,33 @@ class Game:
         lines.append("（测试，不会真的扣你的生命）")
         return "\n".join(lines)
 
+    def cmd_bash_test(self, arg):
+        """试盾击：对敌人用一次盾击（伤害 + 目标体质检定），会扣它的生命，不花行动点。"""
+        if not self.character:
+            return "还没有创建角色。"
+        if self.grip_style() != "shield":
+            return "得先拿着盾牌（装备 盾牌）。"
+        enemy = self._parse_enemy(arg) if arg else None
+        if not enemy:
+            return "用法：试盾击 敌人 等阶，例如：试盾击 壮尸 精英"
+        a = self.character.attributes
+        weapon = {"name": "盾击", "damage": stats.SHIELD_BASH_DAMAGE,
+                  "damage_modifiers": [(n, v) for n, v in self.damage_modifiers(stats.UNARMED) if n != "姿态"]}
+        text, damage = self._roll_damage(weapon, enemy.armor)
+        enemy.hp = max(0, enemy.hp - damage)
+        difficulty = stats.shield_bash_difficulty(a)
+        modifier = stats.check_modifier(enemy.attributes, "constitution")
+        check = self.dice.check(modifier, difficulty, "体质修正")
+        verdict = "撑住了" if check.success else "被撞晕了，下回合最后一个行动"
+        return "\n".join([
+            f"你用盾牌猛击{enemy.name}（护甲 {enemy.armor}）：",
+            text,
+            f"{enemy.name} 生命 {enemy.max_hp} → {enemy.hp}/{enemy.max_hp}",
+            f"体质检定（难度 {difficulty} =（你的力量 {a['strength']} + 体质 {a['constitution']}）× 1.5）：",
+            check.text + f" → {enemy.name}{verdict}",
+            f"（测试：真正使用时消耗 3 行动点，冷却 1 回合）",
+        ])
+
     def cmd_roll(self, arg):
         roll = self.dice.roll(arg or "1d20")
         if not roll:
@@ -1435,6 +1463,7 @@ class Game:
             "  试攻击 <敌人> <等阶>       对敌人试一次攻击，例如：试攻击 僵尸 精英\n"
             "  敌人 <名字> <等阶>         随机生成一个敌人看看资料，例如：敌人 疾尸 精英\n"
             "  试受击 <敌人> <等阶>       让敌人打你一次，看闪避 / 格挡 / 护甲（不扣血），例如：试受击 壮尸\n"
+            "  试盾击 <敌人> <等阶>       持盾时对敌人试一次盾击，例如：试盾击 壮尸 精英\n"
             "  等待 / wait             原地等一回合（战斗外 1 分钟，也算生命恢复的回合）\n"
             "  休息 <时长>             恢复体力并推进时间，例如：休息 30、休息 2小时（1~480 分钟）\n"
             "                          体力满了也能休息，只是时间照样过去\n"
