@@ -1004,7 +1004,7 @@ class Game:
         return roll.describe()
 
     def attribute_check(self, attribute_id, difficulty):
-        """属性检定：d20 + 属性 × 1.5 > 难度。以后开锁、说服这类检定都调用这个。"""
+        """属性检定：d20 + 属性 × 1.5 ≥ 难度。以后开锁、说服这类检定都调用这个。"""
         modifier = stats.check_modifier(self.character.attributes, attribute_id)
         name = self.options.attribute_name(attribute_id)
         return self.dice.check(modifier, difficulty, f"{name}修正")
@@ -1228,7 +1228,7 @@ class Game:
             "  装备 <物品> / 卸下 <物品>  拿起或收起武器，穿戴或取下护甲、饰品、披风、背包\n"
             "  姿态 / 姿态 <名字>        查看或切换姿态，“姿态 取消”解除\n"
             "  掷骰 <骰子>              掷骰，例如：掷骰 2d6+1\n"
-            "  检定 <属性> <难度>        做一次属性检定（d20 + 属性×1.5 > 难度），例如：检定 敏捷 15\n"
+            "  检定 <属性> <难度>        做一次属性检定（d20 + 属性×1.5 ≥ 难度），例如：检定 敏捷 15\n"
             "  试攻击 <闪避> <护甲>       用手上的武器试一次攻击（命中 + 伤害），例如：试攻击 15 3\n"
             "  休息 <时长>             恢复体力并推进时间，例如：休息 30、休息 2小时（1~480 分钟）\n"
             "                          体力满了也能休息，只是时间照样过去\n"

@@ -1,7 +1,8 @@
 """抛骰系统：掷任意骰子（如 2d6+1），以及统一用 d20 的攻击判定和属性检定。
 
-攻击：d20 + 精准 > 闪避 即命中；命中且落在武器暴击范围内时再掷一次确认暴击。
-检定：d20 + 属性修正（属性值 × 1.5）> 难度 即成功。
+攻击：d20 + 精准 ≥ 闪避 即命中；命中且落在武器暴击范围内时再掷一次确认暴击。
+检定：d20 + 属性修正（属性值 × 1.5）≥ 难度 即成功。
+攻击和检定统一标准：大于等于就算成功。
 两者都是掷出 20 必定成功、掷出 1 必定失败。
 """
 
@@ -75,21 +76,21 @@ class Dice:
         return Roll(expression, rolls, modifier)
 
     def check(self, modifier, difficulty, label="修正"):
-        """属性检定：d20 + 修正 > 难度 即成功；掷出 20 必定成功，掷出 1 必定失败。"""
+        """属性检定：d20 + 修正 ≥ 难度 即成功；掷出 20 必定成功，掷出 1 必定失败。"""
         value = self.rng.randint(1, 20)
         if value == 20:
             return CheckResult(True, True, "🎲 d20 = 20 → 必定成功")
         if value == 1:
             return CheckResult(False, True, "🎲 d20 = 1 → 必定失败")
         total = value + modifier
-        success = total > difficulty
-        sign = ">" if success else "≤"
+        success = total >= difficulty
+        sign = "≥" if success else "<"
         text = (f"🎲 d20 = {value} + {label} {format_number(modifier)} = {format_number(total)} "
                 f"{sign} 难度 {format_number(difficulty)} → {'成功' if success else '失败'}")
         return CheckResult(success, False, text)
 
     def attack(self, accuracy, dodge, crit_range="20"):
-        """攻击判定：d20 + 精准 > 闪避 即命中。掷出 20 必定命中，掷出 1 必定落空。
+        """攻击判定：d20 + 精准 ≥ 闪避 即命中。掷出 20 必定命中，掷出 1 必定落空。
         命中且掷出的点数落在武器的暴击范围内（例如 19-20）时，再掷一次确认：
         第二次也命中就是暴击，没命中就按普通命中处理。"""
         value, hit, text = self._attack_roll(accuracy, dodge)
@@ -108,8 +109,8 @@ class Dice:
         if value == 1:
             return value, False, "🎲 d20 = 1 → 必定落空"
         total = value + accuracy
-        hit = total > dodge
-        sign = ">" if hit else "≤"
+        hit = total >= dodge
+        sign = "≥" if hit else "<"
         text = (f"🎲 d20 = {value} + 精准 {format_number(accuracy)} = {format_number(total)} "
                 f"{sign} 闪避 {format_number(dodge)} → {'命中' if hit else '未命中'}")
         return value, hit, text
