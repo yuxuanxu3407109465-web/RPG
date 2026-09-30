@@ -46,7 +46,8 @@ class Enemy:
         return stats.ENEMY_TIERS[self.tier][0]
 
     def accuracy(self):
-        return stats.accuracy(self.attributes, self.attack["type"], self.attack.get("poor", False))
+        base = stats.accuracy(self.attributes, self.attack["type"], self.attack.get("poor", False))
+        return base + self.attack.get("accuracy_bonus", 0)  # 武器等阶
 
     def dodge(self):
         return stats.dodge(self.attributes)
@@ -137,7 +138,11 @@ class EnemyBook:
 
         if weapon:
             w = self.items[weapon]["weapon"]
-            attack = {"name": self.items[weapon]["name"], "type": w["type"], "damage": w["damage"]}
+            item = self.items[weapon]
+            quality = stats.quality_bonus(item)
+            name = item["name"] if not quality else f"{stats.quality_name(item)} {item['name']}"
+            attack = {"name": name, "type": w["type"], "damage": stats.weapon_damage(item),
+                      "accuracy_bonus": quality}
             if w.get("crit_range"):
                 attack["crit_range"] = w["crit_range"]
         else:

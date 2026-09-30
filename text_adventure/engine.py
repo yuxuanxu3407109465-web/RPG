@@ -746,7 +746,8 @@ class Game:
 
         weapons = "\n".join(
             f"  {w['hand']} {w['name']}（{w['type']}）：精准 {w['accuracy']:g}（{w['attribute']}"
-            + (f"，含姿态 {w['stance_bonus']:+g}" if w["stance_bonus"] else "") + f"），{damage_text(w)}"
+            + (f"，含姿态 {w['stance_bonus']:+g}" if w["stance_bonus"] else "")
+            + (f"，含等阶 {w['quality_bonus']:+d}" if w["quality_bonus"] else "") + f"），{damage_text(w)}"
             for w in self.weapon_summary()
         )
         stance = self._current_stance()
@@ -1067,17 +1068,19 @@ class Game:
         for hand, item_id in held:
             weapon_type = self._weapon(item_id)["type"] if item_id else stats.UNARMED
             poor = bool(item_id and self._weapon(item_id).get("poor"))
+            quality = stats.quality_bonus(self.world.items[item_id]) if item_id else 0
             base = stats.accuracy(self.character.attributes, weapon_type, poor)
-            total = self.accuracy(weapon_type, poor)
+            total = self.accuracy(weapon_type, poor) + quality
             summary.append({
                 "hand": hand,
-                "name": self.world.items[item_id]["name"] if item_id else "拳脚",
+                "name": self.item_display_name(item_id) if item_id else "拳脚",
                 "type": self.world.weapon_types[weapon_type],
                 "weapon_type": weapon_type,
                 "attribute": self.options.attribute_name(stats.WEAPON_ATTRIBUTES[weapon_type]),
                 "accuracy": total,
-                "stance_bonus": total - base,
-                "damage": self._weapon(item_id)["damage"] if item_id else stats.UNARMED_DAMAGE,
+                "stance_bonus": total - base - quality,
+                "quality_bonus": quality,
+                "damage": stats.weapon_damage(self.world.items[item_id]) if item_id else stats.UNARMED_DAMAGE,
                 "crit_range": self._crit_range(weapon_type, item_id),
                 "damage_modifiers": self.damage_modifiers(weapon_type),
             })

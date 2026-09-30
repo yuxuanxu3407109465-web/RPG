@@ -108,12 +108,29 @@ PASSIVE_EFFECTS = {
 }
 
 
-# 装备等阶：以“普通”为基准，每高一阶护甲值 +1，每低一阶 −1
+# 装备等阶：以“普通”为基准，每高一阶 +1、每低一阶 −1
+#   护甲：护甲值 ±1；武器：精准 ±1、伤害 ±1（例如精良开山刀 1d8+1，破旧开山刀 1d8-1）
 QUALITIES = {"worn": ("破旧", -1), "normal": ("普通", 0), "fine": ("精良", 1), "legendary": ("传说", 2)}
 
 
 def quality_name(item):
     return QUALITIES[item.get("quality", "normal")][0]
+
+
+def quality_bonus(item):
+    """装备等阶带来的加减值（普通 0、精良 +1、传说 +2、破旧 −1）。"""
+    return QUALITIES[item.get("quality", "normal")][1]
+
+
+def weapon_damage(item):
+    """武器伤害骰加上等阶的固定加减，例如 "1d8" + 精良 → "1d8+1"。"""
+    damage = item["weapon"]["damage"]
+    bonus = quality_bonus(item)
+    if not bonus:
+        return damage
+    base, _, flat = damage.replace("-", "+-").partition("+")
+    total = (int(flat) if flat else 0) + bonus
+    return base if total == 0 else f"{base}{total:+d}"
 
 
 def armor_value(item):
