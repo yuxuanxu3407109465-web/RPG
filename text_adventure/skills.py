@@ -235,7 +235,7 @@ SKILL_VALUES = {
                                f"造成 {stats.psionic_bolt_damage(c.level)} 点火焰伤害"),
     "bleed": lambda c: (f"按你现在的属性：无视 {stats.blade_armor_ignore(c.attributes)} 点护甲，"
                         f"流血最多叠 {stats.bleed_max_stacks(c.attributes)} 层"),
-    "long_slash": lambda c: (f"按你现在的属性：撤步后撤 {stats.sidestep_distance(c.attributes)} 米，"
+    "long_slash": lambda c: (f"按你现在的属性：撤步后撤 {stats.sidestep_distance(c.attributes)} 格，"
                              f"卸刃无视 {stats.blade_armor_ignore(c.attributes)} 点护甲、"
                              f"缴械难度 {stats.disarm_difficulty(c.attributes)}"),
 }

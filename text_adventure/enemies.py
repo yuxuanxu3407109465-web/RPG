@@ -204,6 +204,7 @@ def mutation_text(mutation, enemy):
     return mutation["description"].format(
         体质x3=con * 3,
         体质检定=stats.check_modifier(enemy.attributes, "constitution"),
+        盾牌格挡难度=stats.check_modifier(enemy.attributes, "constitution") + 10,
     )
 
 

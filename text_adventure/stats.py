@@ -377,7 +377,7 @@ def disarm_difficulty(a):
 
 
 def sidestep_distance(a):
-    """撤步后撤的距离（米）= 4 + 敏捷 ÷ 4。"""
+    """撤步后撤的距离（格）= 4 + 敏捷 ÷ 4。"""
     return 4 + a["agility"] // 4
 
 
