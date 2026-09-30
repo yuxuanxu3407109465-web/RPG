@@ -334,6 +334,11 @@ def bleed_max_stacks(a):
     return a["agility"]
 
 
+def disarm_difficulty(a):
+    """缴械：目标用 敏捷 × 1.5 做检定，难度 =（攻击者力量 + 敏捷）× 1.5，向下取整。"""
+    return math.floor((a["strength"] + a["agility"]) * Fraction(CHECK_MODIFIER_MULTIPLIER))
+
+
 def sidestep_distance(a):
     """撤步后撤的距离（米）= 4 + 敏捷 ÷ 4。"""
     return 4 + a["agility"] // 4
