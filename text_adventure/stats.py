@@ -145,8 +145,8 @@ def max_hp(a, level):
 
 
 def hp_regen(a):
-    """每 REGEN_INTERVAL 回合恢复的生命值。"""
-    return a["constitution"]
+    """每 REGEN_INTERVAL 回合恢复的生命值 = 体质 ÷ 2（向下取整）。"""
+    return a["constitution"] // 2
 
 
 def xp_multiplier(a):
@@ -184,7 +184,7 @@ STAMINA_COST_FLOOR = 0.5      # 行动消耗最多降到一半
 STAMINA_LOW_RATIO = 0.1       # 体力低于上限的这个比例就力竭
 EXHAUSTED_DAMAGE_PENALTY = -50  # 力竭时攻击力 -50%
 MOVE_COST_INDOOR = 2          # 建筑物内走一步的体力
-MOVE_COST_OUTDOOR = 10        # 建筑物外走一步的体力
+MOVE_COST_OUTDOOR = 1         # 建筑物外走一步的体力
 MOVE_MINUTES_INDOOR = 1       # 建筑物内走一步花的时间（分钟）
 MOVE_MINUTES_OUTDOOR = 5      # 建筑物外走一步花的时间（分钟）
 REST_MINUTES_PER_TICK = 30    # 每休息半小时算一档
