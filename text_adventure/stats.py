@@ -88,16 +88,37 @@ HEAVY_ACCURACY = -6
 HEAVY_DAMAGE_PERCENT = 60
 
 
+# 伤害修正分两类：每一项写成 (来源, 百分比, 类别)
+#   加算（ADD）：力量、武器标签（锋利、沉重、背刺）、技能（姿态、暗袭……）——这些百分比先相加
+#   乘算（MUL）：perk（绝境……）、状态（力竭）——各自单独相乘
+# 暴击另外再乘（damage_multiplier 的 crit）。
+ADD = "add"
+MUL = "mul"
+
+
 def tag_damage_modifiers(tags, sneak=False):
-    """武器标签带来的伤害修正 [(来源, %)]：锋利、沉重，偷袭时再加背刺。"""
+    """武器标签带来的伤害修正：锋利、沉重，偷袭时再加背刺（都是加算）。"""
     mods = []
     if "sharp" in tags:
-        mods.append(("锋利", SHARP_DAMAGE_PERCENT))
+        mods.append(("锋利", SHARP_DAMAGE_PERCENT, ADD))
     if "heavy" in tags:
-        mods.append(("沉重", HEAVY_DAMAGE_PERCENT))
+        mods.append(("沉重", HEAVY_DAMAGE_PERCENT, ADD))
     if sneak and "backstab" in tags:
-        mods.append(("背刺", BACKSTAB_DAMAGE_PERCENT))
+        mods.append(("背刺", BACKSTAB_DAMAGE_PERCENT, ADD))
     return mods
+
+
+def modifier_text(modifiers):
+    """把修正写成说明文字，例如 “+45%（力量 +30%、锋利 +15%）×1.3（绝境 +30%）”。"""
+    parts = []
+    adds = [(n, v) for n, v, kind in modifiers if kind == ADD]
+    if adds:
+        total = sum(v for _, v in adds)
+        parts.append(f"{total:+d}%（" + "、".join(f"{n} {v:+d}%" for n, v in adds) + "）")
+    for n, v, kind in modifiers:
+        if kind == MUL:
+            parts.append(f"×{float(Fraction(100 + v, 100)):g}（{n} {v:+d}%）")
+    return " ".join(parts)
 
 
 def crit_damage_bonus(tags):
@@ -235,11 +256,13 @@ def crit_range(weapon_type, weapon=None):
 
 
 def damage_multiplier(modifiers, crit=False, crit_bonus=None):
-    """各来源的修正（%）相乘，例如 +20% 和 +20% 是 ×1.2×1.2 = ×1.44；暴击再 ×2（要害 ×2.3）。
+    """总伤害倍率：加算类先相加（力量 +30%、锋利 +15% → ×1.45），乘算类各自相乘（绝境 ×1.3），
+    暴击再乘（×2，要害 ×2.3）。modifiers 是 [(来源, 百分比, ADD/MUL)]。
     用分数计算，避免 7 × 1.2 算成 8.3999999 这类浮点误差影响取整。"""
-    multiplier = Fraction(1)
-    for percent in modifiers:
-        multiplier *= Fraction(100 + percent, 100)
+    multiplier = Fraction(100 + sum(v for _, v, kind in modifiers if kind == ADD), 100)
+    for _, percent, kind in modifiers:
+        if kind == MUL:
+            multiplier *= Fraction(100 + percent, 100)
     if crit:
         multiplier *= Fraction(100 + (CRIT_DAMAGE_BONUS if crit_bonus is None else crit_bonus), 100)
     return multiplier
@@ -498,7 +521,7 @@ def attack_penalty(character):
 
 # ---------- 锐器技能的数值 ----------
 
-LAST_STAND_HP_PERCENT = 30  # 绝境（perk）：生命低于上限的 30% 时……
+LAST_STAND_HP_PERCENT = 30  # 绝境（perk）：生命不高于上限的 30% 时……
 LAST_STAND_BONUS = 3  # ……闪避、精准 +3
 LAST_STAND_DAMAGE_PERCENT = 30  # ……伤害 +30%
 

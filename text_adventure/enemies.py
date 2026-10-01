@@ -69,7 +69,7 @@ class Enemy:
         if self.attack["type"] in stats.MELEE_WEAPON_TYPES:
             bonus = stats.melee_damage_bonus(self.attributes)
             if bonus:
-                mods.append(("力量", bonus))
+                mods.append(("力量", bonus, stats.ADD))
         return mods + stats.tag_damage_modifiers(self.attack.get("tags", []))
 
 
@@ -219,7 +219,7 @@ def format_enemy(enemy, options, weapon_types, items, book):
     """敌人资料卡。"""
     a = enemy.attributes
     mods = enemy.damage_modifiers()
-    multiplier = stats.damage_multiplier([value for _, value in mods])
+    multiplier = stats.damage_multiplier(mods)
     damage = enemy.attack["damage"] + (f" ×{float(multiplier):g}" if multiplier != 1 else "")
     armor = "、".join(f"{items[i]['name']} +{stats.armor_value(items[i])}" for i in enemy.armor_items)
     mutation_armor = [(book.mutations[m]["name"], book.mutations[m].get("armor", 0)) for m in enemy.mutations]

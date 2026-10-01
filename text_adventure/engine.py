@@ -1329,7 +1329,7 @@ class Game:
         """身上所有东西的重量（extra 是准备拿起来的东西），按背着的背包的减重率打折。"""
         raw = sum(self.world.items[i].get("weight", 1) for i in self.all_carried()) + extra
         # 重量保留 1 位小数，向下取整（用 Decimal 避免 0.1 这类小数的浮点误差）
-        total = Decimal(str(round(raw, 6))) * (100 - self.backpack_reduction()) / 100
+        total = max(Decimal(0), Decimal(str(round(raw, 6))) * (100 - self.backpack_reduction()) / 100)
         return float(total.quantize(Decimal("0.1"), rounding=ROUND_FLOOR))
 
     def can_stow(self, item_id):
@@ -1377,7 +1377,7 @@ class Game:
             if gear and gear.get("weight_reduction"):
                 backpack = gear["weight_reduction"]
                 break
-        return min(100, backpack + perk)
+        return backpack + perk  # 理论上没有上限（超过 100% 时重量按 0 算）
 
     def cmd_take(self, arg):
         if not arg:
@@ -1504,7 +1504,7 @@ class Game:
         def damage_text(w):
             if not w["damage"]:
                 return "伤害未定"
-            multiplier = stats.damage_multiplier([value for _, value in w["damage_modifiers"]])
+            multiplier = stats.damage_multiplier(w["damage_modifiers"])
             return (f"伤害 {w['damage']}" + (f" ×{float(multiplier):g}" if multiplier != 1 else "")
                     + f"，暴击 {w['crit_range']}" + (f"，射程 {w['range']}" if w.get("range") else "")
                     + (f"，标签：{'、'.join(w['tag_names'])}" if w.get("tag_names") else ""))
@@ -1512,7 +1512,8 @@ class Game:
         weapons = "\n".join(
             f"  {w['hand']} {w['name']}（{w['type']}）：精准 {w['accuracy']:g}（{w['attribute']}"
             + (f"，含姿态 {w['stance_bonus']:+g}" if w["stance_bonus"] else "")
-            + (f"，含等阶 {w['quality_bonus']:+d}" if w["quality_bonus"] else "") + f"），{damage_text(w)}"
+            + (f"，含等阶 {w['quality_bonus']:+d}" if w["quality_bonus"] else "")
+            + (f"，含绝境 {w['last_stand_bonus']:+d}" if w.get("last_stand_bonus") else "") + f"），{damage_text(w)}"
             for w in self.weapon_summary()
         )
         stance = self._current_stance()
@@ -1812,7 +1813,7 @@ class Game:
         c = self.character
         if not c or not self.options.perk_effect(c.perks, "last_stand"):
             return False
-        return c.hp * 100 < self.options.max_hp(c) * stats.LAST_STAND_HP_PERCENT
+        return c.hp * 100 <= self.options.max_hp(c) * stats.LAST_STAND_HP_PERCENT
 
     def bleed_damage(self):
         """自己造成的流血每层每回合伤害（庸医：4 → 6）。"""
@@ -1913,7 +1914,8 @@ class Game:
                 "weapon_type": weapon_type,
                 "attribute": self.options.attribute_name(stats.WEAPON_ATTRIBUTES[weapon_type]),
                 "accuracy": total,
-                "stance_bonus": total - base - quality - heavy,
+                "last_stand_bonus": stats.LAST_STAND_BONUS if self.last_stand() else 0,
+                "stance_bonus": total - base - quality - heavy - (stats.LAST_STAND_BONUS if self.last_stand() else 0),
                 "tags": tags,
                 "tag_names": [stats.WEAPON_TAGS[x][0] for x in tags],
                 "armor_ignore": stats.TAG_ARMOR_IGNORE if "armor_piercing" in tags else 0,
@@ -1926,6 +1928,7 @@ class Game:
                 "crit_range": self._crit_range(weapon_type, item_id),
                 "damage_modifiers": self.damage_modifiers(weapon_type) + stats.tag_damage_modifiers(tags),
             })
+            summary[-1]["damage_multiplier"] = float(stats.damage_multiplier(summary[-1]["damage_modifiers"]))
         return summary
 
     def _unarmed_attack(self):
@@ -1942,7 +1945,7 @@ class Game:
         return stats.widen_crit_range(crit, multiplier) if multiplier != 1 else crit
 
     def damage_modifiers(self, weapon_type):
-        """用某类武器攻击时的伤害修正（%），每项一个 (来源, 数值)，最后全部相加。"""
+        """用某类武器攻击时的伤害修正，每项 (来源, %, 加算 / 乘算)，见 stats.damage_multiplier。"""
         c = self.character
         mods = []
         if weapon_type in stats.MELEE_WEAPON_TYPES:
@@ -1950,15 +1953,15 @@ class Game:
                             + [v for _, v in self.passive_effects("strength_damage_percent")])
             penalty = min([stats.STRENGTH_DAMAGE_PERCENT]
                           + [v for _, v in self.passive_effects("strength_penalty_percent")])
-            mods.append(("力量", stats.melee_damage_bonus(c.attributes, per_point, penalty)))
+            mods.append(("力量", stats.melee_damage_bonus(c.attributes, per_point, penalty), stats.ADD))
         stance = self._current_stance()
         if stance and stance["weapon_type"] == weapon_type:
             bonus = stances.stance_bonuses(c, stance, self.skill_trees).get("melee_damage_bonus", 0)
-            mods.append((f"{stance['name']}姿态", bonus))
-        mods.append(("力竭", stats.attack_penalty(c)))
+            mods.append((f"{stance['name']}姿态", bonus, stats.ADD))  # 技能：加算
+        mods.append(("力竭", stats.attack_penalty(c), stats.MUL))  # 状态：乘算
         if self.last_stand():
-            mods.append(("绝境", stats.LAST_STAND_DAMAGE_PERCENT))
-        return [(name, value) for name, value in mods if value]
+            mods.append(("绝境", stats.LAST_STAND_DAMAGE_PERCENT, stats.MUL))  # perk：乘算
+        return [m for m in mods if m[1]]
 
     def _parse_enemy(self, arg):
         """“僵尸 精英”这种写法 -> 生成的敌人；不是敌人名就返回 None。"""
@@ -2025,9 +2028,9 @@ class Game:
             weapon = dict(weapon)
             if has_sneak_skill:  # 暗袭：命中 +（敏捷 + 感知）÷ 2，伤害 +100%
                 weapon["accuracy"] += stats.sneak_attack_accuracy_bonus(self.character.attributes)
-                weapon["damage_modifiers"] = weapon["damage_modifiers"] + [("暗袭", stats.SNEAK_ATTACK_DAMAGE_PERCENT)]
+                weapon["damage_modifiers"] = weapon["damage_modifiers"] + [("暗袭", stats.SNEAK_ATTACK_DAMAGE_PERCENT, stats.ADD)]
             if "backstab" in weapon["tags"]:  # 背刺标签：偷袭伤害 +200%
-                weapon["damage_modifiers"] = weapon["damage_modifiers"] + [("背刺", stats.BACKSTAB_DAMAGE_PERCENT)]
+                weapon["damage_modifiers"] = weapon["damage_modifiers"] + stats.tag_damage_modifiers(["backstab"], sneak=True)
         result = self.dice.attack(weapon["accuracy"], target, weapon["crit_range"], advantage=advantage)
         who = enemy.name if enemy else "目标"
         lines = [
@@ -2048,16 +2051,14 @@ class Game:
         return "\n".join(lines)
 
     def _roll_damage(self, weapon, armor, crit=False, armor_ignore=0):
-        """掷伤害并写出计算过程：骰子 → 修正（相乘）→ 暴击 → 向下取整 → 护甲（先扣掉无视的部分）。"""
+        """掷伤害并写出计算过程：骰子 → 修正（加算的相加、乘算的相乘）→ 暴击 → 向下取整 → 护甲。"""
         if not weapon["damage"]:
             return f"{weapon['name']}的伤害还没有定。", 0
         roll = self.dice.roll(weapon["damage"])
-        modifiers = [value for _, value in weapon["damage_modifiers"]]
+        modifiers = weapon["damage_modifiers"]
         steps = [roll.describe()]
         if modifiers:
-            detail = "×".join(f"{float(stats.damage_multiplier([v])):g}" for v in modifiers)
-            names = "、".join(f"{name} {value:+d}%" for name, value in weapon["damage_modifiers"])
-            steps.append(f"修正 ×{detail}（{names}）")
+            steps.append("修正 " + stats.modifier_text(modifiers))
         crit_bonus = weapon.get("crit_bonus", stats.CRIT_DAMAGE_BONUS)
         if crit:
             steps.append(f"暴击 +{crit_bonus}%")

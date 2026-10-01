@@ -849,8 +849,7 @@
         '（上限 ' + esc(cb.ap_cap) + (cb.armor_ap_penalty ? '，重甲 −' + esc(cb.armor_ap_penalty) : '') +
         '）</span></div>';
       (cb.weapons || []).forEach(function (w) {
-        var mult = 1;
-        (w.damage_modifiers || []).forEach(function (m) { mult *= (100 + m[1]) / 100; });
+        var mult = w.damage_multiplier || 1;   // 服务端算好的总倍率（加算 / 乘算规则在 stats.py）
         var dmg = w.damage ? w.damage + (mult !== 1 ? ' ×' + Number(mult.toFixed(3)) : '') +
           '（暴击 ' + w.crit_range + '）' : '未定';
         combatBody += '<div class="kv"><span class="k">' + esc(w.hand) + '·' + esc(w.name) + '</span><span class="v">精准 ' +
