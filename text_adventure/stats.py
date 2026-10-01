@@ -40,7 +40,7 @@ USE_ITEM_AP_COST = 3  # 战斗中使用一次物品（例如用绷带包扎）�
 # 一堆同种物品最多摞多少个。只有物品数据里带 stack 词条的才摞得起来，
 # 别的物品一格一件、也不能拆分（见 engine.py 的背包部分）。
 STACK_MAX = 5
-UNARMED_DAMAGE = "1d4"  # 徒手伤害骰
+UNARMED_DAMAGE = "1d2"  # 徒手伤害骰
 
 # 护甲：每件护甲穿在一个部位，所有部位的护甲值相加，受到的伤害按总值固定减免
 ARMOR_CLASSES = {

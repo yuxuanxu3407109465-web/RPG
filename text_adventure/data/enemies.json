@@ -21,8 +21,8 @@
       "attack": {
         "name": "抓挠",
         "type": "short_blade",
-        "damage": "1d6",
-        "crit_range": "20"
+        "damage": "1d4",
+        "crit_range": "19-20"
       },
       "loadout": "common",
       "armless_attack": {
@@ -58,8 +58,8 @@
       "attack": {
         "name": "抓挠",
         "type": "short_blade",
-        "damage": "1d6",
-        "crit_range": "20"
+        "damage": "1d4",
+        "crit_range": "19-20"
       },
       "loadout": "common",
       "armless_attack": {
@@ -95,8 +95,8 @@
       "attack": {
         "name": "抓挠",
         "type": "short_blade",
-        "damage": "1d6",
-        "crit_range": "20"
+        "damage": "1d4",
+        "crit_range": "19-20"
       },
       "loadout": "common",
       "armless_attack": {

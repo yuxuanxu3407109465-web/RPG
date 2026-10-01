@@ -175,12 +175,12 @@
       "id": "kick_master",
       "name": "踢腿的武道家",
       "kind": "mixed",
-      "description": "无法使用枪械和近战武器；徒手攻击变为踢击（1d8，攻击射程 2）。",
+      "description": "无法使用枪械和近战武器；徒手攻击变为踢击（1d6，攻击射程 2）。",
       "effects": {
         "no_weapons": true,
         "unarmed_attack": {
           "name": "踢击",
-          "damage": "1d8",
+          "damage": "1d6",
           "range": 2
         }
       }
