@@ -766,14 +766,14 @@
       '（经验 ' + esc(c.xp) + '）</span></div>';
     html += '<div class="kv"><span class="k">技能点</span><span class="v">' + esc(c.skill_points) + '</span></div>';
 
-    html += '<div class="hp-row">' + icon('hp') + '<div class="hp-track"><div class="hp-fill" style="width:' +
+    html += '<div class="hp-row">' + icon('hp') + '<span class="res-label">生命</span><div class="hp-track"><div class="hp-fill" style="width:' +
       pct + '%"></div></div><span>' + esc(c.hp) + '/' + esc(hpMax) + '</span></div>';
 
     if (state.stamina) {
       var st = state.stamina;
       var sPct = Math.max(0, Math.min(100, Math.round(st.value / Math.max(1, st.max) * 100)));
       var sCls = st.value <= 0 ? ' empty' : (st.exhausted ? ' low' : '');
-      html += '<div class="hp-row">' + icon('rest') + '<div class="hp-track stamina-track">' +
+      html += '<div class="hp-row">' + icon('rest') + '<span class="res-label">体力</span><div class="hp-track stamina-track">' +
         '<div class="hp-fill stamina-fill' + sCls + '" style="width:' + sPct + '%"></div></div><span>' +
         esc(st.value) + '/' + esc(st.max) + '</span></div>';
     }

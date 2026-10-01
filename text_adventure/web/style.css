@@ -1004,10 +1004,11 @@ button.choice .label { white-space: pre-line; flex: 1; }
 
 /* ---------- 体力 ---------- */
 
-.stamina-track { background: #1e2630; border-color: #26313d; }
-.stamina-fill { background: linear-gradient(90deg, #2f6f8f, #4aa7c9); }
-.stamina-fill.low { background: linear-gradient(90deg, #8a5a1f, #d09a3c); }
+.stamina-track { background: #2a2218; border-color: #3d3021; }
+.stamina-fill { background: linear-gradient(90deg, #b8621a, #f0943a); }   /* 体力：橙色 */
+.stamina-fill.low { background: linear-gradient(90deg, #7a3a12, #b8561e); } /* 力竭：暗橙 */
 .stamina-fill.empty { background: linear-gradient(90deg, #7a2a24, #c8453a); }
+.res-label { width: 2.2em; flex: none; color: var(--dim, #9aa3ad); font-size: 12px; }
 
 .cond {
   display: flex;
