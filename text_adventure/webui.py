@@ -445,7 +445,7 @@ class Session:
                 "target": None,
                 "danger": None,
                 "cost": game.next_move_cost(overweight) if game.character else 0,
-                "minutes": stats.move_minutes(overweight),
+                "ap": (stats.OVERWEIGHT_MOVE_AP_COST if overweight else stats.MOVE_AP_COST),
             }
             if exit_ is not None:
                 danger = None
@@ -723,6 +723,7 @@ class Session:
                 "max": stats.stamina_max(c.attributes),
                 "exhausted": stats.is_exhausted(c),
             },
+            "ap": {"value": game.ap, "gain": game.ap_gain(), "max": game.ap_cap(), "turn": game.turns},
             "needs": {"food": c.food, "water": c.water, "max": stats.NEED_MAX,
                       "food_stage": game.need_stage("food"), "water_stage": game.need_stage("water")},
             "conditions": game.conditions(),

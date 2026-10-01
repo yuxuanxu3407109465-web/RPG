@@ -1419,3 +1419,6 @@ input[type="range"].rest-range::-moz-range-thumb {
 .perk-desc { font-size: 12px; line-height: 1.5; opacity: 0.85; }
 .perk-why { font-size: 12px; color: #d9705f; }
 .perk-why:empty { display: none; }
+
+.ap-track { background: #221c2c; border-color: #33293f; }
+.ap-fill { background: linear-gradient(90deg, #6a4bb0, #9b7ae0); }   /* 行动点：紫色 */

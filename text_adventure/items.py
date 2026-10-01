@@ -91,19 +91,27 @@ def effect_list(use_data):
     return list(effects)
 
 
-def use(game, character, item_id):
-    """使用一件物品，返回要显示的文字。"""
+def use_error(game, character, item_id):
+    """这件东西现在能不能用：不能用返回原因（不花行动点），能用返回 None。"""
     item = game.world.items[item_id]
     use_data = item.get("use")
     if not use_data:
         return f"{item['name']}现在派不上用场。"
-
     # 残忍（perk）：寻常医疗物资（basic_medical 标签，例如绷带）治不了流血
     cures_bleeding = any(e.get("type") == "cure" and e.get("condition") == "bleeding" for e in effect_list(use_data))
     if (cures_bleeding and "basic_medical" in item.get("tags", [])
             and game.options.perk_effect(character.perks, "no_basic_bleed_cure")):
         return f"你笨手笨脚地缠了半天，{item['name']}止不住血——得用更好的医疗物资（例如医疗箱）或者灵能。"
+    return None
 
+
+def use(game, character, item_id):
+    """使用一件物品，返回要显示的文字。"""
+    error = use_error(game, character, item_id)
+    if error:
+        return error
+    item = game.world.items[item_id]
+    use_data = item["use"]
     lines = []
     if use_data.get("message"):
         lines.append(use_data["message"])

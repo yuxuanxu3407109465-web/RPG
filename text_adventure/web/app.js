@@ -882,6 +882,16 @@
         esc(st.value) + '/' + esc(st.max) + '</span></div>';
     }
 
+    // 行动点（紫）：每回合（1 分钟）获得 gain 点，上限 max
+    if (state.ap) {
+      var ap = state.ap;
+      var aPct = Math.max(0, Math.min(100, Math.round(ap.value / Math.max(1, ap.max) * 100)));
+      html += '<div class="hp-row" title="每回合（1 分钟）获得 ' + esc(ap.gain) + ' 点，用完或点“结束回合”就过 1 分钟">' +
+        icon('clock') + '<span class="res-label">行动</span><div class="hp-track ap-track">' +
+        '<div class="hp-fill ap-fill" style="width:' + aPct + '%"></div></div><span>' +
+        esc(ap.value) + '/' + esc(ap.max) + '</span></div>';
+    }
+
     // 食物（绿）、水源（蓝）
     if (state.needs) {
       [['food', '食物', 'food-fill'], ['water', '水源', 'water-fill']].forEach(function (n) {
@@ -1669,7 +1679,7 @@
 
     function moveTitle(e) {
       // 每 10 步才扣一次体力，没凑满的那几步写「不扣体力」
-      return e.minutes + ' 分钟' + (e.cost ? '，' + e.cost + ' 点体力' : '，不扣体力');
+      return e.ap + ' 点行动点' + (e.cost ? '，' + e.cost + ' 点体力' : '，不扣体力');
     }
 
     function dirBtn(id) {
@@ -1782,7 +1792,7 @@
       '" step="1" value="' + restMinutes + '" title="拖动选择休息时长">' +
       '<div class="rest-readout"><span id="rest-label">' + esc(fmtMinutes(restMinutes)) + '</span>' +
       '<button type="button" class="btn small primary" id="rest-go">' + icon('rest') +
-      '<span>休息</span></button>' + btn('等待', '等待 1 回合', 'rest', 'small') + '</div>' +
+      '<span>休息</span></button>' + btn('结束回合', '结束回合', 'clock', 'small') + '</div>' +
       '<div class="rest-chips">';
     (rest.presets || []).forEach(function (preset) {
       html += '<button type="button" class="chip-btn" data-rest-preset="' + preset.minutes + '">' +

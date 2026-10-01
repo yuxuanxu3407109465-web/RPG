@@ -194,7 +194,7 @@ def format_sheet(character, options, items, carried_weight=None, tree_names=None
         f"  生命恢复 每 {stats.REGEN_INTERVAL} 回合 +{stats.hp_regen(a)}",
         f"  体力上限 {stamina_cap}"
         f"（移动：每 {stats.INDOOR_STEPS_PER_COST} 步 {stats.move_cost(overweight)} 点体力、"
-        f"每步 {stats.move_minutes(overweight)} 分钟"
+        f"每格 {stats.OVERWEIGHT_MOVE_AP_COST if overweight else stats.MOVE_AP_COST} 点行动点"
         + ("，超重翻倍" if overweight else "") + "）",
         f"  经验倍率 ×{float(options.xp_multiplier(character)):g}    每级技能点 {stats.skill_points_per_level(a)}",
     ]

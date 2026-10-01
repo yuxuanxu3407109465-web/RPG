@@ -36,7 +36,11 @@ ATTACK_AP_COST = 6  # 一次普通攻击消耗的行动点
 MOVE_AP_COST = 1  # 战斗中每移动一格消耗的行动点
 OVERWEIGHT_MOVE_AP_COST = 2  # 超重时移动能力减半：每格 2 点
 IMMOBILE_WEIGHT_MULTIPLIER = 2  # 超过负重上限的 2 倍就完全无法移动
-USE_ITEM_AP_COST = 3  # 战斗中使用一次物品（例如用绷带包扎）消耗的行动点
+USE_ITEM_AP_COST = 3  # 使用一次物品（例如用绷带包扎）消耗的行动点
+PICKUP_AP_COST = 1  # 拾取（搜刮）一件东西
+HOLD_AP_COST = 1  # 拿起 / 收起 / 换手武器、盾牌这类手持物
+ARMOR_AP_COST = 6  # 穿上 / 脱下一件护甲
+GEAR_AP_COST = 1  # 背包、饰品、披风的穿脱（暂定，和手持物一样）
 # 一堆同种物品最多摞多少个。只有物品数据里带 stack 词条的才摞得起来，
 # 别的物品一格一件、也不能拆分（见 engine.py 的背包部分）。
 STACK_MAX = 5
@@ -326,7 +330,7 @@ def stack_max(item):
 
 
 def move_ap_cost(weight, capacity):
-    """战斗中移动一格的行动点；无法移动时返回 None。"""
+    """移动一格的行动点；无法移动时返回 None。"""
     level = load_level(weight, capacity)
     if level == "immobile":
         return None
@@ -335,7 +339,7 @@ def move_ap_cost(weight, capacity):
 
 def ap_per_turn(a, armor_penalty=0):
     """每回合获得的行动点 = 敏捷 × 2 − 重甲惩罚，重甲最多扣到只剩 1 点（不会扣到 0）。
-    行动点只在战斗中存在，开战第一回合就获得。"""
+    不分战斗内外：每回合（1 分钟）开始时获得。"""
     base = a["agility"] * AP_PER_AGILITY
     if not armor_penalty:
         return base
@@ -426,7 +430,7 @@ EXHAUSTED_DAMAGE_PENALTY = -50  # 力竭时攻击力 -50%
 MOVE_COST = 1                 # 每走 INDOOR_STEPS_PER_COST 步消耗的体力（室内外一样）
 INDOOR_STEPS_PER_COST = 10    # 每 10 步才消耗一次体力
 WAIT_MINUTES = 1              # 战斗外原地等待一回合花的时间（分钟）
-MOVE_MINUTES = 1              # 走一步花的时间（分钟，室内外一样）
+MOVE_MINUTES = 1              # （已不用：时间改为按回合走，走路只花行动点）
 REST_MINUTES_PER_TICK = 30    # 每休息半小时算一档
 REST_RECOVER_RATIO = 0.1      # 每档恢复 10% 上限
 SHOCK_WAKE_RATIO = 0.3        # 休克后强制休息到这个比例才醒

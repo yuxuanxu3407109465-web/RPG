@@ -262,7 +262,7 @@ class Game:
             (["试先攻", "initiative test"], self.cmd_initiative_test),
             (["使用", "吃", "喝", "use"], self.cmd_use),
             (["休息", "睡", "rest"], self.cmd_rest),
-            (["等待", "wait"], self.cmd_wait),
+            (["等待", "结束回合", "wait"], self.cmd_wait),
             (["说话", "交谈", "对话", "talk"], self.cmd_talk),
             (["存档", "save"], self.cmd_save),
             (["读档", "load"], self.cmd_load),
@@ -283,6 +283,7 @@ class Game:
         self.worn = {slot: None for slot in self.world.wear_slot_names}  # 护甲、饰品、披风、背包
         self.stance = None  # 当前姿态 id
         self.turns = 0
+        self.ap = 0  # 当前行动点（不分战斗内外，每回合 = 1 分钟开始时获得，见 spend_ap / _pass_turn）
         self.indoor_steps = 0  # 室内已经走了几步（凑满 10 步扣一次体力）
         self.need_minutes = {"food": 0, "water": 0}  # 距离下一次食物 / 水源 −1 已经过了多少分钟
         self.stamina_carry = Fraction(0)  # 体力消耗乘上饥饿 / 口渴倍率后的小数部分，攒满 1 才扣
@@ -313,6 +314,7 @@ class Game:
             self.add_item(item_id)
         character.hp = self.options.max_hp(character)
         character.stamina = stats.stamina_max(character.attributes)
+        self.ap = self.ap_gain()  # 第一回合的行动点
 
     # ---------- 存档槽位 ----------
 
@@ -731,7 +733,6 @@ class Game:
             return error
         self.set_pos(target)
         cost_note, notes = self._pay_move(overweight, cost)
-        self._regenerate()
         text = f"移动至（第 {target[0] + 1} 列，第 {target[1] + 1} 行）"
         text += ("，" + cost_note if cost_note else "") + "。"
         if notes:
@@ -785,7 +786,6 @@ class Game:
         口渴之类，调用方另起一行接在正文后面。
         """
         base = self._move_base_cost(overweight)  # 要在步数加一之前算
-        self.turns += 1
         self.indoor_steps = (self.indoor_steps + 1) % stats.INDOOR_STEPS_PER_COST
         if not self.character:
             return "", ""
@@ -794,12 +794,12 @@ class Game:
         cost = math.floor(self.stamina_carry)
         self.stamina_carry -= cost
         note = self.spend_stamina(cost)
-        minutes = stats.move_minutes(overweight)
-        self.advance_time(minutes)
-        # 这一步花了多少体力、多少时间直接写进正文（文字栏里就能看到）。
-        # 没凑满 10 步的那几步不扣体力，写 0。控制台版和网页版共用这段。
+        # 时间不再按步算：走一格花行动点（超重 2 点），回合结束才过 1 分钟。
+        # 这一步花了多少体力、多少行动点直接写进正文。控制台版和网页版共用这段。
+        ap_cost = (stats.OVERWEIGHT_MOVE_AP_COST if overweight else stats.MOVE_AP_COST)
+        ap_text = self.spend_ap(ap_cost)
         extra = "，超重翻倍" if overweight else ""
-        return f"体力消耗 {cost}，用时 {format_duration(minutes)}{extra}", note
+        return f"体力消耗 {cost}，行动点 −{ap_cost}{extra}{ap_text}", note
 
     def _travel(self, direction, room):
         """换到相邻的地点（可能是走过门，也可能是没有场景数据时的直接走）。"""
@@ -828,7 +828,6 @@ class Game:
         entry = self.entry_tile(exit_, direction)
         if entry:
             self.set_pos(entry)
-        self._regenerate()
         text = self.describe_room()
         if cost_note:
             text += "\n" + cost_note + "。"
@@ -891,7 +890,8 @@ class Game:
             c.stamina = min(
                 cap, c.stamina + stats.rest_recovery(c.attributes, stats.REST_MINUTES_PER_TICK)
             )
-            self.advance_time(stats.REST_MINUTES_PER_TICK)
+            for _ in range(stats.REST_MINUTES_PER_TICK):
+                self._pass_turn()
             minutes += stats.REST_MINUTES_PER_TICK
         return (f"你眼前一黑，直接瘫倒在地上——体力彻底耗尽了。\n"
                 f"（休克：强制休息 {minutes // 60} 小时 {minutes % 60} 分钟，"
@@ -923,10 +923,8 @@ class Game:
 
         before = c.stamina
         rested = 0
-        for _ in range(minutes):  # 战斗外 1 回合 = 1 分钟：逐分钟推进
-            self.advance_time(1)
-            self.turns += 1
-            self._regenerate()
+        for _ in range(minutes):  # 1 回合 = 1 分钟：逐回合推进（快进，不花行动点）
+            self._pass_turn()
             rested += 1
             if self.death_cause:
                 break
@@ -1070,7 +1068,7 @@ class Game:
                     "effect": "完全无法移动",
                     "note": f"{weight}，超过上限的 {stats.IMMOBILE_WEIGHT_MULTIPLIER} 倍，放下些东西才能走"}
         return {"id": "overweight", "name": "超重", "source": "weight",
-                "effect": f"移动能力减半（战斗中每格 {stats.OVERWEIGHT_MOVE_AP_COST} 行动点）",
+                "effect": f"移动能力减半（每格 {stats.OVERWEIGHT_MOVE_AP_COST} 行动点）",
                 "note": f"{weight}，放下些东西即可解除"}
 
     def _load_change_note(self, before):
@@ -1112,19 +1110,62 @@ class Game:
         return math.floor(exact)
 
     def cmd_wait(self, arg):
-        """等待：战斗外原地等一回合（推进时间、计入生命恢复的回合）。
-        战斗中等待 = 结束当前回合，没用完的行动点保留（战斗流程做出来后接上）。"""
+        """等待 = 结束当前回合：过 1 分钟，没用完的行动点保留（不超过上限 = 每回合获得量 × 2）。"""
         c = self.character
         if not c:
             return "还没有创建角色。"
         hp_before = c.hp
-        self.turns += 1
-        self.advance_time(stats.WAIT_MINUTES)
-        self._regenerate()
-        text = f"你在原地等了一回合（{format_duration(stats.WAIT_MINUTES)}），现在是 {self.clock_text()}。"
+        kept = self.ap
+        self._pass_turn()
+        text = (f"你结束了这一回合（剩下的 {kept} 点行动点留到下回合），现在是 {self.clock_text()}。"
+                f"行动点 {self.ap}/{self.ap_cap()}。")
         if c.hp > hp_before:
             text += f"\n生命恢复 {hp_before} → {c.hp}/{self.options.max_hp(c)}。"
         return text
+
+    # ---------- 回合与行动点 ----------
+    # 不分战斗内外：1 回合 = 1 分钟。每回合开始获得 敏捷×2（减重甲惩罚）点行动点，没用完的留到
+    # 下回合（上限 = 每回合获得量 × 2）。移动、拾取、使用物品、换装备、技能都花行动点。
+    # 回合结束的三种情况：玩家“等待”；行动点花到 0；指令要的行动点不够——先用剩下的行动点
+    # 做掉一部分（例如走路先走几格；一个动作就算“做了一半”），结束回合，下回合补上剩下的。
+
+    def ap_gain(self):
+        return stats.ap_per_turn(self.character.attributes, self.armor_ap_penalty())
+
+    def ap_cap(self):
+        return stats.ap_cap(self.character.attributes, self.armor_ap_penalty())
+
+    def _pass_turn(self):
+        """回合结束：过 1 分钟（饿 / 渴、回血、掉血都在这里），然后获得新回合的行动点。"""
+        self.turns += 1
+        self.advance_time(1)
+        self._regenerate()
+        if self.character:
+            self.ap = min(self.ap_cap(), self.ap + self.ap_gain())
+
+    def spend_ap(self, cost):
+        """花行动点。不够就先把剩下的花掉、结束回合、下回合接着付；花到 0 也结束回合。
+        返回附在正文后面的说明（过了几个回合），没跨回合就是空字符串。"""
+        if not self.character:
+            return ""
+        passed = 0
+        while cost > self.ap and not self.death_cause:
+            cost -= self.ap
+            self.ap = 0
+            self._pass_turn()
+            passed += 1
+        if self.death_cause:
+            return ""
+        self.ap -= cost
+        if self.ap == 0:
+            self._pass_turn()
+            passed += 1
+        if not passed:
+            return f"（行动点剩 {self.ap}）"
+        # 跨了回合：单独一行写在指令输出最后（由 _with_notes 接上）
+        self.pending_notes.append("—— 回合结束" + (f"（过了 {passed} 回合）" if passed > 1 else "")
+                                  + f"，现在是 {self.clock_text()}，行动点 {self.ap}/{self.ap_cap()} ——")
+        return ""
 
     def _regenerate(self):
         """每个回合结束时调用：每隔一定回合按体质恢复生命；饿死了 / 渴死了每回合掉血。"""
@@ -1413,7 +1454,8 @@ class Game:
         if index < len(table):
             table.pop(index)  # 坐标和物品一一对应，删东西要连它的那一格一起删
         self.add_item(item_id)  # 进背包就自动摞进同种的那一堆
-        return f"你拿起了{name}。" + self._load_change_note(before)
+        return (f"你拿起了{name}。" + self._load_change_note(before)
+                + self.spend_ap(stats.PICKUP_AP_COST))
 
     def cmd_drop(self, arg):
         """放下 / 丢掉。后面可以写数量（例如：放下 矿泉水 3），不写就是一件。"""
@@ -1431,10 +1473,14 @@ class Game:
         name = self.world.items[item_id]["name"]
         before = self.load_level()
         in_bag = self.count_item(item_id)
-        if not in_bag:  # 装备着的：先脱下来，再丢在地上
+        if not in_bag:  # 装备着的：先脱下来（和“卸下”一样花行动点），再丢在地上
+            worn = item_id in self.worn.values()
+            cost = (stats.ARMOR_AP_COST if worn and self._armor(item_id)
+                    else stats.GEAR_AP_COST if worn else stats.HOLD_AP_COST)
             self._unequip(item_id)
             self._to_ground(item_id)
-            return f"你放下了{name}。" + self._check_stance() + self._load_change_note(before)
+            return (f"你放下了{name}。" + self._check_stance() + self._load_change_note(before)
+                    + self.spend_ap(cost))
         count = min(count, in_bag)
         self.take_item(item_id, count)
         for _ in range(count):
@@ -1451,7 +1497,10 @@ class Game:
         item_id = self._match(arg, self.inventory_ids(), self.world.items)
         if not item_id:
             return f"你身上没有{arg}。"
-        return items.use(self, self.character, item_id)
+        error = items.use_error(self, self.character, item_id)
+        if error:
+            return error
+        return items.use(self, self.character, item_id) + self.spend_ap(stats.USE_ITEM_AP_COST)
 
     def cmd_inventory(self, arg):
         """背包和装备分开列：装备着的东西不在背包里；同种东西摞成一堆显示。"""
@@ -1526,7 +1575,9 @@ class Game:
                 + f"\n  姿态：{stance['name'] if stance else '无'}"
                 + f"\n  视野 {self.sight_range()} 格" + (f"（护甲 −{self.armor_sight_penalty()}）" if self.armor_sight_penalty() else "")
                 + f"\n  行动点消耗：普通攻击 {stats.ATTACK_AP_COST}{self._offhand_cost_text()}、"
-                  f"移动 1 格 {self._move_cost_text()}、使用物品 {stats.USE_ITEM_AP_COST}"
+                  f"移动 1 格 {self._move_cost_text()}、使用物品 {stats.USE_ITEM_AP_COST}、拾取 {stats.PICKUP_AP_COST}、"
+                  f"拿起 / 收起 / 换手 {stats.HOLD_AP_COST}、穿脱护甲 {stats.ARMOR_AP_COST}"
+                + f"\n  当前行动点 {self.ap}/{self.ap_cap()}（每回合 +{self.ap_gain()}，1 回合 = 1 分钟）"
                 + f"\n\n【时间】{self.clock_text()}\n【异常状态】{active}")
 
     def cmd_skills(self, arg):
@@ -1730,6 +1781,27 @@ class Game:
         return text + self.stow_all(put_away) + self._check_stance()
 
     def cmd_equip(self, arg):
+        return self._with_gear_cost(self._cmd_equip, arg)
+
+    def _with_gear_cost(self, fn, arg):
+        """装备 / 卸下 / 换手：执行成功（手上或身上的东西变了）才花行动点。
+        动到护甲就是穿脱护甲（6 点），否则是手持物 / 背包饰品（1 点）。"""
+        before = (dict(self.equipment), dict(self.worn))
+        text = fn(arg)
+        after = (self.equipment, self.worn)
+        changed = {i for b, a in zip(before, after) for s in set(b) | set(a) if b.get(s) != a.get(s)
+                   for i in (b.get(s), a.get(s)) if i}
+        if not changed or not self.character:
+            return text
+        if any(self._armor(i) for i in changed if i in before[1].values() or i in self.worn.values()):
+            cost = stats.ARMOR_AP_COST
+        elif any(i in before[1].values() or i in self.worn.values() for i in changed):
+            cost = stats.GEAR_AP_COST
+        else:
+            cost = stats.HOLD_AP_COST
+        return text + self.spend_ap(cost)
+
+    def _cmd_equip(self, arg):
         if not arg:
             return "你想装备什么？"
         # 末尾可以写“主手 / 副手”，指定拿到哪只手上（网页版拖动时会带上）
@@ -1763,6 +1835,9 @@ class Game:
         return self._hold(item_id, want)
 
     def cmd_unequip(self, arg):
+        return self._with_gear_cost(self._cmd_unequip, arg)
+
+    def _cmd_unequip(self, arg):
         if not arg:
             return "你想收起什么？"
         held = [i for i in set(self.equipment.values()) if i]
@@ -2228,6 +2303,7 @@ class Game:
             "inventory": self.inventory,   # 一格一堆：[{"sid":1,"id":"water","count":3,"auto":true}]
             "next_stack_id": self.next_stack_id,
             "turns": self.turns,
+            "ap": self.ap,
             "indoor_steps": self.indoor_steps,
             "need_minutes": self.need_minutes,  # 食物 / 水源下一次 −1 前已过的分钟
             "stamina_carry": [self.stamina_carry.numerator, self.stamina_carry.denominator],
@@ -2290,6 +2366,8 @@ class Game:
             c.stamina = min(c.stamina, stats.stamina_max(c.attributes))
         self.current_room = state["current_room"]
         self.turns = state["turns"]
+        # 老存档没有行动点：给满一回合的量
+        self.ap = min(state.get("ap", self.ap_gain()), self.ap_cap()) if self.character else 0
         self.indoor_steps = state.get("indoor_steps", 0)
         self.need_minutes = dict({"food": 0, "water": 0}, **(state.get("need_minutes") or {}))
         carry = state.get("stamina_carry") or [0, 1]
