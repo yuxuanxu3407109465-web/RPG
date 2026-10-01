@@ -386,7 +386,7 @@
       "weight": 0.5,
       "weapon": {
         "type": "blunt",
-        "damage": "1d4"
+        "improvised": true
       },
       "hold": "one_hand"
     },
@@ -476,7 +476,7 @@
       "weight": 0.3,
       "weapon": {
         "type": "short_blade",
-        "damage": "1d6",
+        "damage": "1d4",
         "crit_range": "18-20"
       },
       "hold": "one_hand"

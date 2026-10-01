@@ -21,7 +21,7 @@
       "attack": {
         "name": "抓挠",
         "type": "short_blade",
-        "damage": "1d4",
+        "damage": "1d6",
         "crit_range": "19-20"
       },
       "loadout": "common",
@@ -58,7 +58,7 @@
       "attack": {
         "name": "抓挠",
         "type": "short_blade",
-        "damage": "1d4",
+        "damage": "1d6",
         "crit_range": "19-20"
       },
       "loadout": "common",
@@ -95,7 +95,7 @@
       "attack": {
         "name": "抓挠",
         "type": "short_blade",
-        "damage": "1d4",
+        "damage": "1d6",
         "crit_range": "19-20"
       },
       "loadout": "common",

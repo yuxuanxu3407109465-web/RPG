@@ -152,6 +152,16 @@ def quality_bonus(item):
     return QUALITIES[item.get("quality", "normal")][1]
 
 
+# 武器伤害分档（写数据时参考）：
+#   1d4  简易武器、匕首
+#   1d6  高暴击范围的单手武器、双手长柄武器
+#   1d8  寻常单手武器
+#   2d6  寻常双手武器
+# 简易武器：不能算武器、但被当作武器用的东西（水果刀、擀面杖、手电筒……），
+# 武器数据写 "improvised": true，没写伤害就默认 1d4。
+IMPROVISED_DAMAGE = "1d4"
+
+
 def weapon_damage(item):
     """武器伤害骰加上等阶的固定加减，例如 "1d8" + 精良 → "1d8+1"。"""
     damage = item["weapon"]["damage"]
