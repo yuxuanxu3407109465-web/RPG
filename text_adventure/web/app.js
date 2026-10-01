@@ -1624,7 +1624,6 @@
     return '<div class="section"><h4>' + icon('help') + '系统</h4><div class="btn-grid">' +
       btn('地图', '地图', 'map', 'small') +
       btn('角色', '角色卡', 'person', 'small') +
-      btn('背包', '背包清单', 'bag', 'small') +
       modalBtn('skills', '技能树', 'skills') +
       btn('帮助', '帮助', 'help', 'small') +
       fillBtn('姿态 ', '切换姿态', 'stance') +
