@@ -223,7 +223,8 @@
         "riding_jacket",
         "riding_pants",
         "riding_gloves",
-        "riding_boots"
+        "riding_boots",
+        "ritual_scimitar"
       ],
       "npcs": [],
       "blocked": "障碍物",
@@ -283,7 +284,9 @@
           "blocked_message": "卷帘门被锁死了，徒手根本拉不起来。得找个能撬开它的东西。"
         }
       },
-      "items": [],
+      "items": [
+        "scimitar"
+      ],
       "npcs": [],
       "blocked": "障碍物",
       "outdoor": true,
@@ -685,6 +688,41 @@
         "class": "heavy",
         "value": 2,
         "ap_penalty": 1
+      }
+    },
+    "scimitar": {
+      "name": "弯刀",
+      "aliases": [
+        "scimitar"
+      ],
+      "weight": 1.2,
+      "hold": "one_hand",
+      "description": "刀身弯成一道弧线的单手刀，砍起来很顺手。",
+      "weapon": {
+        "type": "long_blade",
+        "damage": "1d6",
+        "crit_range": "18-20",
+        "tags": [
+          "deadly"
+        ]
+      }
+    },
+    "ritual_scimitar": {
+      "name": "祭祀弯刀",
+      "aliases": [
+        "祭祀刀"
+      ],
+      "weight": 1.2,
+      "hold": "one_hand",
+      "description": "刀背刻满看不懂的纹路，血槽很深。不知道是谁、为了什么做的。（高稀有度）",
+      "weapon": {
+        "type": "long_blade",
+        "damage": "1d6",
+        "crit_range": "18-20",
+        "tags": [
+          "deadly",
+          "bleed"
+        ]
       }
     }
   },

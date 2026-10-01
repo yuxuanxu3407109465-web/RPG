@@ -75,6 +75,7 @@ WEAPON_TAGS = {
     "deadly": ("要害", "暴击增伤 50% → 80%"),
     "sharp": ("锋利", "伤害 +15%"),
     "backstab": ("背刺", "偷袭时伤害 +200%"),
+    "bleed": ("流血", "命中时给目标施加 1 层流血"),
     "parry": ("招架", "闪避 +1"),
     "heavy": ("沉重", "精准 −6，伤害 +60%"),
 }
@@ -543,9 +544,19 @@ def blade_armor_ignore(a):
     return 4 + a["agility"] // 4
 
 
-def bleed_max_stacks(a):
-    """流血最多叠几层 = 施加者的敏捷。"""
-    return a["agility"]
+DOT_MAX_STACKS = 5  # 持续伤害最多叠 5 层（流血、灼烧……）
+DOT_OVERFLOW_PERCENT = 50  # 满层时再叠一层：最老的那层把剩下的伤害按 50% 立刻结算，然后被顶替
+
+
+def bleed_max_stacks(a=None):
+    """流血最多叠几层：统一 5 层（以前是施加者的敏捷）。"""
+    return DOT_MAX_STACKS
+
+
+def dot_overflow_damage(damage_per_turn, turns_left):
+    """满层后再叠一层时，最老那层立刻结算的伤害 = 每回合伤害 × 剩余回合 × 50%，向下取整。
+    例：每回合 4 点、还剩 2 回合的流血 → 4 × 2 × 50% = 4。"""
+    return damage_per_turn * turns_left * DOT_OVERFLOW_PERCENT // 100
 
 
 def disarm_difficulty(a):
