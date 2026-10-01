@@ -635,6 +635,9 @@ class Session:
             "has_save": game.has_save(),
             "current_slot": game.slot,
             "slots": self.slot_state(),
+            # 死了：界面弹“你死了”菜单（读档 / 返回菜单）
+            "death": ({"cause": stats.DEATH_CAUSES.get(game.death_cause, game.death_cause)}
+                      if game.death_cause else None),
         }
         if not self.started or not game.character:
             return snap
@@ -788,6 +791,14 @@ class Session:
         if bridge is None:
             return {"type": "error", "lines": ["现在没有等待回答的问题。"], "state": self.state()}
         return bridge.answer(value)
+
+    def to_menu(self):
+        """死了以后点“返回菜单”：结束这一局，回到主菜单（存档不动）。"""
+        with self.lock:
+            self.game.death_cause = None
+            self.started = False
+            self.mode = "menu"
+            return {"type": "menu", "lines": [], "state": self.state()}
 
     def continue_game(self):
         """继续上次的进度：读最近改过的那个存档槽。"""
@@ -1003,6 +1014,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(self.session.answer(str(payload.get("value", ""))))
             elif path == "/api/continue":
                 self._json(self.session.continue_game())
+            elif path == "/api/menu":
+                self._json(self.session.to_menu())
             elif path == "/api/save":
                 self._json(self.session.save_to(int(payload.get("slot") or 1)))
             elif path == "/api/load":

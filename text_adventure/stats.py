@@ -323,9 +323,6 @@ MOVE_MINUTES = 1              # 走一步花的时间（分钟，室内外一样
 REST_MINUTES_PER_TICK = 30    # 每休息半小时算一档
 REST_RECOVER_RATIO = 0.1      # 每档恢复 10% 上限
 SHOCK_WAKE_RATIO = 0.3        # 休克后强制休息到这个比例才醒
-FULL_WINDOW_MINUTES = 30      # 半小时内……
-FULL_FOOD_COUNT = 3           # ……吃下三份带食物标签的东西就会饱腹
-FULL_MINUTES = 60             # 饱腹持续一小时：这段时间里不能再吃带食物标签的东西
 START_DAY = 7                 # 游戏从封城第七天开始
 START_MINUTES = 14 * 60       # 14:00
 MINUTES_PER_DAY = 24 * 60
@@ -348,6 +345,18 @@ def move_cost(overweight=False):
     return cost
 
 
+# ---------- 死亡 ----------
+
+DEATH_CAUSES = {
+    "hunger": "饥饿",
+    "thirst": "口渴",
+    "zombie": "死于僵尸",
+    "raider": "死于掠夺者",
+    "sickness": "生病",
+    "bleeding": "失血过多",
+}
+
+
 # ---------- 食物与水源 ----------
 
 NEED_MAX = 100  # 食物、水源的上限，新角色满值开局
@@ -359,7 +368,7 @@ NEED_STAGE_NAMES = {
     "food": ("有点饿", "饥饿", "饿死了！"),
     "water": ("有点渴", "口渴", "渴死了！"),
 }
-NEED_STAGE_STAMINA_PERCENT = (50, 100, 100)  # 各等级体力消耗增加的百分比
+NEED_STAGE_STAMINA_PERCENT = (25, 50, 50)  # 各等级体力消耗增加的百分比
 NEED_STARVING_HP_PER_TURN = 1  # 最高等级时每回合掉血
 
 

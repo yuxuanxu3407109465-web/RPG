@@ -176,6 +176,7 @@
   }
 
   function closeModal() {
+    if (modalKind === 'death') return;   // 死了不能关掉“你死了”，只能读档或回主菜单
     modalKind = null;
     el.modal.classList.add('hidden');
     clear(el.modalBody);
@@ -695,6 +696,26 @@
       (turns ? '<span class="clock-turns">' + esc(turns) + '</span>' : '') + '</div>';
   }
 
+  // “你死了”菜单：写明死因，只能读档或返回主菜单
+  function renderDeath(state) {
+    if (state.death) {
+      if (modalKind !== 'death') openModal('death', '你死了');
+      if (el.modalClose) el.modalClose.style.display = 'none';
+      el.modalBody.innerHTML =
+        '<p class="death-title">你死了</p>' +
+        '<p class="death-cause">死因：' + esc(state.death.cause) + '</p>' +
+        '<div class="answer">' +
+        '<button type="button" class="btn primary" data-act="continue">' + icon('load') + '<span>读档</span></button>' +
+        '<button type="button" class="btn" data-death-menu="1">' + icon('exit') + '<span>返回菜单</span></button>' +
+        '</div>';
+    } else if (modalKind === 'death') {
+      modalKind = null;
+      if (el.modalClose) el.modalClose.style.display = '';
+      el.modal.classList.add('hidden');
+      clear(el.modalBody);
+    }
+  }
+
   function renderState(state) {
     if (!state) return;
     lastState = state;
@@ -708,6 +729,7 @@
     renderChar(state);
     renderActions(state);
     renderView(state);   // 视图栏：场景 或 背包（两个页签）
+    renderDeath(state);
     // 技能浮层开着的话，学完技能要跟着刷新
     if (modalKind === 'skills' && !el.modal.classList.contains('hidden')) {
       renderModal(state);
@@ -1740,6 +1762,7 @@
     }
     if (data.type === 'menu') {
       // 主菜单里的操作（比如清空存档）留在主菜单，不要把人踢进游戏界面
+      if (modalKind === 'death') { modalKind = null; el.modal.classList.add('hidden'); }
       show('menu');
       renderMenuSlots(data.state);
       if (data.notice) {
@@ -2084,6 +2107,15 @@
     if (newNode) {
       event.preventDefault();
       showConfirm('新游戏', '开始新游戏会丢掉当前这一局没存档的进度，确定吗？', startNew);
+      return;
+    }
+    var deathMenuNode = event.target.closest ? event.target.closest('[data-death-menu]') : null;
+    if (deathMenuNode) {
+      event.preventDefault();
+      modalKind = null;
+      if (el.modalClose) el.modalClose.style.display = '';
+      el.modal.classList.add('hidden');
+      post('/api/menu').then(handlePayload).catch(fail);
       return;
     }
     var closeNode = event.target.closest ? event.target.closest('[data-close]') : null;

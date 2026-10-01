@@ -279,7 +279,8 @@ class Game:
         self.need_minutes = {"food": 0, "water": 0}  # 距离下一次食物 / 水源 −1 已经过了多少分钟
         self.stamina_carry = Fraction(0)  # 体力消耗乘上饥饿 / 口渴倍率后的小数部分，攒满 1 才扣
         self.pending_notes = []  # 这一步里自动发生的事（例如开始饿了），附在指令输出后面
-        self.food_uses = []  # 最近几次进食的时间（绝对分钟数，用来判断饱腹）
+        self.death_cause = None  # 死了就记下死因（stats.DEATH_CAUSES 的 id），读档后清掉
+        self.starving_drain = 0  # 这一步里饿 / 渴掉了多少血（攒起来一次提示）
         self.day = stats.START_DAY  # 计时器：第几天
         self.minutes = stats.START_MINUTES  # 计时器：当天已经过去的分钟数
         self._load_notice = ""  # 读档时若按新版本适配过，这里放一句提示
@@ -395,21 +396,34 @@ class Game:
         text = text.strip().lower()
         if not text:
             return ""
-        if text in DIRECTIONS:
-            return self.cmd_go(text)
+        fn, arg = self._resolve(text)
+        if fn is None:
+            return "我不明白你的意思。输入“帮助”查看可用指令。"
+        # 死了只能读档、看帮助或退出（方向指令也拦下）
+        if self.death_cause and fn not in (self.cmd_load, self.cmd_help, self.cmd_quit):
+            return self.death_text() + "\n（只能读档、查看帮助或退出）"
+        return self._with_notes(fn(arg))
 
+    def _resolve(self, text):
+        """把一行输入解析成 (指令函数, 参数)；认不出来返回 (None, None)。"""
+        if text in DIRECTIONS:
+            return self.cmd_go, text
         for alias, fn in self.aliases:
             if alias.isascii():
                 # 英文指令需要用空格和参数隔开，避免 "i" 误匹配 "inn"
                 if text == alias or text.startswith(alias + " "):
-                    return self._with_notes(fn(text[len(alias):].strip()))
+                    return fn, text[len(alias):].strip()
             elif text.startswith(alias):
                 # 中文指令允许不加空格，例如 "拿火把"
-                return self._with_notes(fn(text[len(alias):].strip()))
-        return "我不明白你的意思。输入“帮助”查看可用指令。"
+                return fn, text[len(alias):].strip()
+        return None, None
 
     def _with_notes(self, output):
-        """把这一步里自动发生的事（饿了、渴了、掉血）接在指令输出后面。"""
+        """把这一步里自动发生的事（饿了、渴了、掉血、死亡）接在指令输出后面。"""
+        if self.character:
+            self._flush_starving_note()
+        if self.death_cause and not any("你死了" in n for n in self.pending_notes) and "你死了" not in (output or ""):
+            self.pending_notes.append("\n" + self.death_text())
         if not self.pending_notes:
             return output
         notes, self.pending_notes = self.pending_notes, []
@@ -900,8 +914,17 @@ class Game:
             clamped = f"（一次最多休息 {format_duration(REST_MINUTES_MAX)}）\n"
 
         before = c.stamina
-        self.advance_time(minutes)
-        c.stamina = min(cap, before + stats.rest_recovery(c.attributes, minutes))
+        rested = 0
+        for _ in range(minutes):  # 战斗外 1 回合 = 1 分钟：逐分钟推进
+            self.advance_time(1)
+            self.turns += 1
+            self._regenerate()
+            rested += 1
+            if self.death_cause:
+                break
+        c.stamina = min(cap, before + stats.rest_recovery(c.attributes, rested))
+        if rested < minutes:
+            return f"你休息了 {format_duration(rested)}，再也没能醒来。"
 
         lines = [
             clamped + f"你休息了 {format_duration(minutes)}，现在是 {self.clock_text()}。",
@@ -961,6 +984,21 @@ class Game:
         return any(x.get("id") == condition_id for x in self.conditions())
 
 
+    # ---------- 死亡 ----------
+
+    def damage_player(self, amount, cause):
+        """扣玩家生命；扣到 0 就死了，记下死因（stats.DEATH_CAUSES 的 id）。"""
+        c = self.character
+        if not c or self.death_cause or amount <= 0:
+            return
+        c.hp = max(0, c.hp - amount)
+        if c.hp == 0:
+            self.death_cause = cause
+
+    def death_text(self):
+        """“你死了”的文字（控制台和网页都用）。"""
+        return f"======== 你死了 ========\n死因：{stats.DEATH_CAUSES.get(self.death_cause, self.death_cause)}"
+
     def spend_stamina(self, amount):
         """扣体力。返回要补在正文里的提示（现在没有，留着接口）。
         以前这里按累计消耗触发口渴；口渴现在由水源条决定（need_stage）。"""
@@ -1009,42 +1047,6 @@ class Game:
             if after > before:
                 cond = self._need_condition(need)
                 self.pending_notes.append(f"（你{cond['name'].rstrip('！')}了：{cond['effect']}）")
-
-    def food_blocked(self):
-        """饱腹期间不能再吃带食物标签的东西：返回拦下来的那句话，能吃就返回空。"""
-        until = self.full_until()
-        if not until or until <= self.clock_total():
-            return ""
-        return (f"你还在饱腹，{format_duration(self.condition_minutes_left(until))}内吃不下带食物的东西。\n"
-                f"（{stats.FULL_WINDOW_MINUTES} 分钟内连吃 {stats.FULL_FOOD_COUNT} 份食物就会饱腹，"
-                f"缓一缓再吃吧。）")
-
-    def full_until(self):
-        """饱腹到什么时候（绝对分钟数）；没饱腹返回 0。"""
-        entry = next((x for x in self.character.conditions if x.get("id") == "full"), None)
-        return entry.get("until", 0) if entry else 0
-
-    def note_food_eaten(self):
-        """记一次进食：半小时内吃到第三份就饱腹一小时。返回要补的文字，没事就是空。"""
-        c = self.character
-        if not c:
-            return ""
-        now = self.clock_total()
-        self.food_uses = [t for t in self.food_uses if now - t < stats.FULL_WINDOW_MINUTES]
-        self.food_uses.append(now)
-        if len(self.food_uses) < stats.FULL_FOOD_COUNT:
-            return ""
-        self.food_uses = []
-        self._purge_conditions()
-        c.conditions = [x for x in c.conditions if x.get("id") != "full"]
-        c.conditions.append({
-            "id": "full",
-            "name": "饱腹",
-            "source": "food",
-            "effect": f"{format_duration(stats.FULL_MINUTES)}内不能再吃带食物的东西",
-            "until": now + stats.FULL_MINUTES,
-        })
-        return (f"★ 吃得太急了——你饱腹了：{format_duration(stats.FULL_MINUTES)}内吃不下带食物的东西。")
 
     def load_level(self):
         """当前负重状态（normal / overweight / immobile），见 stats.load_level。"""
@@ -1123,11 +1125,17 @@ class Game:
             return
         if self.turns % stats.REGEN_INTERVAL == 0:
             c.hp = min(self.options.max_hp(c), c.hp + stats.hp_regen(c.attributes))
-        drain = sum(stats.NEED_STARVING_HP_PER_TURN for need in ("food", "water") if self.need_stage(need) == 3)
-        if drain:
-            c.hp = max(0, c.hp - drain)
-            self.pending_notes.append(f"（又饿又渴的身体在透支：生命 −{drain}，剩 {c.hp}）" if drain > 1
-                                      else f"（{'饥饿' if self.need_stage('food') == 3 else '脱水'}让你越来越虚弱：生命 −{drain}，剩 {c.hp}）")
+        for need, cause in (("food", "hunger"), ("water", "thirst")):
+            if self.need_stage(need) == 3 and not self.death_cause:
+                self.damage_player(stats.NEED_STARVING_HP_PER_TURN, cause)
+                self.starving_drain += stats.NEED_STARVING_HP_PER_TURN
+
+    def _flush_starving_note(self):
+        """把这段时间里饿 / 渴掉的血汇成一句提示（休息几百分钟也只说一次）。"""
+        if self.starving_drain:
+            self.pending_notes.append(f"（饥饿 / 脱水让你越来越虚弱：生命 −{self.starving_drain}，"
+                                      f"剩 {self.character.hp}）")
+            self.starving_drain = 0
 
     # ---------- 背包：一格一堆 ----------
     #
@@ -2173,6 +2181,8 @@ class Game:
     def cmd_save(self, arg):
         if not self.character:
             return "还没有创建角色，先开一局新游戏再存档。"
+        if self.death_cause:
+            return "你已经死了，不能存档。"
         slot, error = self._parse_slot(arg)
         if error:
             return error
@@ -2185,7 +2195,6 @@ class Game:
             "indoor_steps": self.indoor_steps,
             "need_minutes": self.need_minutes,  # 食物 / 水源下一次 −1 前已过的分钟
             "stamina_carry": [self.stamina_carry.numerator, self.stamina_carry.denominator],
-            "food_uses": self.food_uses,          # 最近几次进食的时间（判断饱腹）
             "day": self.day,
             "minutes": self.minutes,
             "visited": sorted(self.visited),
@@ -2249,10 +2258,10 @@ class Game:
         self.need_minutes = dict({"food": 0, "water": 0}, **(state.get("need_minutes") or {}))
         carry = state.get("stamina_carry") or [0, 1]
         self.stamina_carry = Fraction(carry[0], carry[1])
-        if self.character:  # 以前的口渴是按体力消耗挂上的状态，现在由水源条决定，旧的摘掉
-            self.character.conditions = [x for x in self.character.conditions if x.get("id") != "thirst"]
-        self.food_uses = [int(t) for t in state.get("food_uses", [])
-                          if isinstance(t, (int, float))]
+        if self.character:  # 旧的“口渴”（按体力消耗挂上的）和“饱腹”状态都已经不用了，摘掉
+            self.character.conditions = [x for x in self.character.conditions if x.get("id") not in ("thirst", "full")]
+        self.death_cause = None  # 读档就是活过来了
+        self.starving_drain = 0
         self.day = state.get("day", stats.START_DAY)
         self.minutes = state.get("minutes", stats.START_MINUTES)
         self.visited = set(state.get("visited", [self.current_room]))

@@ -25,6 +25,34 @@ def choose_slot(game, ask):
     return slots[ask.choice("选择编号：", labels)]
 
 
+def main_menu(game, ask, options, skill_trees, world):
+    """主菜单：新游戏，或者（有存档时）继续存档。"""
+    print(f"=== {world.title} ===\n")
+    if game.has_save() and ask.choice("选择编号：", ["新游戏", "继续存档"]) == 1:
+        print(game.cmd_load(str(choose_slot(game, ask))))
+        return
+    tree_names = {t["id"]: t["name"] for t in skill_trees.trees}
+    character = CharacterCreator(options, world.items, tree_names, ask).run()
+    game.start_new(character)
+    background = options.background(character.background)
+    print(f"\n你是{character.name}，{background['name']}。")
+    print(world.intro)
+    print("（输入“帮助”查看指令）\n")
+    print(game.describe_room())
+
+
+def death_menu(game, ask):
+    """死了：读档，或者回主菜单。返回 True 表示要回主菜单。"""
+    choice = ask.choice("\n选择编号：", ["读档", "返回主菜单"])
+    if choice == 0 and game.has_save():
+        print(game.cmd_load(str(choose_slot(game, ask))))
+        return False
+    if choice == 0:
+        print("还没有存档，只能回到主菜单。")
+    game.death_cause = None
+    return True
+
+
 def main():
     world = World(BASE_DIR / "data" / "world.json")
     options = CharacterOptions(BASE_DIR / "data" / "character_options.json")
@@ -33,24 +61,15 @@ def main():
     game = Game(world, options, skill_trees, dice, BASE_DIR / "saves" / "save.json")
     ask = Prompter()
 
-    print(f"=== {world.title} ===\n")
-    if game.has_save() and ask.choice("选择编号：", ["新游戏", "继续存档"]) == 1:
-        print(game.cmd_load(str(choose_slot(game, ask))))
-    else:
-        tree_names = {t["id"]: t["name"] for t in skill_trees.trees}
-        character = CharacterCreator(options, world.items, tree_names, ask).run()
-        game.start_new(character)
-        background = options.background(character.background)
-        print(f"\n你是{character.name}，{background['name']}。")
-        print(world.intro)
-        print("（输入“帮助”查看指令）\n")
-        print(game.describe_room())
-
+    main_menu(game, ask, options, skill_trees, world)
     while game.running:
         text = input("\n> ")
         output = game.handle(text)
         if output:
             print(output)
+        if game.death_cause and death_menu(game, ask):
+            print()
+            main_menu(game, ask, options, skill_trees, world)
 
 
 if __name__ == "__main__":
