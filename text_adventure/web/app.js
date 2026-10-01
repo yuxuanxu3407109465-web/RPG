@@ -938,7 +938,7 @@
       var cb = state.combat;
       var combatBody = '';
       combatBody += '<div class="kv"><span class="k">行动点</span><span class="v">每回合 ' + esc(cb.ap_per_turn) +
-        '（上限 ' + esc(cb.ap_cap) + (cb.armor_ap_penalty ? '，重甲 −' + esc(cb.armor_ap_penalty) : '') +
+        '（上限 ' + esc(cb.ap_cap) + (cb.armor_ap_penalty ? '，重甲 −' + esc(cb.armor_ap_penalty) + '%' : '') +
         '）</span></div>';
       (cb.weapons || []).forEach(function (w) {
         var mult = w.damage_multiplier || 1;   // 服务端算好的总倍率（加算 / 乘算规则在 stats.py）

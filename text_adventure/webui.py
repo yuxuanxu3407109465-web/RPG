@@ -731,7 +731,7 @@ class Session:
             "combat": {
                 "ap_per_turn": stats.ap_per_turn(c.attributes, game.armor_ap_penalty()),
                 "ap_cap": stats.ap_cap(c.attributes, game.armor_ap_penalty()),
-                "armor_ap_penalty": game.armor_ap_penalty(),
+                "armor_ap_penalty": stats.armor_ap_percent(game.armor_ap_penalty()),  # 百分比
                 "armor": game.armor_total(),
                 "worn": [
                     {"slot": world.armor_slots[s], "name": world.items[i]["name"],

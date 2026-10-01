@@ -1486,7 +1486,7 @@ class Game:
         for _ in range(count):
             self._to_ground(item_id)
         text = f"你放下了{name} ×{count}。" if count > 1 else f"你放下了{name}。"
-        return text + self._check_stance() + self._load_change_note(before)
+        return text + self._check_stance() + self._load_change_note(before) + self.spend_ap(stats.BAG_AP_COST)
 
     def cmd_use(self, arg):
         """使用物品。效果写在物品数据的 use 字段里，见 items.py。"""
@@ -1666,7 +1666,7 @@ class Game:
         return item["name"] if quality == "normal" else f"{stats.quality_name(item)} {item['name']}"
 
     def armor_ap_penalty(self):
-        """身上重甲带来的每回合行动点减少量（每件重甲的 ap_penalty 相加）。"""
+        """身上重甲的 ap_penalty 相加（每点 = 每回合行动点 −5%，见 stats.ap_per_turn）。"""
         return sum(self._armor(i).get("ap_penalty", 0) for i in self.worn.values() if self._armor(i))
 
     def _take_from_inventory(self, item_id):
@@ -1690,7 +1690,7 @@ class Game:
             text = (f"你穿上了{self.item_display_name(item_id)}（{slot_name}，{class_name}，"
                     f"护甲 +{stats.armor_value(self.world.items[item_id])}")
             if armor.get("ap_penalty"):
-                text += f"，每回合行动点 −{armor['ap_penalty']}"
+                text += f"，每回合行动点 −{stats.armor_ap_percent(armor['ap_penalty'])}%"
             if armor.get("sight_penalty"):
                 text += f"，视野 −{armor['sight_penalty']}"
             text += f"）。现在总护甲 {self.armor_total()}。"

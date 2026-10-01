@@ -41,6 +41,7 @@ PICKUP_AP_COST = 1  # 拾取（搜刮）一件东西
 HOLD_AP_COST = 1  # 拿起 / 收起 / 换手武器、盾牌这类手持物
 ARMOR_AP_COST = 6  # 穿上 / 脱下一件护甲
 GEAR_AP_COST = 1  # 背包、饰品、披风的穿脱（暂定，和手持物一样）
+BAG_AP_COST = 1  # 背包里其余会实际改变物品的操作（例如放下 / 丢弃），暂定；查看、拆分、堆叠这类不改变物品的不花
 # 一堆同种物品最多摞多少个。只有物品数据里带 stack 词条的才摞得起来，
 # 别的物品一格一件、也不能拆分（见 engine.py 的背包部分）。
 STACK_MAX = 5
@@ -50,7 +51,7 @@ UNARMED_DAMAGE = "1d2"  # 徒手伤害骰
 ARMOR_CLASSES = {
     "clothing": ("寻常服装", 0, 0),  # 类别 id -> (名字, 护甲值下限, 上限)
     "light": ("轻甲", 1, 3),  # 按部位定：胸甲 3、鞋子 1
-    "heavy": ("重甲", 2, 6),  # 会降低每回合的行动点（每件的 ap_penalty）
+    "heavy": ("重甲", 2, 6),  # 会降低每回合的行动点（每件的 ap_penalty，每点 −5%）
 }
 DODGE_MULTIPLIER = 1.5
 UNARMED = "unarmed"  # 没拿武器时按徒手（武术）算
@@ -337,13 +338,21 @@ def move_ap_cost(weight, capacity):
     return OVERWEIGHT_MOVE_AP_COST if level == "overweight" else MOVE_AP_COST
 
 
+ARMOR_AP_PERCENT_PER_POINT = 5  # 重甲的 ap_penalty 每 1 点 = 每回合行动点 −5%（胸甲 3 点 → −15%）
+
+
+def armor_ap_percent(armor_penalty):
+    """重甲让每回合行动点减少的百分比（各件的 ap_penalty 相加 × 5%）。"""
+    return armor_penalty * ARMOR_AP_PERCENT_PER_POINT
+
+
 def ap_per_turn(a, armor_penalty=0):
-    """每回合获得的行动点 = 敏捷 × 2 − 重甲惩罚，重甲最多扣到只剩 1 点（不会扣到 0）。
+    """每回合获得的行动点 = 敏捷 × 2 ×（1 − 重甲减少的百分比），向下取整，最少 1 点（不会扣到 0）。
     不分战斗内外：每回合（1 分钟）开始时获得。"""
     base = a["agility"] * AP_PER_AGILITY
     if not armor_penalty:
         return base
-    return max(min(1, base), base - armor_penalty)
+    return max(min(1, base), base * max(0, 100 - armor_ap_percent(armor_penalty)) // 100)
 
 
 def ap_cap(a, armor_penalty=0):
