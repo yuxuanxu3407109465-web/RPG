@@ -205,7 +205,7 @@
       "id": "last_stand",
       "name": "绝境",
       "kind": "positive",
-      "description": "生命低于 30% 时，闪避和精准 +3，造成的伤害 +30%。",
+      "description": "生命不高于 30% 时，闪避和精准 +3，造成的伤害 +30%。",
       "effects": {
         "last_stand": true
       }

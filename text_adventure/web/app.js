@@ -535,6 +535,11 @@
       return;
     }
 
+    if (hint.kind === 'perks') {
+      renderPerks(box, hint, submit);
+      return;
+    }
+
     if (hint.kind === 'confirm') {
       var yes = document.createElement('button');
       yes.type = 'button';
@@ -582,6 +587,83 @@
     });
     box.appendChild(form);
     setTimeout(function () { input.focus(); }, 30);
+  }
+
+  // 选 perk：点卡片切换选中，剩余点数实时更新，选好后点“继续”一次提交（规则最终由服务端再查一遍）
+  function renderPerks(box, hint, submit) {
+    var perks = hint.perks || [];
+    var chosen = [];
+    var byId = {};
+    perks.forEach(function (p) { byId[p.id] = p; });
+
+    function left(sel) {
+      var n = hint.base || 0;
+      sel.forEach(function (id) { n += (byId[id].perk_points || 0) - byId[id].cost; });
+      return n;
+    }
+    function clashes(id, sel) {
+      return sel.filter(function (o) {
+        return (byId[id].conflicts || []).indexOf(o) >= 0 || (byId[o].conflicts || []).indexOf(id) >= 0;
+      });
+    }
+
+    var list = document.createElement('div');
+    list.className = 'perk-list';
+    var status = document.createElement('div');
+    status.className = 'attr-remaining';
+    var done = document.createElement('button');
+    done.type = 'button';
+    done.className = 'btn primary';
+    done.innerHTML = icon('check') + '<span>继续</span>';
+    done.addEventListener('click', function () { submit(JSON.stringify(chosen)); });
+
+    function refresh() {
+      var n = left(chosen);
+      status.textContent = '剩余 perk 点：' + n;
+      status.classList.toggle('bad', n < 0);
+      done.disabled = n < 0;
+      perks.forEach(function (p) {
+        var card = list.querySelector('[data-perk="' + p.id + '"]');
+        var on = chosen.indexOf(p.id) >= 0;
+        var why = '';
+        if (on) {
+          if (left(chosen.filter(function (x) { return x !== p.id; })) < 0) why = '取消后 perk 点不够';
+        } else if (clashes(p.id, chosen).length) {
+          why = '和' + byId[clashes(p.id, chosen)[0]].name + '冲突';
+        } else if (left(chosen.concat([p.id])) < 0) {
+          why = 'perk 点不够';
+        }
+        card.classList.toggle('on', on);
+        card.disabled = !!why;
+        card.querySelector('.perk-why').textContent = why;
+      });
+    }
+
+    perks.forEach(function (p) {
+      var card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'perk-card';
+      card.setAttribute('data-perk', p.id);
+      card.innerHTML =
+        '<span class="perk-head"><span class="perk-name">' + esc(p.name) + '</span>' +
+        '<span class="perk-cost">' + (p.cost ? '消耗 ' + p.cost + ' 点' : '有正有负 · 不花点') + '</span></span>' +
+        '<span class="perk-desc">' + esc(p.description) + '</span>' +
+        '<span class="perk-why"></span>';
+      card.addEventListener('click', function () {
+        var i = chosen.indexOf(p.id);
+        if (i >= 0) chosen.splice(i, 1); else chosen.push(p.id);
+        refresh();
+      });
+      list.appendChild(card);
+    });
+
+    var actions = document.createElement('div');
+    actions.className = 'answer';
+    actions.appendChild(status);
+    actions.appendChild(done);
+    box.appendChild(list);
+    box.appendChild(actions);
+    refresh();
   }
 
   // 属性分配：每个属性一行，加减号调整，调够了才能点“完成”

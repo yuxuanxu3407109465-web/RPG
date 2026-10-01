@@ -220,6 +220,32 @@ class WebPrompter(Prompter):
         finally:
             self._hint = None
 
+    def perks(self, entries, base, check):
+        """网页版选 perk：前端勾选、实时算剩余点数，选好后点“继续”一次提交整组。
+        提交上来的仍然交给 check 校验（和控制台同一个函数），不合法就退回重选。"""
+        self._hint = {"kind": "perks", "perks": entries, "base": base}
+        ids = {p["id"] for p in entries}
+        try:
+            while True:
+                raw = self._web_input("选择 perk")
+                try:
+                    chosen = [str(x) for x in json.loads(raw)]
+                except (ValueError, TypeError):
+                    self._web_print("  没收到能用的选择，请重新选好再提交。")
+                    continue
+                if not set(chosen) <= ids:
+                    self._web_print("  有不认识的 perk，请重新选择。")
+                    continue
+                error = check(chosen)[1]
+                if error:
+                    self._web_print("  " + error)
+                    continue
+                names = "、".join(p["name"] for p in entries if p["id"] in chosen)
+                self._web_print("【Perk】" + (names or "不选"))
+                return chosen
+        finally:
+            self._hint = None
+
     def attributes(self, attributes, rules, attribute_defs):
         """网页版属性分配：前端用加减号按钮调，最后一次性提交整份分配。
 

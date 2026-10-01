@@ -242,6 +242,29 @@ class Prompter:
                 return False
             self.print("  请输入 y 或 n。")
 
+    def perks(self, entries, base, check):
+        """选 perk，返回选中的 id 列表。控制台里输编号切换选中 / 取消，输“完成”结束；
+        网页版会覆盖成勾选框 + “继续”按钮。check(选择) -> (剩余点数, 错误或 None)。"""
+        chosen = []
+        self.print("\n【Perk】开卡时可以用 perk 点选择特质。输入编号选中 / 取消，选好后输入“完成”。")
+        for i, p in enumerate(entries, 1):
+            self.print(f"  {i}. {p['name']}（消耗 {p['cost']} 点）：{p['description']}")
+        while True:
+            names = "、".join(p["name"] for p in entries if p["id"] in chosen) or "无"
+            value = self.input(f"剩余 perk 点 {check(chosen)[0]}，已选：{names}。编号 / 完成：").strip()
+            if value in ("完成", "done", ""):
+                return chosen
+            if not value.isdigit() or not 1 <= int(value) <= len(entries):
+                self.print(f"  请输入 1~{len(entries)} 的编号，或者“完成”。")
+                continue
+            perk_id = entries[int(value) - 1]["id"]
+            trial = [p for p in chosen if p != perk_id] if perk_id in chosen else chosen + [perk_id]
+            error = check(trial)[1]
+            if error:
+                self.print("  " + error)
+                continue
+            chosen = trial
+
     def attributes(self, attributes, rules, attribute_defs):
         """分配属性，返回分配好的属性字典。
 
@@ -357,33 +380,28 @@ class CharacterCreator:
         if not self.options.perks:
             return []
         base = self.options.progression.get("starting_perk_points", 0)
-        chosen = []
+        entries = [{
+            "id": p["id"], "name": p["name"], "description": p["description"],
+            "cost": self.options.perk_cost(p),
+            "perk_points": (p.get("effects") or {}).get("perk_points", 0),
+            "conflicts": p.get("conflicts", []),
+        } for p in self.options.perks]
+        return self.ask.perks(entries, base, self._check_perks)
 
-        def remaining(selection):
-            return (base + self.options.perk_effect(selection, "perk_points")
-                    - sum(self.options.perk_cost(self.options.perk(p)) for p in selection))
-
-        self.ask.print("\n【Perk】开卡时可以用 perk 点选择特质（再选一次可以取消）。")
-        while True:
-            labels = [
-                ("【已选】" if p["id"] in chosen else "") + f"{p['name']}（消耗 {self.options.perk_cost(p)} 点）：{p['description']}"
-                for p in self.options.perks
-            ]
-            labels.append("完成")
-            self.ask.print(f"\n剩余 perk 点：{remaining(chosen)}")
-            index = self.ask.choice("选择编号：", labels)
-            if index == len(self.options.perks):
-                return chosen
-            perk_id = self.options.perks[index]["id"]
-            clash = [p for p in chosen if p in self.options.perk(perk_id).get("conflicts", [])]
-            if perk_id not in chosen and clash:
-                self.ask.print(f"  和已选的{self.options.perk(clash[0])['name']}冲突，不能同时选。")
-                continue
-            trial = [p for p in chosen if p != perk_id] if perk_id in chosen else chosen + [perk_id]
-            if remaining(trial) < 0:
-                self.ask.print("  perk 点不够（取消这个会让已选的 perk 点数不够用）。")
-                continue
-            chosen = trial
+    def _check_perks(self, selection):
+        """检查一组 perk 能不能同时选：返回 (剩余 perk 点, 错误说明或 None)。两个界面共用。"""
+        base = self.options.progression.get("starting_perk_points", 0)
+        left = (base + self.options.perk_effect(selection, "perk_points")
+                - sum(self.options.perk_cost(self.options.perk(p)) for p in selection))
+        if len(set(selection)) != len(selection):
+            return left, "每个 perk 只能选一次。"
+        for p in selection:
+            clash = [q for q in selection if q in self.options.perk(p).get("conflicts", [])]
+            if clash:
+                return left, f"{self.options.perk(p)['name']}和{self.options.perk(clash[0])['name']}冲突，不能同时选。"
+        if left < 0:
+            return left, "perk 点不够。"
+        return left, None
 
     def _attributes(self, extra_points=0):
         rules = dict(self.options.attribute_rules)
