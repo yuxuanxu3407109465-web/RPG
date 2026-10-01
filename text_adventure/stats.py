@@ -152,19 +152,27 @@ def quality_bonus(item):
     return QUALITIES[item.get("quality", "normal")][1]
 
 
-# 武器伤害分档（写数据时参考）：
-#   1d4  简易武器、匕首
-#   1d6  高暴击范围的单手武器、双手长柄武器
-#   1d8  寻常单手武器
-#   2d6  寻常双手武器
-# 简易武器：不能算武器、但被当作武器用的东西（水果刀、擀面杖、手电筒……），
-# 武器数据写 "improvised": true，没写伤害就默认 1d4。
-IMPROVISED_DAMAGE = "1d4"
+# 武器伤害分档（写数据时参考，按武器本身的形制定）：
+#   1d4   匕首
+#   1d6   高暴击范围的单手武器、双手长柄武器
+#   1d8   寻常单手武器
+#   1d10  寻常双手武器
+# 代用武器：本质是工具、不适合当武器用的东西（撬棍、手电筒、水果刀、擀面杖……），
+# 武器数据写 "improvised": true，最终伤害比所写的档位低一档（撬棍 1d10 → 1d8）。
+DAMAGE_TIERS = ("1d2", "1d4", "1d6", "1d8", "1d10")
+
+
+def tier_down(damage):
+    """伤害降一档：1d10 → 1d8 → 1d6 → 1d4 → 1d2（最低 1d2）。"""
+    index = DAMAGE_TIERS.index(damage)
+    return DAMAGE_TIERS[max(0, index - 1)]
 
 
 def weapon_damage(item):
-    """武器伤害骰加上等阶的固定加减，例如 "1d8" + 精良 → "1d8+1"。"""
+    """武器的实际伤害骰：代用武器先降一档，再加等阶的固定加减（"1d8" + 精良 → "1d8+1"）。"""
     damage = item["weapon"]["damage"]
+    if item["weapon"].get("improvised"):
+        damage = tier_down(damage)
     bonus = quality_bonus(item)
     if not bonus:
         return damage

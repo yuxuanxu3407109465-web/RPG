@@ -176,8 +176,9 @@ class World:
                     raise ValueError(f"{where}：random_items 的个数要写 1 ≤ min ≤ max")
         for item_id, item in self.items.items():
             weapon = item.get("weapon")
-            if weapon and weapon.get("improvised") and not weapon.get("damage"):
-                weapon["damage"] = stats.IMPROVISED_DAMAGE  # 简易武器默认 1d4
+            if weapon and weapon.get("improvised") and weapon.get("damage") not in stats.DAMAGE_TIERS:
+                raise ValueError(f"world.json 里的代用武器 {item_id}：伤害要是 {'、'.join(stats.DAMAGE_TIERS)} 中的一档"
+                                 "（会自动降一档）")
             if weapon and not dice_rules.DICE_PATTERN.match(weapon.get("damage", "")):
                 raise ValueError(f"world.json 里的武器 {item_id}：伤害骰要写成 1d8、2d6 这样的格式")
             if weapon and not dice_rules.CRIT_RANGE_PATTERN.match(weapon.get("crit_range", "20")):

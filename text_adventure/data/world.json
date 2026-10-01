@@ -386,7 +386,8 @@
       "weight": 0.5,
       "weapon": {
         "type": "blunt",
-        "improvised": true
+        "improvised": true,
+        "damage": "1d6"
       },
       "hold": "one_hand"
     },
@@ -399,7 +400,8 @@
       "weight": 3,
       "weapon": {
         "type": "blunt",
-        "damage": "2d6"
+        "damage": "1d10",
+        "improvised": true
       },
       "hold": "two_hand"
     },
