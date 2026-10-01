@@ -310,8 +310,12 @@ def move_ap_cost(weight, capacity):
 
 
 def ap_per_turn(a, armor_penalty=0):
-    """每回合获得的行动点 = 敏捷 × 2 − 重甲惩罚。行动点只在战斗中存在，开战第一回合就获得。"""
-    return max(0, a["agility"] * AP_PER_AGILITY - armor_penalty)
+    """每回合获得的行动点 = 敏捷 × 2 − 重甲惩罚，重甲最多扣到只剩 1 点（不会扣到 0）。
+    行动点只在战斗中存在，开战第一回合就获得。"""
+    base = a["agility"] * AP_PER_AGILITY
+    if not armor_penalty:
+        return base
+    return max(min(1, base), base - armor_penalty)
 
 
 def ap_cap(a, armor_penalty=0):

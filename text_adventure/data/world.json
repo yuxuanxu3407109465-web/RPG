@@ -149,7 +149,9 @@
         "riot_shield",
         "riot_vest",
         "riot_helmet",
-        "riot_greaves"
+        "riot_greaves",
+        "riot_gauntlets",
+        "riot_boots"
       ],
       "npcs": [],
       "blocked": "墙壁",
@@ -219,7 +221,9 @@
         "crowbar",
         "motorcycle_helmet",
         "riding_jacket",
-        "riding_pants"
+        "riding_pants",
+        "riding_gloves",
+        "riding_boots"
       ],
       "npcs": [],
       "blocked": "障碍物",
@@ -551,7 +555,7 @@
       "armor": {
         "slot": "head",
         "class": "light",
-        "value": 1
+        "value": 2
       }
     },
     "riot_shield": {
@@ -613,8 +617,8 @@
       "armor": {
         "slot": "head",
         "class": "heavy",
-        "value": 2,
-        "ap_penalty": 1,
+        "value": 4,
+        "ap_penalty": 2,
         "sight_penalty": 2
       }
     },
@@ -630,6 +634,57 @@
         "class": "heavy",
         "value": 4,
         "ap_penalty": 2
+      }
+    },
+    "riding_gloves": {
+      "name": "骑行手套",
+      "aliases": [
+        "手套"
+      ],
+      "weight": 0.3,
+      "description": "指节缝着硬壳的骑行手套。（轻甲套装：骑行护具）",
+      "armor": {
+        "slot": "hands",
+        "class": "light",
+        "value": 1
+      }
+    },
+    "riding_boots": {
+      "name": "骑行靴",
+      "aliases": [
+        "靴子"
+      ],
+      "weight": 1.2,
+      "description": "高帮的骑行靴，脚踝有护板。（轻甲套装：骑行护具）",
+      "armor": {
+        "slot": "feet",
+        "class": "light",
+        "value": 1
+      }
+    },
+    "riot_gauntlets": {
+      "name": "防暴护手",
+      "aliases": [
+        "护手"
+      ],
+      "weight": 1.5,
+      "description": "带硬质护板的防暴手套，手指不太灵活。（重甲套装：防暴装备）",
+      "armor": {
+        "slot": "hands",
+        "class": "heavy",
+        "value": 2,
+        "ap_penalty": 1
+      }
+    },
+    "riot_boots": {
+      "name": "防暴靴",
+      "weight": 2.5,
+      "description": "鞋头包钢的防暴靴，走起来咚咚响。（重甲套装：防暴装备）",
+      "armor": {
+        "slot": "feet",
+        "class": "heavy",
+        "value": 2,
+        "ap_penalty": 1
       }
     }
   },
