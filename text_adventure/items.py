@@ -58,7 +58,17 @@ def _effect_cure(game, character, effect):
     return game.clear_condition(effect.get("condition"))
 
 
+def _effect_need(need, label):
+    def apply(game, character, effect):
+        before = getattr(character, need)
+        setattr(character, need, min(stats.NEED_MAX, before + int(effect.get("amount", 0))))
+        return f"{label} +{getattr(character, need) - before}（{getattr(character, need)}/{stats.NEED_MAX}）"
+    return apply
+
+
 EFFECTS = {
+    "food": _effect_need("food", "食物"),
+    "water": _effect_need("water", "水源"),
     "stamina": _effect_stamina,
     "hp": _effect_hp,
     "cure": _effect_cure,

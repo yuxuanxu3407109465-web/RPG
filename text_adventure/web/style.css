@@ -1008,6 +1008,10 @@ button.choice .label { white-space: pre-line; flex: 1; }
 .stamina-fill { background: linear-gradient(90deg, #b8621a, #f0943a); }   /* 体力：橙色 */
 .stamina-fill.low { background: linear-gradient(90deg, #7a3a12, #b8561e); } /* 力竭：暗橙 */
 .stamina-fill.empty { background: linear-gradient(90deg, #7a2a24, #c8453a); }
+.need-track { background: #1c2420; border-color: #28332c; }
+.food-fill { background: linear-gradient(90deg, #2f7a3a, #55b865); }   /* 食物：绿色 */
+.water-fill { background: linear-gradient(90deg, #1f5f9a, #3f97d6); }  /* 水源：蓝色 */
+.food-fill.stage3, .water-fill.stage3 { background: linear-gradient(90deg, #7a2a24, #c8453a); }
 .res-label { width: 2.2em; flex: none; color: var(--dim, #9aa3ad); font-size: 12px; }
 
 .cond {

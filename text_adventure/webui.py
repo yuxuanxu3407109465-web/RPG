@@ -696,6 +696,8 @@ class Session:
                 "max": stats.stamina_max(c.attributes),
                 "exhausted": stats.is_exhausted(c),
             },
+            "needs": {"food": c.food, "water": c.water, "max": stats.NEED_MAX,
+                      "food_stage": game.need_stage("food"), "water_stage": game.need_stage("water")},
             "conditions": game.conditions(),
             "attack_penalty": stats.attack_penalty(c),
             "combat": {

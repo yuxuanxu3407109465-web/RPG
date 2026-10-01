@@ -323,8 +323,6 @@ MOVE_MINUTES = 1              # 走一步花的时间（分钟，室内外一样
 REST_MINUTES_PER_TICK = 30    # 每休息半小时算一档
 REST_RECOVER_RATIO = 0.1      # 每档恢复 10% 上限
 SHOCK_WAKE_RATIO = 0.3        # 休克后强制休息到这个比例才醒
-THIRST_STAMINA = 60           # 体力累计消耗这么多点就会口渴（一次性，喝水能解除）
-THIRST_COST_MULTIPLIER = 2    # 口渴时体力消耗翻倍
 FULL_WINDOW_MINUTES = 30      # 半小时内……
 FULL_FOOD_COUNT = 3           # ……吃下三份带食物标签的东西就会饱腹
 FULL_MINUTES = 60             # 饱腹持续一小时：这段时间里不能再吃带食物标签的东西
@@ -341,17 +339,44 @@ def stamina_max(a):
 OVERWEIGHT_TRAVEL_MULTIPLIER = 2  # 战斗外超重：走路的体力消耗和时间都翻倍
 
 
-def move_cost(overweight=False, thirsty=False):
-    """走一步的体力消耗：室内外一样，每 INDOOR_STEPS_PER_COST 步扣一次。
-
-    敏捷不再影响移动的体力消耗（只按步数算）；超重翻倍，口渴也翻倍（两者叠乘）。
-    """
+def move_cost(overweight=False):
+    """走一步的体力消耗：室内外一样，每 INDOOR_STEPS_PER_COST 步扣一次；超重翻倍。
+    饥饿 / 口渴的倍率在 Game._pay_move 里按分数再乘（不同来源相乘）。"""
     cost = max(1, MOVE_COST)
     if overweight:
         cost *= OVERWEIGHT_TRAVEL_MULTIPLIER
-    if thirsty:
-        cost *= THIRST_COST_MULTIPLIER
     return cost
+
+
+# ---------- 食物与水源 ----------
+
+NEED_MAX = 100  # 食物、水源的上限，新角色满值开局
+FOOD_MINUTES_PER_POINT = 30  # 食物每 30 分钟 −1（每小时 −2）
+WATER_MINUTES_PER_POINT = 15  # 水源每 15 分钟 −1（每小时 −4）
+# 降到上限的这些百分比及以下，进入对应等级（1 / 2 / 3）
+NEED_STAGE_THRESHOLDS = (50, 30, 10)
+NEED_STAGE_NAMES = {
+    "food": ("有点饿", "饥饿", "饿死了！"),
+    "water": ("有点渴", "口渴", "渴死了！"),
+}
+NEED_STAGE_STAMINA_PERCENT = (50, 100, 100)  # 各等级体力消耗增加的百分比
+NEED_STARVING_HP_PER_TURN = 1  # 最高等级时每回合掉血
+
+
+def need_stage(value, maximum=NEED_MAX):
+    """食物 / 水源的等级：0 正常，1 有点饿 / 渴（≤50%），2 饥饿 / 口渴（≤30%），3 饿 / 渴死了（≤10%）。"""
+    stage = 0
+    for i, threshold in enumerate(NEED_STAGE_THRESHOLDS, 1):
+        if value * 100 <= maximum * threshold:
+            stage = i
+    return stage
+
+
+def need_stamina_multiplier(stage):
+    """某个等级的体力消耗倍率（分数）。"""
+    if not stage:
+        return Fraction(1)
+    return Fraction(100 + NEED_STAGE_STAMINA_PERCENT[stage - 1], 100)
 
 
 def move_minutes(overweight=False):

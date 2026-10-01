@@ -210,11 +210,11 @@
   }
   ```
 
-  `ratio` 按上限比例算、`amount` 按固定点数算；`consume` 默认 `true`（用掉即消耗）。目前写了效果的是能量棒（恢复 50% 体力上限）、肉罐头（体力 +20、生命 +1）、矿泉水（体力 +10 并解除口渴），**其它物品只要加上 `use` 字段，指令和界面上的“使用”按钮就会自动出现，不用改代码**。要加新的效果类型，在 `items.py` 的 `EFFECTS` 里注册一个函数即可。生命值满了照样能用肉罐头，只是不会超过上限（`_effect_hp` 里 `min(cap, ...)`）。
+  `ratio` 按上限比例算、`amount` 按固定点数算；`consume` 默认 `true`（用掉即消耗）。目前写了效果的是能量棒（食物 +10、体力 +25%）、肉罐头（食物 +30、生命 +1）、矿泉水（水源 +30），**其它物品只要加上 `use` 字段，指令和界面上的“使用”按钮就会自动出现，不用改代码**。要加新的效果类型，在 `items.py` 的 `EFFECTS` 里注册一个函数即可。生命值满了照样能用肉罐头，只是不会超过上限（`_effect_hp` 里 `min(cap, ...)`）。
 - **食物标签**：`"tags": ["food"]` 就是带食物标签（`items.is_food`），目前肉罐头、矿泉水、能量棒都有。
-  - **口渴**（一次性，能解除）：`Game.spend_stamina` 记账，**体力累计消耗 `stats.THIRST_STAMINA`（60）点**就进入口渴，状态写进 `character.conditions`（`id: "thirst"`），效果是**体力消耗 ×2**（`stats.move_cost(overweight, thirsty)`，超重和口渴叠乘），`使用 矿泉水`（`{"type":"cure","condition":"thirst"}`）解除。攒够一次就从头再数，已经口渴时再攒够不会重复叠加。
+  - **食物与水源**（`character.food` / `water`，上限 `stats.NEED_MAX` = 100，满值开局）：随时间下降——食物每 30 分钟 −1（每小时 −2）、水源每 15 分钟 −1（每小时 −4），`Game._drain_needs` 在 `advance_time` 里扣。降到 **50% / 30% / 10%** 及以下分别进入：**有点饿 / 有点渴**（体力消耗 +50%）、**饥饿 / 口渴**（体力消耗 +100%）、**饿死了！/ 渴死了！**（体力消耗 +100%，并且**每回合生命 −1**）。饥饿和口渴的倍率相乘；体力消耗带小数时攒在 `Game.stamina_carry` 里，满 1 才扣。状态实时算出来（`Game._need_condition`），不进存档；跨过等级时在指令输出后面补一句提示（`pending_notes`）。回复：肉罐头 食物 +30、生命 +1；矿泉水 水源 +30；能量棒 食物 +10、体力 +25%（物品效果类型 `food` / `water`）。**原来“累计消耗 60 点体力就口渴”的规则已经去掉**，口渴完全由水源条决定。
   - **饱腹**（有时限，自己会过期）：`Game.note_food_eaten` 记进食时间（`food_uses`），**`stats.FULL_WINDOW_MINUTES`（30）分钟内吃下 `stats.FULL_FOOD_COUNT`（3）份**带食物标签的东西就饱腹 `stats.FULL_MINUTES`（60）分钟，期间任何带食物标签的东西都**吃不下**（`Game.food_blocked` 拦在 `items.use` 最前面）。状态带 `until`（绝对分钟数，`Game.clock_total`），`conditions()` 里过期的自动清掉，剩下多久由 `conditions()` 现算成 `note`。
-  - 存档里对应的字段是 `stamina_spent`（累计消耗的体力）和 `food_uses`（最近几次进食时间），都没有的老存档按 0 / 空处理。
+  - 存档里对应的字段：角色的 `food` / `water`，以及 `need_minutes`、`stamina_carry`、`food_uses`（最近几次进食时间）；老存档没有就按满值 / 0 / 空处理。
 - 体力不足造成的力竭清不掉（`Game.clear_condition` 会说明原因），所以 `{"type": "cure", "condition": "exhausted"}` 对它是无效的，得用恢复体力的效果。
 
 ### 抛骰

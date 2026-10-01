@@ -7,6 +7,7 @@ import re
 import shutil
 from datetime import datetime
 from decimal import ROUND_FLOOR, Decimal
+from fractions import Fraction
 from pathlib import Path
 
 import dice as dice_rules
@@ -275,7 +276,9 @@ class Game:
         self.stance = None  # 当前姿态 id
         self.turns = 0
         self.indoor_steps = 0  # 室内已经走了几步（凑满 10 步扣一次体力）
-        self.stamina_spent = 0  # 累计消耗了多少体力（攒满 THIRST_STAMINA 就口渴）
+        self.need_minutes = {"food": 0, "water": 0}  # 距离下一次食物 / 水源 −1 已经过了多少分钟
+        self.stamina_carry = Fraction(0)  # 体力消耗乘上饥饿 / 口渴倍率后的小数部分，攒满 1 才扣
+        self.pending_notes = []  # 这一步里自动发生的事（例如开始饿了），附在指令输出后面
         self.food_uses = []  # 最近几次进食的时间（绝对分钟数，用来判断饱腹）
         self.day = stats.START_DAY  # 计时器：第几天
         self.minutes = stats.START_MINUTES  # 计时器：当天已经过去的分钟数
@@ -399,11 +402,18 @@ class Game:
             if alias.isascii():
                 # 英文指令需要用空格和参数隔开，避免 "i" 误匹配 "inn"
                 if text == alias or text.startswith(alias + " "):
-                    return fn(text[len(alias):].strip())
+                    return self._with_notes(fn(text[len(alias):].strip()))
             elif text.startswith(alias):
                 # 中文指令允许不加空格，例如 "拿火把"
-                return fn(text[len(alias):].strip())
+                return self._with_notes(fn(text[len(alias):].strip()))
         return "我不明白你的意思。输入“帮助”查看可用指令。"
+
+    def _with_notes(self, output):
+        """把这一步里自动发生的事（饿了、渴了、掉血）接在指令输出后面。"""
+        if not self.pending_notes:
+            return output
+        notes, self.pending_notes = self.pending_notes, []
+        return (output + "\n" if output else "") + "\n".join(notes)
 
     # ---------- 查找工具 ----------
 
@@ -752,10 +762,15 @@ class Game:
         返回 (要显示的那句说明, 额外提示)：说明不带括号和句号，额外提示是新触发的
         口渴之类，调用方另起一行接在正文后面。
         """
+        base = self._move_base_cost(overweight)  # 要在步数加一之前算
         self.turns += 1
         self.indoor_steps = (self.indoor_steps + 1) % stats.INDOOR_STEPS_PER_COST
         if not self.character:
             return "", ""
+        # 饥饿 / 口渴的体力倍率按分数累加，攒满 1 点才真正扣（所有计算向下取整）
+        self.stamina_carry += base * self.need_stamina_multiplier()
+        cost = math.floor(self.stamina_carry)
+        self.stamina_carry -= cost
         note = self.spend_stamina(cost)
         minutes = stats.move_minutes(overweight)
         self.advance_time(minutes)
@@ -813,7 +828,8 @@ class Game:
         return f"第 {self.day} 天 {self.minutes // 60:02d}:{self.minutes % 60:02d}"
 
     def advance_time(self, minutes):
-        """推进时间，跨过午夜就进入下一天。"""
+        """推进时间，跨过午夜就进入下一天；食物和水源随时间下降。"""
+        self._drain_needs(minutes)
         self.minutes += minutes
         while self.minutes >= stats.MINUTES_PER_DAY:
             self.minutes -= stats.MINUTES_PER_DAY
@@ -922,6 +938,10 @@ class Game:
         level = self.load_level()
         if level != "normal":
             active.append(self._load_condition(level))
+        for need in ("food", "water"):
+            cond = self._need_condition(need)
+            if cond:
+                active.append(cond)
         return active
 
     def _purge_conditions(self):
@@ -940,35 +960,55 @@ class Game:
         """身上有没有这个异常状态（含力竭、超重这些实时算出来的）。"""
         return any(x.get("id") == condition_id for x in self.conditions())
 
-    def thirsty(self):
-        """是不是口渴了：口渴时体力消耗翻倍（stats.move_cost）。"""
-        return self.has_condition("thirst")
 
     def spend_stamina(self, amount):
-        """扣体力并累计消耗量；累计满 THIRST_STAMINA 点就口渴（喝水能解除）。
-
-        返回要补在正文里的提示（没触发口渴就是空字符串）。口渴是一次性的：
-        攒够一次就从头再数，已经口渴时再攒够也不会重复叠加。
-        """
+        """扣体力。返回要补在正文里的提示（现在没有，留着接口）。
+        以前这里按累计消耗触发口渴；口渴现在由水源条决定（need_stage）。"""
         c = self.character
-        if not c or amount <= 0:
-            return ""
-        c.stamina = max(0, c.stamina - amount)
-        self.stamina_spent += amount
-        if self.stamina_spent < stats.THIRST_STAMINA:
-            return ""
-        self.stamina_spent = 0
-        if self.thirsty():
-            return ""
-        c.conditions.append({
-            "id": "thirst",
-            "name": "口渴",
-            "source": "stamina",
-            "effect": f"体力消耗 ×{stats.THIRST_COST_MULTIPLIER}",
-            "note": "喝水（使用 矿泉水）可以解除",
-        })
-        return (f"你嗓子干得发疼——体力累计消耗了 {stats.THIRST_STAMINA} 点，你口渴了。\n"
-                f"（口渴：体力消耗 ×{stats.THIRST_COST_MULTIPLIER}，喝水可以解除）")
+        if c and amount > 0:
+            c.stamina = max(0, c.stamina - amount)
+        return ""
+
+    # ---------- 食物与水源 ----------
+
+    def need_stage(self, need):
+        """食物 / 水源当前的等级（0~3，见 stats.need_stage）。"""
+        return stats.need_stage(getattr(self.character, need))
+
+    def need_stamina_multiplier(self):
+        """饥饿和口渴各自的体力倍率相乘（不同来源相乘）。"""
+        if not self.character:
+            return Fraction(1)
+        return (stats.need_stamina_multiplier(self.need_stage("food"))
+                * stats.need_stamina_multiplier(self.need_stage("water")))
+
+    def _need_condition(self, need):
+        stage = self.need_stage(need)
+        if not stage:
+            return None
+        name = stats.NEED_STAGE_NAMES[need][stage - 1]
+        effect = f"体力消耗 +{stats.NEED_STAGE_STAMINA_PERCENT[stage - 1]}%"
+        if stage == 3:
+            effect += f"，每回合生命 −{stats.NEED_STARVING_HP_PER_TURN}"
+        fix = "吃点东西" if need == "food" else "喝点水"
+        label = "食物" if need == "food" else "水源"
+        return {"id": "hunger" if need == "food" else "thirst", "name": name, "source": need,
+                "effect": effect, "note": f"{label} {getattr(self.character, need)}/{stats.NEED_MAX}，{fix}可以缓解"}
+
+    def _drain_needs(self, minutes):
+        """时间流逝：食物每 30 分钟 −1、水源每 15 分钟 −1；跨过等级时记一句提示。"""
+        c = self.character
+        if not c:
+            return
+        for need, per_point in (("food", stats.FOOD_MINUTES_PER_POINT), ("water", stats.WATER_MINUTES_PER_POINT)):
+            before = self.need_stage(need)
+            self.need_minutes[need] += minutes
+            drop, self.need_minutes[need] = divmod(self.need_minutes[need], per_point)
+            setattr(c, need, max(0, getattr(c, need) - drop))
+            after = self.need_stage(need)
+            if after > before:
+                cond = self._need_condition(need)
+                self.pending_notes.append(f"（你{cond['name'].rstrip('！')}了：{cond['effect']}）")
 
     def food_blocked(self):
         """饱腹期间不能再吃带食物标签的东西：返回拦下来的那句话，能吃就返回空。"""
@@ -1050,14 +1090,16 @@ class Game:
         c.conditions = [x for x in c.conditions if x.get("id") != condition_id]
         return f"{found.get('name', '异常状态')}解除了。"
 
-    def next_move_cost(self, overweight=False):
-        """下一步要扣多少体力：室内外一样，只有凑满 10 步的那一步才扣，其余是 0。
-
-        口渴时这一步的消耗翻倍；超重也翻倍，两者叠乘。
-        """
+    def _move_base_cost(self, overweight=False):
+        """这一步的基础体力消耗（还没乘饥饿 / 口渴倍率）：只有凑满 10 步的那一步才扣，其余是 0；超重翻倍。"""
         if self.indoor_steps + 1 >= stats.INDOOR_STEPS_PER_COST:
-            return stats.move_cost(overweight, self.thirsty())
+            return stats.move_cost(overweight)
         return 0
+
+    def next_move_cost(self, overweight=False):
+        """下一步实际会扣多少体力：基础消耗 × 饥饿 / 口渴倍率，加上之前攒下的小数部分，向下取整。"""
+        exact = self.stamina_carry + self._move_base_cost(overweight) * self.need_stamina_multiplier()
+        return math.floor(exact)
 
     def cmd_wait(self, arg):
         """等待：战斗外原地等一回合（推进时间、计入生命恢复的回合）。
@@ -1075,10 +1117,17 @@ class Game:
         return text
 
     def _regenerate(self):
-        """每隔一定回合按体质恢复生命。"""
+        """每个回合结束时调用：每隔一定回合按体质恢复生命；饿死了 / 渴死了每回合掉血。"""
         c = self.character
-        if c and self.turns % stats.REGEN_INTERVAL == 0:
+        if not c:
+            return
+        if self.turns % stats.REGEN_INTERVAL == 0:
             c.hp = min(self.options.max_hp(c), c.hp + stats.hp_regen(c.attributes))
+        drain = sum(stats.NEED_STARVING_HP_PER_TURN for need in ("food", "water") if self.need_stage(need) == 3)
+        if drain:
+            c.hp = max(0, c.hp - drain)
+            self.pending_notes.append(f"（又饿又渴的身体在透支：生命 −{drain}，剩 {c.hp}）" if drain > 1
+                                      else f"（{'饥饿' if self.need_stage('food') == 3 else '脱水'}让你越来越虚弱：生命 −{drain}，剩 {c.hp}）")
 
     # ---------- 背包：一格一堆 ----------
     #
@@ -2134,7 +2183,8 @@ class Game:
             "next_stack_id": self.next_stack_id,
             "turns": self.turns,
             "indoor_steps": self.indoor_steps,
-            "stamina_spent": self.stamina_spent,  # 累计消耗的体力（攒满就口渴）
+            "need_minutes": self.need_minutes,  # 食物 / 水源下一次 −1 前已过的分钟
+            "stamina_carry": [self.stamina_carry.numerator, self.stamina_carry.denominator],
             "food_uses": self.food_uses,          # 最近几次进食的时间（判断饱腹）
             "day": self.day,
             "minutes": self.minutes,
@@ -2196,7 +2246,11 @@ class Game:
         self.current_room = state["current_room"]
         self.turns = state["turns"]
         self.indoor_steps = state.get("indoor_steps", 0)
-        self.stamina_spent = int(state.get("stamina_spent") or 0)
+        self.need_minutes = dict({"food": 0, "water": 0}, **(state.get("need_minutes") or {}))
+        carry = state.get("stamina_carry") or [0, 1]
+        self.stamina_carry = Fraction(carry[0], carry[1])
+        if self.character:  # 以前的口渴是按体力消耗挂上的状态，现在由水源条决定，旧的摘掉
+            self.character.conditions = [x for x in self.character.conditions if x.get("id") != "thirst"]
         self.food_uses = [int(t) for t in state.get("food_uses", [])
                           if isinstance(t, (int, float))]
         self.day = state.get("day", stats.START_DAY)

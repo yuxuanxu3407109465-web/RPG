@@ -418,12 +418,12 @@
         "food"
       ],
       "use": {
-        "hint": "体力 +20、生命 +1",
+        "hint": "食物 +30、生命 +1",
         "message": "你拉开罐头盖，几口把里面的肉吃了下去。",
         "effects": [
           {
-            "type": "stamina",
-            "amount": 20
+            "type": "food",
+            "amount": 30
           },
           {
             "type": "hp",
@@ -445,16 +445,12 @@
         "food"
       ],
       "use": {
-        "hint": "体力 +10，解除口渴",
+        "hint": "水源 +30",
         "message": "你拧开瓶盖，一口气喝了小半瓶。",
         "effects": [
           {
-            "type": "stamina",
-            "amount": 10
-          },
-          {
-            "type": "cure",
-            "condition": "thirst"
+            "type": "water",
+            "amount": 30
           }
         ]
       }
@@ -501,10 +497,15 @@
         "message": "你撕开包装纸，几口把能量棒吞了下去，胃里一阵发热。",
         "effects": [
           {
+            "type": "food",
+            "amount": 10
+          },
+          {
             "type": "stamina",
-            "ratio": 0.5
+            "ratio": 0.25
           }
-        ]
+        ],
+        "hint": "食物 +10、体力 +25%"
       }
     },
     "power_bank": {

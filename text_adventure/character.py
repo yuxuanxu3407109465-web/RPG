@@ -36,6 +36,8 @@ class Character:
     perks: List[str] = field(default_factory=list)  # 开卡时选的 perk id
     hp: int = 0
     stamina: int = 0  # 当前体力，上限由体质和力量推导（stats.stamina_max）
+    food: int = 100  # 食物（stats.NEED_MAX 上限），随时间下降
+    water: int = 100  # 水源，随时间下降
     # 异常状态列表。体力不足造成的力竭不放在这里，它由体力实时推导（stats.is_exhausted）
     conditions: List[dict] = field(default_factory=list)
 
@@ -154,6 +156,7 @@ def format_sheet(character, options, items, carried_weight=None, tree_names=None
         f"{character.name} · {character.gender} · {character.age} 岁 · {character.height} cm",
         f"等级 {character.level}（经验 {character.xp}/{stats.xp_to_next_level(character.level, options)}）"
         f"    生命值 {character.hp or hp_max}/{hp_max}    体力 {stamina_now}/{stamina_cap}"
+        f"    食物 {character.food}/{stats.NEED_MAX}    水源 {character.water}/{stats.NEED_MAX}"
         f"    未使用技能点 {character.skill_points}",
         f"样貌：{character.appearance}",
         f"背景：{background['name']}",

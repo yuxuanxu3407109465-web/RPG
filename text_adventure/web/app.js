@@ -778,6 +778,19 @@
         esc(st.value) + '/' + esc(st.max) + '</span></div>';
     }
 
+    // 食物（绿）、水源（蓝）
+    if (state.needs) {
+      [['food', '食物', 'food-fill'], ['water', '水源', 'water-fill']].forEach(function (n) {
+        var v = state.needs[n[0]], max = state.needs.max || 100;
+        var p = Math.max(0, Math.min(100, Math.round(v / max * 100)));
+        var stage = state.needs[n[0] + '_stage'] || 0;
+        html += '<div class="hp-row">' + icon(n[0] === 'food' ? 'item-generic' : 'rest') +
+          '<span class="res-label">' + n[1] + '</span><div class="hp-track need-track">' +
+          '<div class="hp-fill ' + n[2] + (stage ? ' stage' + stage : '') + '" style="width:' + p + '%"></div></div><span>' +
+          esc(v) + '/' + esc(max) + '</span></div>';
+      });
+    }
+
     // 负重写出轻载 / 中载 / 重载
     if (state.carry) {
       html += '<div class="kv"><span class="k">负重</span><span class="v">' + esc(state.carry.weight) +
