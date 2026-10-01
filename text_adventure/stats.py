@@ -85,6 +85,31 @@ def widen_crit_range(crit_range, multiplier):
     return "20" if low == 20 else f"{low}-20"
 
 
+# 手持物（武器、盾牌……）的类别：
+#   one_hand  单手：主手、副手都能拿
+#   two_hand  双手：只能拿在主手，并且强制占掉副手（副手原来的东西会被卸下）
+#   main_hand 主手：只能拿在主手（极少数特殊物品）
+#   off_hand  副手：只能拿在副手（例如盾牌）
+HOLD_TYPES = {"one_hand": "单手", "two_hand": "双手", "main_hand": "主手", "off_hand": "副手"}
+
+
+def hold_type(item):
+    """手持物的类别：数据里写了 hold 就用它；没写的武器按单手，盾牌按副手。不是手持物返回 None。"""
+    if item.get("hold"):
+        return item["hold"]
+    if item.get("weapon"):
+        return "two_hand" if item["weapon"].get("hands") == 2 else "one_hand"
+    if "shield" in item:
+        return "off_hand"
+    return None
+
+
+def hold_slots(item):
+    """这件手持物能放进哪些手的位置。"""
+    return {"one_hand": ["main_hand", "off_hand"], "two_hand": ["main_hand"],
+            "main_hand": ["main_hand"], "off_hand": ["off_hand"]}.get(hold_type(item), [])
+
+
 # 武器持握方式（Game.grip_style 返回 id）；技能效果用 grip 限定生效条件
 GRIPS = {"unarmed": "徒手", "one_hand": "单手", "dual_wield": "双持", "two_hand": "双手", "shield": "持盾"}
 

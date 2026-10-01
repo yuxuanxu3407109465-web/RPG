@@ -190,6 +190,8 @@ class World:
                 name, low, high = stats.ARMOR_CLASSES[armor["class"]]
                 if not low <= armor.get("value", 0) <= high:
                     raise ValueError(f"{where}：{name}的基础护甲值要在 {low}~{high} 之间")
+            if item.get("hold") and item["hold"] not in stats.HOLD_TYPES:
+                raise ValueError(f"world.json 里的物品 {item_id}：手持类别要是 {'、'.join(stats.HOLD_TYPES)} 之一")
             if item.get("quality", "normal") not in stats.QUALITIES:
                 raise ValueError(f"world.json 里的物品 {item_id}：等阶要是 {'、'.join(stats.QUALITIES)} 之一")
             gear = item.get("gear")
@@ -1637,52 +1639,70 @@ class Game:
             return f"\n你手里没有{weapon}武器了，{stance['name']}姿态解除。"
         return ""
 
-    def _switch_hand(self, item_id, want):
-        """把已经拿在手上的武器换到另一只手：另一只手空着就挪过去，有武器就互换。
+    def _hold_type(self, item_id):
+        return stats.hold_type(self.world.items[item_id]) if item_id else None
 
-        返回一句结果文字；这种情况不适用（双手武器、对面拿的是盾牌或不是武器）返回 None，
-        调用方会退回“你已经拿着 X 了”。
+    def _holding_two_handed(self):
+        main = self.equipment["main_hand"]
+        return bool(main) and main == self.equipment["off_hand"]
+
+    def _switch_hand(self, item_id, want):
+        """把已经拿在手上的单手物换到另一只手：另一只手空着就挪过去，拿着单手物就互换。
+
+        返回一句结果文字；不适用的情况（不是单手物）返回 None，调用方会退回“你已经拿着 X 了”。
         """
         source = next((s for s, held in self.equipment.items() if held == item_id), None)
-        if not source or source == want:
+        if not source or source == want or self._hold_type(item_id) != "one_hand":
             return None
         where = "主手" if want == "main_hand" else "副手"
         from_where = "主手" if source == "main_hand" else "副手"
         name = self.world.items[item_id]["name"]
-        if self._weapon(item_id).get("hands", 1) == 2:
-            return None  # 双手武器本来就占两只手，先卸下再说
         other = self.equipment[want]
-        if other and (self._shield(other) or not self._weapon(other)):
+        if other and self._hold_type(other) != "one_hand":
             return (f"{name}现在拿在{from_where}；{where}那边的{self.world.items[other]['name']}"
-                    f"不是武器，换不过去——先把它收起来。")
+                    f"只能拿在{stats.HOLD_TYPES[self._hold_type(other)]}，换不过去——先把它收起来。")
         self.equipment[source], self.equipment[want] = other, item_id
         if other:
             return f"你把{name}换到{where}，{self.world.items[other]['name']}换到{from_where}。"
         return f"你把{name}从{from_where}换到{where}。"
 
-    def _equip_weapon_into(self, item_id, slot):
-        """把武器拿到指定的那只手上（网页版拖到哪个方框就进哪只手）。"""
+    def _hold(self, item_id, want=None):
+        """把手持物（武器、盾牌……）拿到手上，按类别决定放哪只手：
+        单手：指定了就放指定的手；没指定先放主手，主手有东西放副手，都满了替换主手。
+        双手：只能放主手，同时占掉副手（两只手原来的东西都收起来）。
+        主手 / 副手：只能放在那一只手。
+        手上原本是双手物的话，换任何东西都要先把它整个放下。"""
         name = self.world.items[item_id]["name"]
-        weapon = self._weapon(item_id)
+        kind = self._hold_type(item_id)
+        allowed = stats.hold_slots(self.world.items[item_id])
+        if want and want not in allowed:
+            return f"{name}是{stats.HOLD_TYPES[kind]}物品，只能拿在{'、'.join('主手' if s == 'main_hand' else '副手' for s in allowed)}。"
         put_away = set()
-        if weapon.get("hands", 1) == 2:
-            # 双手武器占两只手，先把手上的东西都收起来
-            put_away = {i for i in self.equipment.values() if i}
+        if kind == "two_hand" or self._holding_two_handed():
+            put_away = {i for i in self.equipment.values() if i} if kind == "two_hand" else {self.equipment["main_hand"]}
+            if kind != "two_hand":
+                self.equipment = {"main_hand": None, "off_hand": None}
+        if kind == "two_hand":
             self.equipment = {"main_hand": item_id, "off_hand": item_id}
             where = "双手"
         else:
-            current = {i for i in self.equipment.values() if i}
-            two_handed_held = any(
-                self._weapon(i) and self._weapon(i).get("hands", 1) == 2 for i in current)
-            if two_handed_held:  # 手上是双手武器，得先整个放下
-                put_away |= current
-                self.equipment = {"main_hand": None, "off_hand": None}
-            elif self.equipment.get(slot):
+            if want:
+                slot = want
+            elif len(allowed) == 1:
+                slot = allowed[0]
+            elif not self.equipment["main_hand"]:
+                slot = "main_hand"
+            elif not self.equipment["off_hand"]:
+                slot = "off_hand"
+            else:
+                slot = "main_hand"
+            if self.equipment[slot]:
                 put_away.add(self.equipment[slot])
             self.equipment[slot] = item_id
             where = "主手" if slot == "main_hand" else "副手"
         self._take_from_inventory(item_id)
         text = f"你把{name}拿在{where}。"
+        put_away.discard(None)
         if put_away:
             text = "你收起了" + "、".join(self.world.items[i]["name"] for i in put_away) + "，" + text
         return text + self.stow_all(put_away) + self._check_stance()
@@ -1700,7 +1720,7 @@ class Game:
         if not item_id:
             held = self._match(arg, sorted(self.equipped_ids()), self.world.items)
             if held and want:
-                # 已经拿在手上的武器：拖到另一只手的方框上就直接换手
+                # 已经拿在手上的东西：拖到另一只手的方框上就直接换手
                 switched = self._switch_hand(held, want)
                 if switched:
                     return switched
@@ -1711,53 +1731,11 @@ class Game:
         if self.world.wear_candidates(item_id):
             before = self.load_level()  # 换背包会改变减重率
             return self._wear(item_id) + self._load_change_note(before)
-        if self._shield(item_id):
-            return self._equip_shield(item_id)
-        weapon = self._weapon(item_id)
-        if not weapon:
+        if not self._hold_type(item_id):
             return f"{name}没法装备。"
-        if self.options.perk_effect(self.character.perks, "no_weapons") if self.character else False:
+        if self._weapon(item_id) and self.character and self.options.perk_effect(self.character.perks, "no_weapons"):
             return f"你是踢腿的武道家，不用武器——{name}拿在手上反而碍事。"
-        if want:
-            return self._equip_weapon_into(item_id, want)
-
-        two_handed = weapon.get("hands", 1) == 2
-        main = self.equipment["main_hand"]
-        put_away = set()
-        # 换上双手武器，或者原来拿的是双手武器，都要先把手空出来
-        if two_handed or (main and self._weapon(main).get("hands", 1) == 2):
-            put_away = {i for i in self.equipment.values() if i}
-            self.equipment = {"main_hand": None, "off_hand": None}
-        if two_handed:
-            self.equipment = {"main_hand": item_id, "off_hand": item_id}
-            where = "双手"
-        elif not self.equipment["main_hand"]:
-            self.equipment["main_hand"], where = item_id, "主手"
-        elif not self.equipment["off_hand"]:
-            self.equipment["off_hand"], where = item_id, "副手"
-        else:
-            put_away.add(self.equipment["main_hand"])
-            self.equipment["main_hand"], where = item_id, "主手"
-
-        self._take_from_inventory(item_id)
-        text = f"你把{name}拿在{where}。"
-        if put_away:
-            text = "你收起了" + "、".join(self.world.items[i]["name"] for i in put_away) + "，" + text
-        return text + self.stow_all(put_away) + self._check_stance()
-
-    def _equip_shield(self, item_id):
-        """盾牌固定拿在副手；原来副手的东西收起来，拿着双手武器的话也要放下。"""
-        main, off = self.equipment["main_hand"], self.equipment["off_hand"]
-        put_away = {off} if off else set()
-        if main and main == off:  # 双手武器
-            put_away = {main}
-            self.equipment["main_hand"] = None
-        self.equipment["off_hand"] = item_id
-        self._take_from_inventory(item_id)
-        text = f"你把{self.world.items[item_id]['name']}拿在副手。"
-        if put_away:
-            text = "你收起了" + "、".join(self.world.items[i]["name"] for i in put_away) + "，" + text
-        return text + self.stow_all(put_away) + self._check_stance()
+        return self._hold(item_id, want)
 
     def cmd_unequip(self, arg):
         if not arg:

@@ -386,9 +386,9 @@
       "weight": 0.5,
       "weapon": {
         "type": "blunt",
-        "hands": 1,
         "damage": "1d4"
-      }
+      },
+      "hold": "one_hand"
     },
     "crowbar": {
       "name": "撬棍",
@@ -399,9 +399,9 @@
       "weight": 3,
       "weapon": {
         "type": "blunt",
-        "hands": 1,
-        "damage": "1d8"
-      }
+        "damage": "2d6"
+      },
+      "hold": "two_hand"
     },
     "canned_food": {
       "name": "肉罐头",
@@ -476,10 +476,10 @@
       "weight": 0.3,
       "weapon": {
         "type": "short_blade",
-        "hands": 1,
         "damage": "1d6",
         "crit_range": "18-20"
-      }
+      },
+      "hold": "one_hand"
     },
     "energy_bar": {
       "name": "能量棒",
@@ -527,9 +527,9 @@
       "weight": 1.2,
       "weapon": {
         "type": "long_blade",
-        "hands": 1,
         "damage": "1d8"
-      }
+      },
+      "hold": "one_hand"
     },
     "motorcycle_helmet": {
       "name": "摩托车头盔",
@@ -554,7 +554,8 @@
       ],
       "description": "一面透明的聚碳酸酯防暴盾，边缘有几道深深的抓痕。",
       "weight": 4,
-      "shield": {}
+      "shield": {},
+      "hold": "off_hand"
     },
     "riding_jacket": {
       "name": "骑行夹克",

@@ -545,10 +545,11 @@ class Session:
         if data.get("armor"):
             return f"护甲 +{stats.armor_value(data)}"
         weapon = data.get("weapon")
+        hold = stats.HOLD_TYPES.get(stats.hold_type(data), "")
         if weapon:
-            return f"{self.world.weapon_types.get(weapon['type'], weapon['type'])} {weapon['damage']}"
+            return f"{hold}{self.world.weapon_types.get(weapon['type'], weapon['type'])} {stats.weapon_damage(data)}"
         if "shield" in data:
-            return "盾牌"
+            return f"{hold}盾牌"
         gear = data.get("gear")
         if gear and gear.get("weight_reduction"):
             return f"减重 {gear['weight_reduction']}%"
@@ -558,12 +559,7 @@ class Session:
         """这件东西能装在哪些位置（前端据此判断拖过去合不合法）。"""
         if self.world.wear_candidates(item_id):
             return self.world.wear_candidates(item_id)
-        data = self.world.items[item_id]
-        if "shield" in data:
-            return ["off_hand"]
-        if data.get("weapon"):
-            return ["main_hand", "off_hand"]
-        return []
+        return stats.hold_slots(self.world.items[item_id])
 
     def quick_action(self, item_id):
         """快捷栏里点这件物品时默认执行什么：返回 {cmd, label}。"""

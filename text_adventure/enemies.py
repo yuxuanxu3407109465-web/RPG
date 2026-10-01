@@ -140,7 +140,7 @@ class EnemyBook:
         arms = sum(1 for limb in ("left_arm", "right_arm") if limb not in missing)
 
         weapon = self._pick_weapon(table.get("weapons", []), rng)
-        if weapon and self.items[weapon]["weapon"].get("hands", 1) > arms:
+        if weapon and (2 if stats.hold_type(self.items[weapon]) == "two_hand" else 1) > arms:
             weapon = None  # 胳膊不够，拿不了这件武器
         armor_items = [e["item"] for e in table.get("armor", []) if rng.random() * 100 < e["chance"]]
         armor = sum(stats.armor_value(self.items[i]) for i in armor_items)
