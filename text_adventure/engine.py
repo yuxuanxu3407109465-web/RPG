@@ -1816,7 +1816,7 @@ class Game:
         return c.hp * 100 <= self.options.max_hp(c) * stats.LAST_STAND_HP_PERCENT
 
     def bleed_damage(self):
-        """自己造成的流血每层每回合伤害（庸医：4 → 6）。"""
+        """自己造成的流血每层每回合伤害（残忍：4 → 6）。"""
         return self.options.perk_effect(self.character.perks, "bleed_damage") or stats.BLEED_DAMAGE
 
     def dodge(self):

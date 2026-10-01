@@ -93,7 +93,7 @@ python3 main.py
 | `character.py` | 角色、同伴、角色创建流程、角色卡 |
 | `stats.py` | 属性衍生数值、经验与升级的公式 |
 | `skills.py` | 技能树：解锁条件、学习、显示 |
-| `stances.py` | 姿态（长刃分支） |
+| `stances.py` | 姿态（重刃分支） |
 | `enemies.py` | 敌人：按模板生成，精英 / 首领加成 |
 | `dice.py` | 抛骰与 D20 / D100 检定 |
 | `map_view.py` | 文字地图 |
