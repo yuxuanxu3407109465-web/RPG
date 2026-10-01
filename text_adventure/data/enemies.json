@@ -171,7 +171,7 @@
     },
     "acid_blood": {
       "name": "酸蚀",
-      "description": "徒手攻击额外造成 1d4 强酸伤害，并叠 1 层强酸腐蚀（每层每回合 4 点、持续 3 回合，最多 3 层）",
+      "description": "徒手攻击额外造成 1d4 强酸伤害，并叠 1 层强酸腐蚀（每层每回合 4 点、持续 3 回合，最多 5 层）",
       "unarmed_extra_damage": {
         "damage": "1d4",
         "damage_type": "acid"
@@ -180,7 +180,7 @@
         "condition": "acid_corrosion",
         "damage": 4,
         "turns": 3,
-        "max_stacks": 3
+        "max_stacks": 5
       }
     },
     "long_tongue": {

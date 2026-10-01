@@ -699,7 +699,7 @@
       "hold": "one_hand",
       "description": "刀身弯成一道弧线的单手刀，砍起来很顺手。",
       "weapon": {
-        "type": "long_blade",
+        "type": "short_blade",
         "damage": "1d6",
         "crit_range": "18-20",
         "tags": [
@@ -716,7 +716,7 @@
       "hold": "one_hand",
       "description": "刀背刻满看不懂的纹路，血槽很深。不知道是谁、为了什么做的。（高稀有度）",
       "weapon": {
-        "type": "long_blade",
+        "type": "short_blade",
         "damage": "1d6",
         "crit_range": "18-20",
         "tags": [

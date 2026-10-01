@@ -4,15 +4,15 @@
       "id": "blade",
       "name": "锐器",
       "attribute": "agility",
-      "description": "刀、匕首、斧头等锋利的近战武器。",
+      "description": "刀、匕首、斧头等锋利的近战武器。流势：用长刃灵活切换姿态，同一招打出不同效果；破绽：用短刃削弱敌人的薄弱之处，专打要害。",
       "branches": [
         {
           "id": "long",
-          "name": "长刃"
+          "name": "流势"
         },
         {
           "id": "short",
-          "name": "短刃"
+          "name": "破绽"
         }
       ]
     },
