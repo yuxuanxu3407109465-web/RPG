@@ -198,6 +198,16 @@ def _attribute_text(enemy, attr):
     return text
 
 
+def mutation_text(mutation, enemy):
+    """变异描述里的 {体质x3}、{体质检定} 这类占位符，按这只僵尸的实际属性填上数字。"""
+    con = enemy.attributes["constitution"]
+    return mutation["description"].format(
+        体质x3=con * 3,
+        体质检定=stats.check_modifier(enemy.attributes, "constitution"),
+        盾牌格挡难度=stats.check_modifier(enemy.attributes, "constitution") + 10,
+    )
+
+
 def format_enemy(enemy, options, weapon_types, items, book):
     """敌人资料卡。"""
     a = enemy.attributes
@@ -217,7 +227,7 @@ def format_enemy(enemy, options, weapon_types, items, book):
         f"闪避 {dice_rules.format_number(enemy.dodge())}    先攻 {enemy.initiative()}"
         f"    行动点 每回合 {enemy.ap_per_turn()}（上限 {stats.ap_cap(a)}）",
         "肢体：" + ("缺了" + "、".join(LIMBS[x] for x in enemy.missing_limbs) if enemy.missing_limbs else "完整"),
-        "变异：" + ("、".join(f"{book.mutations[m]['name']}（{book.mutations[m]['description']}）" for m in enemy.mutations)
-                    if enemy.mutations else "无"),
+        "变异：" + ("；".join(f"{book.mutations[m]['name']}（{mutation_text(book.mutations[m], enemy)}）"
+                              for m in enemy.mutations) if enemy.mutations else "无"),
     ]
     return "\n".join(line for line in lines if line)

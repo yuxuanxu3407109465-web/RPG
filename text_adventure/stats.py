@@ -167,7 +167,7 @@ def damage_multiplier(modifiers, crit=False):
 
 
 # 伤害类型：护甲（伤害减免）只对物理伤害生效
-DAMAGE_TYPES = {"physical": "物理", "fire": "火焰", "bleed": "流血"}
+DAMAGE_TYPES = {"physical": "物理", "fire": "火焰", "bleed": "流血", "acid": "强酸"}
 
 
 def final_damage(raw, modifiers, armor, crit=False, damage_type="physical"):
@@ -410,7 +410,7 @@ def disarm_difficulty(a):
 
 
 def sidestep_distance(a):
-    """撤步后撤的距离（米）= 4 + 敏捷 ÷ 4。"""
+    """撤步后撤的距离（格）= 4 + 敏捷 ÷ 4。"""
     return 4 + a["agility"] // 4
 
 
@@ -457,8 +457,8 @@ def incinerate_range(a):
 
 
 def psionic_bolt_damage(level):
-    """焚化（灵能·塑能系）的火焰伤害 = 6 + 等级 × 2。"""
-    return 6 + level * 2
+    """焚化（灵能·塑能系）的火焰伤害 = 6 + 等级。"""
+    return 6 + level
 
 
 def psionic_heal(a, level):

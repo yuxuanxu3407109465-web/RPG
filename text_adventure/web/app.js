@@ -201,7 +201,7 @@
     var meta = [skill.cost + ' 点'];
     if (skill.active) meta.push('主动');
     if (skill.ap_cost) meta.push(skill.ap_cost + ' 行动点');
-    if (skill.cooldown) meta.push('冷却 ' + skill.cooldown + ' 回合');
+    if (skill.cooldown) meta.push(skill.cooldown);
     if (skill.weapon) meta.push('需要手持' + skill.weapon);
     var action;
     if (skill.learned) {

@@ -151,6 +151,46 @@
       "name": "表皮硬化",
       "description": "皮肤角质化，像一层甲壳：护甲 +4",
       "armor": 4
+    },
+    "bloater": {
+      "name": "尸爆",
+      "description": "生命降到 25% 以下时原地蓄力一回合（这一回合里被打死就不会爆炸），随后爆炸：半径 6 格内所有人类受到 {体质x3} 点强酸伤害（僵尸免疫）；可以做敏捷检定（难度 {体质检定}）把伤害减半，也可以用盾牌格挡（难度 {盾牌格挡难度}）",
+      "explode": {
+        "hp_below_percent": 25,
+        "delay_turns": 1,
+        "radius": 6,
+        "damage_per_constitution": 3,
+        "damage_type": "acid",
+        "half_on_agility_check": true,
+        "blockable": true,
+        "block_difficulty_bonus": 10,
+        "cancelled_if_killed_while_charging": true
+      }
+    },
+    "acid_blood": {
+      "name": "酸蚀",
+      "description": "徒手攻击额外造成 1d4 强酸伤害，并叠 1 层强酸腐蚀（每层每回合 4 点、持续 3 回合，最多 3 层）",
+      "unarmed_extra_damage": {
+        "damage": "1d4",
+        "damage_type": "acid"
+      },
+      "applies": {
+        "condition": "acid_corrosion",
+        "damage": 4,
+        "turns": 3,
+        "max_stacks": 3
+      }
+    },
+    "long_tongue": {
+      "name": "长舌",
+      "description": "长出一条长舌当武器（射程 7 格，1d6，精准看体质，一次 9 行动点）；被命中的人要做力量检定（难度 {体质检定}），失败就被拖到僵尸面前",
+      "tongue": {
+        "range": 7,
+        "damage": "1d6",
+        "ap_cost": 9,
+        "pull_check": "strength",
+        "type": "unarmed"
+      }
     }
   }
 }
