@@ -9,7 +9,7 @@
         "walker"
       ],
       "description": "拖着脚走路的感染者，皮肤发灰，嘴里发出含糊的嘶吼。",
-      "level": 1,
+      "min_level": 1,
       "attributes": {
         "strength": 5,
         "agility": 5,
@@ -47,7 +47,7 @@
         "敏捷僵尸"
       ],
       "description": "瘦得只剩骨架的感染者，动作快得不像死人，但一碰就散架。",
-      "level": 1,
+      "min_level": 3,
       "attributes": {
         "strength": 6,
         "agility": 7,
@@ -85,7 +85,7 @@
         "肥胖僵尸"
       ],
       "description": "肿胀臃肿的感染者，走得很慢，挨好几下才会倒。",
-      "level": 1,
+      "min_level": 3,
       "attributes": {
         "strength": 6,
         "agility": 4,

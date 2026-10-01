@@ -124,7 +124,11 @@ class EnemyBook:
     def find_mutation(self, name):
         return next((m for m, info in self.mutations.items() if name in (m, info["name"])), None)
 
-    def create(self, template_id, tier, rng, forced_mutations=None):
+    def min_level(self, template_id):
+        """这种敌人允许生成的最低等级。"""
+        return self.templates[template_id].get("min_level", 1)
+
+    def create(self, template_id, tier, rng, forced_mutations=None, level=None):
         """生成一个敌人：模板属性 + 等阶加成 + 随机的武器、护甲、缺失肢体、变异。
         forced_mutations 给了就用它（测试用），否则按模板的 mutations 概率随机。"""
         t = self.templates[template_id]
@@ -132,7 +136,7 @@ class EnemyBook:
         base = dict(t["attributes"])
         buffs = {a: [(tier_name, physical_bonus)] for a in stats.PHYSICAL_ATTRIBUTES} if physical_bonus else {}
         attributes = stats.apply_buffs(base, buffs)
-        level = t.get("level", 1)
+        level = max(level or 1, self.min_level(template_id))  # 不能低于这种敌人的最低等级
         max_hp = stats.max_hp(attributes, level) + hp_bonus
         name = t["name"] if tier == "normal" else f"{tier_name}{t['name']}"
 

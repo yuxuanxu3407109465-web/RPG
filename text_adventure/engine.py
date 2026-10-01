@@ -1953,16 +1953,20 @@ class Game:
             return None
         tier = "normal"
         forced = None
+        level = None
         for part in parts[1:]:
             found_tier = next((t for t, info in stats.ENEMY_TIERS.items() if part in (t, info[0])), None)
             mutation = self.enemies.find_mutation(part)
-            if found_tier:
+            level_match = re.match(r"^(\d+)级?$", part)
+            if level_match:
+                level = int(level_match.group(1))  # “5级”或“5”：指定等级（低于最低等级会被抬上来）
+            elif found_tier:
                 tier = found_tier
             elif mutation:
                 forced = (forced or []) + [mutation]  # 写了变异名就强制带上（测试用）
             else:
                 return None
-        return self.enemies.create(template_id, tier, self.dice.rng, forced)
+        return self.enemies.create(template_id, tier, self.dice.rng, forced, level)
 
     def cmd_enemy(self, arg):
         """敌人 <名字> <等阶>：查看敌人资料（测试用）。"""
@@ -1970,7 +1974,7 @@ class Game:
         names = "、".join(t["name"] for t in self.enemies.templates.values())
         if not arg:
             mutations = "、".join(m["name"] for m in self.enemies.mutations.values())
-            return (f"已有的敌人：{names}。用法：敌人 名字 等阶（{tiers}）变异，例如：敌人 僵尸 精英 表皮硬化"
+            return (f"已有的敌人：{names}。用法：敌人 名字 等级 等阶（{tiers}）变异，例如：敌人 僵尸 5级 精英 表皮硬化"
                     f"（变异：{mutations}；不写变异就按概率随机）")
         enemy = self._parse_enemy(arg)
         if not enemy:
