@@ -12,6 +12,10 @@
   一行都不用重写。
 - 同一个地址只跑一个服务：再次双击启动时先探测 /api/ping，如果本游戏已经在跑，
   就不另起一个服务、也不再开新标签页（除非加 --open），这样地址永远是同一个。
+- 关掉网页就等于关掉游戏：页面临走前用 sendBeacon 报一声 /api/bye，服务确认一个页面都
+  不剩了，就结束这一局并自己退出（刷新页面有十几秒宽限期，不会连服务一起关掉）。
+  页面被强杀、电脑休眠这种来不及打招呼的情况，靠心跳超时兜底（先只当“没人看”，
+  半小时还没有页面回来才真的结束）。存档一个字节都不动。
 - 只用标准库（http.server），不引入第三方依赖；只监听本机回环地址。
 """
 
@@ -32,7 +36,8 @@ import stats
 from character import CharacterCreator, CharacterOptions, Prompter, check_attributes
 from dice import Dice
 from engine import (
-    DIRECTION_NAMES, DIRECTIONS, REST_MINUTES_MAX, REST_MINUTES_MIN, SLOT_COUNT, Game, World,
+    DIRECTION_NAMES, DIRECTIONS, GRID_STEPS, REST_MINUTES_MAX, REST_MINUTES_MIN, SLOT_COUNT,
+    Game, World,
 )
 import skills as skill_rules
 from skills import SkillTrees, skill_details, tree_unlocked, unmet_requirements
@@ -42,12 +47,32 @@ WEB_DIR = BASE_DIR / "web"
 
 # 用来认出“这个端口上跑的是我们自己”，避免重复启动
 APP_ID = "fengcheng-day7"
-APP_VERSION = 2
+APP_VERSION = 3
 
 # 页面每隔 HEARTBEAT_SECONDS 秒报一次活；超过 IDLE_LIMIT 秒没动静就当成页面已经关了，
 # 再次启动时才会重新打开浏览器。
 HEARTBEAT_SECONDS = 20
 IDLE_LIMIT = 50
+
+# 页面说“我要关了”之后，服务再等这么久才真的退出：刷新页面会在这段时间里回来。
+CLOSE_GRACE_SECONDS = 12
+# 页面超过这么久没有心跳，就不算“还有人在看”了（ping.pages 会减掉它，重新双击会帮着开浏览器）。
+# 浏览器会把后台标签页的定时器降频到一分钟左右一次，所以这里留得比心跳间隔宽不少。
+PAGE_TIMEOUT = 150
+# 一个页面都没有的状态持续这么久，才真的结束这一局、退出服务。
+# 浏览器被强杀、电脑休眠这种来不及报备的情况会让心跳突然断掉，但人可能还会回来：
+# 先按“没人看”处理（重新双击开浏览器、接着玩内存里这一局），这么久还没人回来才结束。
+GAME_IDLE_TIMEOUT = 1800
+# 每隔这么久检查一次“还有没有页面在看”
+SWEEP_SECONDS = 10
+
+# 没带页面 id 的请求（老页面、curl 之类）统一算作这一个页面
+DEFAULT_PAGE_ID = "default"
+
+# main() 的退出码：启动器（启动网页版.bat）靠它决定那个黑窗口要不要自己关
+EXIT_OK = 0
+EXIT_PAGE_CLOSED = 2      # 页面关了 / 点过“退出游戏”：游戏和服务都结束了
+EXIT_ALREADY_RUNNING = 3  # 已经有一个在跑，这次什么都没做
 
 # 只允许这几条路径，避免任何路径穿越问题
 STATIC_FILES = {
@@ -68,8 +93,9 @@ REST_PRESETS = [(10, "10 分钟"), (30, "半小时"), (60, "1 小时"),
 
 MOVE_WORDS = ("走", "去", "go")
 
-# 这些指令执行完顺手在浮层里回一句（存档、读档、清空、休息）
-NOTICE_COMMANDS = ("存档", "读档", "清空", "休息", "等待", "save", "load", "clear", "rest", "wait")
+# 这些指令执行完顺手在浮层里回一句（存档、读档、清空、休息、拆分、堆叠）
+NOTICE_COMMANDS = ("存档", "读档", "清空", "休息", "等待", "拆分", "堆叠",
+                   "save", "load", "clear", "rest", "wait", "split", "stack")
 
 
 def is_move(text):
@@ -242,7 +268,14 @@ class Session:
         self.mode = "menu"  # menu / create / play / quit
         self.started = False
         self.bridge = None
-        self.last_seen = 0.0  # 页面最后一次心跳的时间，用来决定要不要重开浏览器
+        self.last_seen = 0.0  # 页面最后一次活动的时间，用来决定要不要重开浏览器
+        self.on_close = None  # 页面全关了以后用它停掉服务（main 里接到 server.shutdown）
+        self.pages = {}       # 页面 id -> 最后一次活动时间；关一个页面不影响另一个页面
+        self.ever_had_page = False
+        self.last_page_seen = 0.0   # 最后一次“有页面在”的时间（页面都走了以后用来等一会儿）
+        self.close_deadline = None  # 到这个时刻还没有页面回来，就结束游戏、退出服务
+        self.closed = False
+        self._watchdog = None
         self.world = World(BASE_DIR / "data" / "world.json")
         self.options = CharacterOptions(BASE_DIR / "data" / "character_options.json")
         self.skill_trees = SkillTrees(BASE_DIR / "data" / "skill_trees.json")
@@ -254,11 +287,93 @@ class Session:
 
     # ---------- 页面存活探测 ----------
 
-    def heartbeat(self):
-        """页面每隔一会儿叫一声，用来判断“还有人在看这个页面”。"""
+    def page_seen(self, page_id):
+        """有页面在活动：记一笔，顺便撤销“准备关掉”的倒计时。
+
+        page_id 由页面自己生成，每打开一次页面就换一个：同一个浏览器开了两个页面也能
+        分得清，关掉其中一个不会把另一个也结束掉。
+        """
+        page_id = page_id or DEFAULT_PAGE_ID
+        now = time.time()
         with self.lock:
-            self.last_seen = time.time()
+            self.pages[page_id] = now
+            self.last_seen = now
+            self.last_page_seen = now
+            self.ever_had_page = True
+            self.close_deadline = None
+            self._start_watchdog()
+        return page_id
+
+    def heartbeat(self, page_id=None):
+        """页面每隔一会儿叫一声，用来判断“还有人在看这个页面”。"""
+        self.page_seen(page_id)
         return {"type": "pong", "app": APP_ID, "version": APP_VERSION}
+
+    def page_closed(self, page_id):
+        """页面说“我要关了”（关标签页 / 刷新之前用 sendBeacon 报一声）。
+
+        这里只点上一个倒计时，不是立刻退服务：刷新页面会在宽限期里重新报到，
+        只有真的没有页面回来了，才结束这一局并把服务停掉。
+        """
+        page_id = page_id or DEFAULT_PAGE_ID
+        with self.lock:
+            self.pages.pop(page_id, None)
+            self.ever_had_page = True
+            self.last_page_seen = time.time()
+            if not self.pages:
+                self.close_deadline = time.time() + CLOSE_GRACE_SECONDS
+            self._start_watchdog()
+        return {"type": "bye", "app": APP_ID, "grace": CLOSE_GRACE_SECONDS}
+
+    def _start_watchdog(self):
+        """起一个后台线程盯着“还有没有页面在看”（只在拿着锁的时候调用）。"""
+        if self._watchdog is None:
+            self._watchdog = threading.Thread(target=self._watch_loop, daemon=True)
+            self._watchdog.start()
+
+    def _watch_loop(self):
+        while True:
+            time.sleep(SWEEP_SECONDS)
+            self._sweep()
+
+    def _sweep(self):
+        """心跳断了的页面剔掉；确定没人看了，才结束游戏、停掉服务。"""
+        now = time.time()
+        with self.lock:
+            for page_id in [p for p, seen in self.pages.items() if now - seen > PAGE_TIMEOUT]:
+                del self.pages[page_id]
+            if self.pages:
+                self.close_deadline = None   # 还有页面在看：撤销倒计时
+                return
+            if not self.ever_had_page or self.closed:
+                return  # 从来没有页面连上来过：别把刚起来的服务自己关掉
+            if self.close_deadline is None:
+                # 页面没打招呼就没了（被强杀、电脑休眠……）：先只当“没人看”，游戏再留一会儿，
+                # 人要是回来了（重新双击，或者标签页从冻结里醒过来）还能接着玩这一局。
+                if now - self.last_page_seen < GAME_IDLE_TIMEOUT:
+                    return
+                self.close_deadline = now
+            if now < self.close_deadline:
+                return
+        self.shutdown_because_page_closed()
+
+    def shutdown_because_page_closed(self):
+        """页面全关了：结束这一局，然后把本地服务也停掉。
+
+        存档一个字节都不动 —— 进度以玩家自己按下的那一下“保存”为准。
+        """
+        with self.lock:
+            if self.closed:
+                return
+            self.closed = True
+            self.game.running = False
+            self.started = False
+            self.mode = "menu"
+            self.pages = {}
+            callback = self.on_close
+        print("页面已关闭，游戏结束，服务停止。", flush=True)
+        if callback:
+            callback()
 
     def idle_seconds(self):
         """距上一次页面心跳过去了几秒；从来没有过就返回 None。"""
@@ -269,12 +384,15 @@ class Session:
 
     def ping(self):
         """给新启动的进程认人用：这个端口上跑的是不是这个游戏。"""
+        with self.lock:
+            pages = len(self.pages)
         return {
             "app": APP_ID,
             "version": APP_VERSION,
             "mode": self.mode,
             "started": self.started,
             "idle_seconds": self.idle_seconds(),
+            "pages": pages,   # 现在还有几个页面在看（0 就是没人看）
         }
 
     # ---------- 状态打包 ----------
@@ -282,24 +400,26 @@ class Session:
     def exits_for(self, room):
         """六个方向全部返回，颜色交给界面决定。
 
-        open    = 现在就能走（绿色）
-        danger  = 出口数据里写了 danger，那边有危险（红色）
-        blocked = 走不通、或者暂时过不去（保持原色，点了才会知道原因）
+        有场景格子的房间：一个方向 = 走一格。旁边的格子能走就是 open，
+        是墙/障碍物就是 blocked；那一格正好是门 / 楼梯时，照旧带上出口信息。
+        没有场景数据的房间退回老做法（一个方向 = 直接换房间）。
         """
         game = self.game
         result = []
         overweight = game.load_level() == "overweight"
+        grid = game.room_grid()
+        pos = game.player_pos(grid) if grid else None
         for direction in DIRECTIONS_ALL:
             exit_ = room["exits"].get(direction)
-            outdoor = bool(room.get("outdoor"))
             info = {
                 "id": direction,
                 "name": DIRECTION_NAMES.get(direction, direction),
                 "state": "blocked",
+                "tile": None,
                 "target": None,
                 "danger": None,
-                "cost": game.next_move_cost(outdoor, overweight) if game.character else 0,
-                "minutes": stats.move_minutes(outdoor, overweight),
+                "cost": game.next_move_cost(overweight) if game.character else 0,
+                "minutes": stats.move_minutes(overweight),
             }
             if exit_ is not None:
                 danger = None
@@ -310,16 +430,140 @@ class Session:
                     target = exit_.get("to")
                 else:
                     target = exit_
-                passable = not required or required in game.inventory
-                if danger:
+                # 要带某件东西才过得去（例如下地下室要手电筒）：背着或者装备着都算
+                passable = (not required or game.count_item(required) > 0
+                            or required in game.equipped_ids())
+                if not passable:
+                    # 缺东西就过不去：按钮画成走不通，提示里写清楚为什么过不去
+                    info["state"] = "blocked"
+                    blocked_message = exit_.get("blocked_message") if isinstance(exit_, dict) else None
+                    info["danger"] = blocked_message or danger
+                elif danger:
                     info["state"] = "danger"
                     info["danger"] = danger
-                elif passable:
+                else:
                     info["state"] = "open"
                 if target in game.visited:
                     info["target"] = self.world.rooms[target]["name"]
+            if grid:
+                self._grid_direction_info(game, grid, pos, direction, exit_, info)
             result.append(info)
         return result
+
+    def _grid_direction_info(self, game, grid, pos, direction, exit_, info):
+        """按场景格子修正这一个方向的状态（见 exits_for 的注释）。"""
+        if direction in ("up", "down"):
+            tile = game.door_tile(grid, direction)
+            if tile and exit_ is not None:
+                near = max(abs(tile[0] - pos[0]), abs(tile[1] - pos[1])) <= 1
+                info["tile"] = "stairs"
+                # 楼上楼下的出口信息照旧，只有站到楼梯边上才点得动
+                info["state"] = info["state"] if near else "blocked"
+                if not near:
+                    info["danger"] = info["danger"] or "楼梯不在这儿，先走过去"
+            else:
+                info["state"] = "blocked"
+            return
+        dx, dy = GRID_STEPS[direction]
+        target = (pos[0] + dx, pos[1] + dy)
+        walkable = game.tile_walkable(grid, target[0], target[1])
+        door_dir = game.door_direction(grid, target) if walkable else None
+        if not walkable:
+            info["tile"] = "wall"
+            info["state"] = "blocked"
+            info["target"] = None
+            info["danger"] = None
+        elif door_dir and exit_ is not None:
+            info["tile"] = "door"
+        else:
+            info["tile"] = "floor"
+            info["state"] = "open"
+            info["target"] = None
+            info["danger"] = None
+
+    def equip_slots(self):
+        """装备栏：每个位置一个方框，给网页版拖动装备用。"""
+        game = self.game
+        slots = []
+        for slot, label in (("main_hand", "主手"), ("off_hand", "副手")):
+            slots.append(self._slot_payload(slot, label, "hand", game.equipment.get(slot)))
+        for slot, label in self.world.armor_slots.items():
+            slots.append(self._slot_payload(slot, label, "armor", game.worn.get(slot)))
+        for slot, info in self.world.gear_slots.items():
+            slots.append(self._slot_payload(slot, info["name"], info["kind"], game.worn.get(slot)))
+        return slots
+
+    def _slot_payload(self, slot, label, kind, item_id):
+        payload = {"slot": slot, "label": label, "kind": kind, "item": None}
+        if not item_id:
+            return payload
+        data = self.world.items[item_id]
+        payload["item"] = {
+            "id": item_id,
+            "name": self.game.item_display_name(item_id),
+            "weight": data.get("weight", 1),
+            "detail": self.item_detail(item_id),
+            "slots": self.item_slots(item_id),  # 拖到另一只手上换手时要用
+            "weapon": bool(data.get("weapon")),
+            "count": 1,
+        }
+        return payload
+
+    def item_payload(self, item_id, stack=None):
+        """一件物品打包给前端；给了 stack 就连这一堆（sid / 数量 / 能不能堆叠）一起带上。"""
+        data = self.world.items[item_id]
+        limit = stats.stack_max(data)
+        payload = {
+            "id": item_id,
+            "name": data["name"],
+            "usable": items.is_usable(data),
+            "use_hint": (data.get("use") or {}).get("hint", ""),
+            "desc": data.get("description", ""),
+            "weight": data.get("weight", 1),
+            "detail": self.item_detail(item_id),
+            "slots": self.item_slots(item_id),  # 能拖到哪些装备位上
+            "weapon": bool(data.get("weapon")),
+            # 快捷栏点一下默认做什么：能吃能喝就使用，武器就装备，其它就查看
+            "quick": self.quick_action(item_id),
+            "stackable": limit > 1,   # 只有带 stack 词条的物品才拆得开
+            "max": limit,
+        }
+        if stack is not None:
+            payload["sid"] = stack["sid"]
+            payload["count"] = stack["count"]
+            payload["auto"] = stack["auto"]  # 拆出来的那堆不会再被自动堆叠
+            payload["total_weight"] = round(data.get("weight", 1) * stack["count"], 2)
+        return payload
+
+    def inventory_state(self):
+        """背包按“一格一堆”下发，界面照着一堆一个图标画。"""
+        return [self.item_payload(s["id"], s) for s in self.game.inventory]
+
+    def item_detail(self, item_id):
+        """物品方框里那一行小字：护甲写护甲值，武器写伤害，其它写重量分类。"""
+        data = self.world.items[item_id]
+        if data.get("armor"):
+            return f"护甲 +{stats.armor_value(data)}"
+        weapon = data.get("weapon")
+        if weapon:
+            return f"{self.world.weapon_types.get(weapon['type'], weapon['type'])} {weapon['damage']}"
+        if "shield" in data:
+            return "盾牌"
+        gear = data.get("gear")
+        if gear and gear.get("weight_reduction"):
+            return f"减重 {gear['weight_reduction']}%"
+        return f"{data.get('weight', 1)} kg"
+
+    def item_slots(self, item_id):
+        """这件东西能装在哪些位置（前端据此判断拖过去合不合法）。"""
+        if self.world.wear_candidates(item_id):
+            return self.world.wear_candidates(item_id)
+        data = self.world.items[item_id]
+        if "shield" in data:
+            return ["off_hand"]
+        if data.get("weapon"):
+            return ["main_hand", "off_hand"]
+        return []
 
     def quick_action(self, item_id):
         """快捷栏里点这件物品时默认执行什么：返回 {cmd, label}。"""
@@ -397,21 +641,8 @@ class Session:
 
         world = self.world
         room = world.rooms[game.current_room]
-        inventory = []
-        for item_id in game.inventory:
-            data = world.items[item_id]
-            inventory.append({
-                "id": item_id,
-                "name": data["name"],
-                "where": game.item_location(item_id),
-                "usable": items.is_usable(data),
-                "use_hint": (data.get("use") or {}).get("hint", ""),
-                "desc": data.get("description", ""),
-                "weight": data.get("weight", 1),
-                "weapon": bool(data.get("weapon")),
-                # 快捷栏点一下默认做什么：能吃能喝就使用，武器就装备，其它就查看
-                "quick": self.quick_action(item_id),
-            })
+        inventory = self.inventory_state()
+        bag_total = sum(item["count"] for item in inventory)
 
         c = game.character
         stance = game._current_stance()
@@ -424,8 +655,6 @@ class Session:
                 "min": REST_MINUTES_MIN,
                 "max": REST_MINUTES_MAX,
                 "presets": [{"minutes": m, "label": label} for m, label in REST_PRESETS],
-                "hint": "滑条可以从 1 分钟拖到 8 小时；每 %d 分钟恢复 %d%% 体力上限，8 小时足够补满。"
-                        % (stats.REST_MINUTES_PER_TICK, int(stats.REST_RECOVER_RATIO * 100)),
             },
             "skills": self.skills_state(),
             "room_items": [
@@ -457,11 +686,14 @@ class Session:
             "carry": {
                 "weight": game._carried_weight(),
                 "capacity": stats.carry_capacity(c.attributes),
+                "label": stats.load_label(game._carried_weight(),
+                                          stats.carry_capacity(c.attributes)),
+                "slots": bag_total,          # 一共几件（堆里的都算）
+                "stacks": len(inventory),    # 占背包几格（一格一堆）
             },
             "stamina": {
                 "value": c.stamina,
                 "max": stats.stamina_max(c.attributes),
-                "cost_multiplier": round(stats.stamina_cost_multiplier(c.attributes), 2),
                 "exhausted": stats.is_exhausted(c),
             },
             "conditions": game.conditions(),
@@ -490,6 +722,8 @@ class Session:
                 slot: (world.items[i]["name"] if i else None)
                 for slot, i in game.equipment.items()
             },
+            "equip_slots": self.equip_slots(),
+            "scene": game.scene_state(),
             "stance": stance["name"] if stance else None,
             "grip": game.grip_name(),
             "gear": [
@@ -616,6 +850,8 @@ class Session:
             self.game.running = False
             self.started = False
             self.mode = "quit"
+            self.closed = True   # 服务由 handler 停掉，别让看门狗再关一次
+            self.pages = {}
             return {
                 "type": "quit",
                 "lines": ["你退出了游戏，本地服务正在关闭。"],
@@ -663,12 +899,26 @@ class LazySession:
     def __init__(self):
         self._session = None
         self._lock = threading.Lock()
+        self._on_close = None
+
+    def set_on_close(self, callback):
+        """记下“怎么把服务停掉”；Session 还没建就先存着，建的时候再交给它。"""
+        with self._lock:
+            self._on_close = callback
+            if self._session is not None:
+                self._session.on_close = callback
 
     def get(self):
         with self._lock:
             if self._session is None:
                 self._session = Session()
+                self._session.on_close = self._on_close
             return self._session
+
+    def closed_by_page(self):
+        """服务是不是因为页面关了（或点了退出）才停的；没建过 Session 就不算。"""
+        with self._lock:
+            return bool(self._session and self._session.closed)
 
     def __getattr__(self, name):
         return getattr(self.get(), name)
@@ -736,7 +986,15 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as exc:
             self._json({"type": "error", "lines": ["请求格式不对：%s" % exc]}, 400)
             return
+        page = str(payload.get("page") or "")
         try:
+            if path == "/api/bye":
+                # 页面要关了：先回到它（浏览器会等这个 beacon 发完），再开始倒计时
+                self._json(self.session.page_closed(page))
+                return
+            if path != "/api/heartbeat":
+                # 心跳自己会记一笔；其它请求也说明页面还在，顺手记上
+                self.session.page_seen(page)
             if path == "/api/new":
                 self._json(self.session.start_creation())
             elif path == "/api/answer":
@@ -750,7 +1008,7 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/clear":
                 self._json(self.session.clear_slot(int(payload.get("slot") or 1)))
             elif path == "/api/heartbeat":
-                self._json(self.session.heartbeat())
+                self._json(self.session.heartbeat(page))
             elif path == "/api/command":
                 self._json(self.session.command(str(payload.get("text", ""))))
             elif path == "/api/quit":
@@ -816,17 +1074,19 @@ def announce_existing(host, port, info, args):
     """已经有一个在跑：不再起第二个服务，地址也永远是那一个，页面就不会越开越多。"""
     url = "http://%s:%d/" % (host, port)
     idle = (info or {}).get("idle_seconds")
+    pages = (info or {}).get("pages") or 0
     print("=== 封城第七天 · 网页版 ===")
     print("游戏已经在运行了，地址还是：%s" % url)
     if args.no_browser:
         print("（--no-browser：自己打开上面的地址就行）")
-    elif args.open or idle is None or idle > IDLE_LIMIT:
+    elif args.open or not pages or idle is None or idle > IDLE_LIMIT:
+        # 服务自己知道还有没有页面在看：一个都没有就一定会帮你打开，不再猜
         print("这个地址上好像没有开着的页面，帮你打开。")
         webbrowser.open(url)
     else:
-        print("页面应该还开着（%.0f 秒前还有活动），这次就不另开标签页了。" % idle)
+        print("页面还开着（%d 个，%.0f 秒前还有活动），这次就不另开标签页了。" % (pages, idle))
         print("想强制再开一个页面就加 --open。")
-    return 0
+    return EXIT_ALREADY_RUNNING
 
 
 def main():
@@ -841,7 +1101,8 @@ def main():
     args = parser.parse_args()
 
     ports = list(range(args.port, args.port + 10))
-    handler = make_handler(LazySession())
+    session = LazySession()
+    handler = make_handler(session)
 
     # 先看端口空不空：空就直接用，连探测都不做（启动最快）。
     # 只有端口被占时才去问一句“是不是我们自己”，问的代价只有 0.3 秒。
@@ -869,20 +1130,23 @@ def main():
     url = "http://%s:%d/" % (args.host, server.server_address[1])
     print("=== 封城第七天 · 网页版 ===")
     print("地址：%s" % url)
-    print("在这个窗口按 Ctrl+C 结束服务；游戏里的“退出游戏”按钮也会结束它。")
+    print("在这个窗口按 Ctrl+C 结束服务；关掉网页、或者点游戏里的“退出游戏”，也会结束它。")
     if not args.no_browser:
         # 服务已经绑好端口了，这里只留一丁点时间让 print 刷出来就开浏览器
         threading.Timer(0.15, webbrowser.open, args=(url,)).start()
 
-    # 游戏里点“退出游戏”时用这个把服务停掉
+    # 游戏里点“退出游戏”、或者页面全关掉时，用这两个回调把服务停掉
     handler.stop_server = server.shutdown
+    session.set_on_close(server.shutdown)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("\n已停止。")
     finally:
         server.server_close()
-    return 0
+    if session.closed_by_page():
+        return EXIT_PAGE_CLOSED   # 页面关了 / 点过退出：启动器看到这个码就不用再等按键
+    return EXIT_OK
 
 
 if __name__ == "__main__":

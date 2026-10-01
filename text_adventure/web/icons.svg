@@ -296,6 +296,22 @@
       <path d="M12 6.6V12L15.8 14.3"/>
     </g>
   </symbol>
+  <symbol id="i-split" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3.2" y="8.6" width="7.2" height="6.8" rx="1.6"/>
+      <rect x="13.6" y="3.4" width="7.2" height="6.8" rx="1.6"/>
+      <rect x="13.6" y="13.8" width="7.2" height="6.8" rx="1.6"/>
+      <path d="M10.4 12h1.6c.9 0 1.6-.7 1.6-1.6V6.8"/>
+      <path d="M10.4 12h1.6c.9 0 1.6.7 1.6 1.6v3.6"/>
+    </g>
+  </symbol>
+  <symbol id="i-stack" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3.4 20.6 7.6 12 11.8 3.4 7.6 12 3.4Z"/>
+      <path d="M3.4 12.2 12 16.4l8.6-4.2"/>
+      <path d="M3.4 16.4 12 20.6l8.6-4.2"/>
+    </g>
+  </symbol>
   <symbol id="i-rest" viewBox="0 0 24 24">
     <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
       <path d="M20.4 14.6A8.6 8.6 0 0 1 9.4 3.6A8.7 8.7 0 1 0 20.4 14.6Z"/>

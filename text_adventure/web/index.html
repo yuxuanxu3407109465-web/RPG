@@ -45,12 +45,15 @@
 
 <!-- ========== 游戏中 ==========
      界面上下一共分六个区域，名字固定，改布局时按名字找（详见 ../界面区域.md）：
-       左侧栏    = .side-left       最左边一列，角色卡
-       文字栏    = .main            中间一列上半，房间栏 + 正文 + 指令输入
-       移动栏    = .move-panel      中间一列下半正中间，六向移动
-       快捷区域1 = #quick-zone-1    移动栏左边那块，预留，暂时空着
-       快捷区域2 = #quick-zone-2    移动栏右边那块，预留，暂时空着
-       右侧栏    = .side-right      最右边一列，时钟 + 这里/背包/休息/存档/系统
+       左侧栏    = .side-left       最左边一列，角色卡（等级/生命/负重/属性/战斗/状态）
+       视图栏    = .main            中间一列上半，房间栏 + 场景 / 背包两个页签
+                                     「场景」= 格子场景（人物在这里走动，左上角浮着时钟，
+                                                颜色图例在视图栏最下面一整条）
+                                     「背包」= 背包面板（翻页、拖动装备、拆分、堆叠）
+       移动栏    = .move-panel      中间一列下半正中间，四个方向（上下楼点场景里的楼梯格）
+       快捷区域1 = #quick-zone-1    移动栏左边那块，装备栏（拖动装备 / 脱下）
+       快捷区域2 = #quick-zone-2    移动栏右边那块，文字记录 + 指令输入（固定高度，内部滚动）
+       右侧栏    = .side-right      最右边一列，背包快捷栏 / 休息 / 存档读档 / 系统
      每个区域的根元素都带 data-region="区域名"，改哪儿直接搜这个名字。 -->
 <section id="screen-play" class="screen hidden">
   <div class="layout">
@@ -66,28 +69,35 @@
 
     <div class="play-col">
 
-      <!-- 文字栏 -->
-      <main class="main" data-region="文字栏">
+      <!-- 视图栏：格子场景，人物在这里走动；点上面的「背包」页签，
+           这一栏就换成背包（装备、拆分、翻页都在那边）。
+           时钟不在这儿写死：场景页签和背包页签各自渲染一份（app.js 的 clockChip） -->
+      <main class="main view-panel" data-region="视图栏">
         <header class="bar room-bar">
           <h2 id="room-name">—</h2>
           <span class="room-sub" id="room-sub"></span>
+          <div class="view-tabs" id="view-tabs">
+            <button type="button" class="view-tab active" data-view-tab="scene">场景</button>
+            <button type="button" class="view-tab" data-view-tab="bag">背包</button>
+          </div>
         </header>
-        <div class="log" id="log"></div>
-        <form class="cmdline" id="cmd-form" autocomplete="off">
-          <input id="cmd-input" type="text" placeholder="也可以直接输入指令，例如：技能 锐器 / 掷骰 2d6+1 / 检定 70">
-          <button class="btn primary" type="submit">
-            <svg class="ico" aria-hidden="true"><use href="#i-check"></use></svg>
-            <span>执行</span>
-          </button>
-        </form>
+        <div class="scene-wrap" id="scene-body"></div>
+        <div class="bag-panel hidden" id="bag-panel"></div>
       </main>
 
-      <!-- 下排：快捷区域1 | 移动栏 | 快捷区域2（左右两块一样宽，移动栏居中） -->
+      <!-- 下排：快捷区域1（装备） | 移动栏 | 快捷区域2（文字） -->
       <div class="bottom-row">
 
-        <!-- 快捷区域1：预留，暂时留空 -->
-        <section class="panel quick-zone" id="quick-zone-1" data-region="快捷区域1"
-                 title="快捷区域1（预留，暂时留空）"></section>
+        <!-- 快捷区域1：装备栏，每个位置一个方框，可以拖动装备 / 脱下
+             背包不在这儿：点视图栏的「背包」页签，背包会占满视图栏 -->
+        <section class="panel quick-zone equip-zone" id="quick-zone-1" data-region="快捷区域1">
+          <div class="panel-head equip-head">
+            <svg class="ico" aria-hidden="true"><use href="#i-bag"></use></svg>
+            <h3>装备</h3>
+            <span class="grip-tag" id="equip-grip">徒手</span>
+          </div>
+          <div class="panel-body" id="equip-body"></div>
+        </section>
 
         <!-- 移动栏 -->
         <section class="panel move-panel" data-region="移动栏">
@@ -98,20 +108,27 @@
           <div class="panel-body" id="move-body"></div>
         </section>
 
-        <!-- 快捷区域2：预留，暂时留空 -->
-        <section class="panel quick-zone" id="quick-zone-2" data-region="快捷区域2"
-                 title="快捷区域2（预留，暂时留空）"></section>
+        <!-- 快捷区域2：文字记录 + 指令输入 -->
+        <section class="panel quick-zone text-zone" id="quick-zone-2" data-region="快捷区域2">
+          <div class="panel-head text-head">
+            <svg class="ico" aria-hidden="true"><use href="#i-talk"></use></svg>
+            <h3>文字</h3>
+          </div>
+          <div class="log" id="log"></div>
+          <form class="cmdline" id="cmd-form" autocomplete="off">
+            <input id="cmd-input" type="text" placeholder="也可以直接输入指令，例如：技能 锐器 / 掷骰 2d6+1 / 检定 70">
+            <button class="btn primary" type="submit">
+              <svg class="ico" aria-hidden="true"><use href="#i-check"></use></svg>
+              <span>执行</span>
+            </button>
+          </form>
+        </section>
 
       </div>
     </div>
 
-    <!-- 右侧栏：时钟 + 这里 / 背包 / 休息 / 存档读档 / 系统 -->
+    <!-- 右侧栏：背包快捷栏 / 休息 / 存档读档 / 系统（时钟在视图栏里，见 app.js） -->
     <aside class="panel side-right" data-region="右侧栏">
-      <div class="clock" id="clock">
-        <svg class="ico" aria-hidden="true"><use href="#i-clock"></use></svg>
-        <span class="clock-text" id="clock-text">第 7 天 14:00</span>
-        <span class="clock-turns" id="clock-turns"></span>
-      </div>
       <div class="panel-head">
         <svg class="ico" aria-hidden="true"><use href="#i-bag"></use></svg>
         <h3>行动</h3>

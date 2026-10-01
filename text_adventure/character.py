@@ -189,10 +189,9 @@ def format_sheet(character, options, items, carried_weight=None, tree_names=None
         f"    行动点 每回合 {stats.ap_per_turn(a, armor_penalty)}（上限 {stats.ap_cap(a, armor_penalty)}"
         + (f"，重甲 −{armor_penalty}" if armor_penalty else "") + "）",
         f"  生命恢复 每 {stats.REGEN_INTERVAL} 回合 +{stats.hp_regen(a)}",
-        f"  体力上限 {stamina_cap}    行动消耗 ×{stats.stamina_cost_multiplier(a):.2f}"
-        f"（移动：室内每 {stats.INDOOR_STEPS_PER_COST} 步 {stats.move_cost(a, False, overweight)} 点、"
-        f"每步 {stats.move_minutes(False, overweight)} 分钟，"
-        f"室外每步 {stats.move_cost(a, True, overweight)} 点、{stats.move_minutes(True, overweight)} 分钟"
+        f"  体力上限 {stamina_cap}"
+        f"（移动：每 {stats.INDOOR_STEPS_PER_COST} 步 {stats.move_cost(overweight)} 点体力、"
+        f"每步 {stats.move_minutes(overweight)} 分钟"
         + ("，超重翻倍" if overweight else "") + "）",
         f"  经验倍率 ×{float(options.xp_multiplier(character)):g}    每级技能点 {stats.skill_points_per_level(a)}",
     ]

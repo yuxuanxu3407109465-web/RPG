@@ -37,6 +37,9 @@ MOVE_AP_COST = 1  # 战斗中每移动一格消耗的行动点
 OVERWEIGHT_MOVE_AP_COST = 2  # 超重时移动能力减半：每格 2 点
 IMMOBILE_WEIGHT_MULTIPLIER = 2  # 超过负重上限的 2 倍就完全无法移动
 USE_ITEM_AP_COST = 3  # 战斗中使用一次物品（例如用绷带包扎）消耗的行动点
+# 一堆同种物品最多摞多少个。只有物品数据里带 stack 词条的才摞得起来，
+# 别的物品一格一件、也不能拆分（见 engine.py 的背包部分）。
+STACK_MAX = 5
 UNARMED_DAMAGE = "1d4"  # 徒手伤害骰
 
 # 护甲：每件护甲穿在一个部位，所有部位的护甲值相加，受到的伤害按总值固定减免
@@ -183,6 +186,42 @@ def load_level(weight, capacity):
     return "normal"
 
 
+# 负重占上限的比例：不超过 30% 是轻载，30~70% 是中载，70~100% 是重载
+LOAD_RATIO_LIGHT = 30
+LOAD_RATIO_MEDIUM = 70
+
+
+def load_label(weight, capacity):
+    """负重状态的中文说法，给界面显示用：轻载 / 中载 / 重载（超过上限才额外说超重）。"""
+    if capacity <= 0:
+        return "轻载"
+    ratio = weight / capacity * 100
+    if ratio > 100 * IMMOBILE_WEIGHT_MULTIPLIER:
+        return "严重超重"
+    if ratio > 100:
+        return "超重"
+    if ratio > LOAD_RATIO_MEDIUM:
+        return "重载"
+    if ratio > LOAD_RATIO_LIGHT:
+        return "中载"
+    return "轻载"
+
+
+def is_stackable(item):
+    """这件物品能不能摞成一堆（物品数据里写了 stack 词条才行）。"""
+    return bool(item.get("stack"))
+
+
+def stack_max(item):
+    """一堆最多几个：带 stack 词条的按 STACK_MAX，别的一格一件。"""
+    if not is_stackable(item):
+        return 1
+    value = item.get("stack")
+    if isinstance(value, int) and not isinstance(value, bool):
+        return max(1, value)
+    return STACK_MAX
+
+
 def move_ap_cost(weight, capacity):
     """战斗中移动一格的行动点；无法移动时返回 None。"""
     level = load_level(weight, capacity)
@@ -275,18 +314,20 @@ def check_modifier(a, attribute_id):
 
 STAMINA_PER_POINT = 10        # 体力上限 = 10 ×（体质 + 力量）
 STAMINA_MIN_CAP = 60          # 体力上限的下限（体质与力量都只有 3 时）
-STAMINA_COST_FLOOR = 0.5      # 行动消耗最多降到一半
 STAMINA_LOW_RATIO = 0.1       # 体力低于上限的这个比例就力竭
 EXHAUSTED_DAMAGE_PENALTY = -50  # 力竭时攻击力 -50%
-MOVE_COST_INDOOR = 1          # 建筑物内每走 INDOOR_STEPS_PER_COST 步消耗的体力
-INDOOR_STEPS_PER_COST = 10    # 建筑物内每 10 步才消耗一次体力
+MOVE_COST = 1                 # 每走 INDOOR_STEPS_PER_COST 步消耗的体力（室内外一样）
+INDOOR_STEPS_PER_COST = 10    # 每 10 步才消耗一次体力
 WAIT_MINUTES = 1              # 战斗外原地等待一回合花的时间（分钟）
-MOVE_COST_OUTDOOR = 1         # 建筑物外走一步的体力
-MOVE_MINUTES_INDOOR = 1       # 建筑物内走一步花的时间（分钟）
-MOVE_MINUTES_OUTDOOR = 5      # 建筑物外走一步花的时间（分钟）
+MOVE_MINUTES = 1              # 走一步花的时间（分钟，室内外一样）
 REST_MINUTES_PER_TICK = 30    # 每休息半小时算一档
 REST_RECOVER_RATIO = 0.1      # 每档恢复 10% 上限
 SHOCK_WAKE_RATIO = 0.3        # 休克后强制休息到这个比例才醒
+THIRST_STAMINA = 60           # 体力累计消耗这么多点就会口渴（一次性，喝水能解除）
+THIRST_COST_MULTIPLIER = 2    # 口渴时体力消耗翻倍
+FULL_WINDOW_MINUTES = 30      # 半小时内……
+FULL_FOOD_COUNT = 3           # ……吃下三份带食物标签的东西就会饱腹
+FULL_MINUTES = 60             # 饱腹持续一小时：这段时间里不能再吃带食物标签的东西
 START_DAY = 7                 # 游戏从封城第七天开始
 START_MINUTES = 14 * 60       # 14:00
 MINUTES_PER_DAY = 24 * 60
@@ -297,33 +338,25 @@ def stamina_max(a):
     return max(STAMINA_MIN_CAP, STAMINA_PER_POINT * (a["constitution"] + a["strength"]))
 
 
-def stamina_cost_multiplier(a):
-    """每次行动消耗体力的倍率。
-
-    敏捷 5 是基准：低于 5 时每点 +5%（3 点正好 +10%）；高于 5 时每满 5 点
-    -10%（7 点不减、10 点 -10%）；最低降到 50%。
-    """
-    agility = a["agility"]
-    if agility < 5:
-        multiplier = 1 + 0.05 * (5 - agility)
-    else:
-        multiplier = 1 - 0.1 * ((agility - 5) // 5)
-    return max(STAMINA_COST_FLOOR, multiplier)
-
-
 OVERWEIGHT_TRAVEL_MULTIPLIER = 2  # 战斗外超重：走路的体力消耗和时间都翻倍
 
 
-def move_cost(a, outdoor, overweight=False):
-    """扣体力的那一步要花多少体力（室外每步都扣，室内每 10 步扣一次）；超重翻倍。"""
-    base = MOVE_COST_OUTDOOR if outdoor else MOVE_COST_INDOOR
-    cost = max(1, math.floor(Fraction(base) * Fraction(stamina_cost_multiplier(a)).limit_denominator(100)))
-    return cost * OVERWEIGHT_TRAVEL_MULTIPLIER if overweight else cost
+def move_cost(overweight=False, thirsty=False):
+    """走一步的体力消耗：室内外一样，每 INDOOR_STEPS_PER_COST 步扣一次。
+
+    敏捷不再影响移动的体力消耗（只按步数算）；超重翻倍，口渴也翻倍（两者叠乘）。
+    """
+    cost = max(1, MOVE_COST)
+    if overweight:
+        cost *= OVERWEIGHT_TRAVEL_MULTIPLIER
+    if thirsty:
+        cost *= THIRST_COST_MULTIPLIER
+    return cost
 
 
-def move_minutes(outdoor, overweight=False):
-    """走一个方向要花多少分钟；超重翻倍。"""
-    minutes = MOVE_MINUTES_OUTDOOR if outdoor else MOVE_MINUTES_INDOOR
+def move_minutes(overweight=False):
+    """走一步要花多少分钟（室内外一样）；超重翻倍。"""
+    minutes = MOVE_MINUTES
     return minutes * OVERWEIGHT_TRAVEL_MULTIPLIER if overweight else minutes
 
 

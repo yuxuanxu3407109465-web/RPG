@@ -16,13 +16,22 @@
   --radius: 10px;
 
   /* 界面六大区域的尺寸开关（区域约定见 ../界面区域.md）：
-       左侧栏 = .side-left    文字栏 = .main       移动栏 = .move-panel
-       快捷区域1 / 快捷区域2 = .quick-zone（移动栏左右两块预留位）
+       左侧栏 = .side-left    视图栏 = .main       移动栏 = .move-panel
+       快捷区域1 = 装备栏      快捷区域2 = 文字栏
        右侧栏 = .side-right
      想调宽度只改下面三个变量；每个区域的根元素都带 data-region="区域名"。 */
   --w-left: 300px;      /* 左侧栏宽度 */
   --w-right: 320px;     /* 右侧栏宽度 */
   --w-move: clamp(300px, 24.5vw, 520px);   /* 移动栏宽度：1920 宽屏时约 470px */
+  --h-bottom: clamp(240px, 38vh, 400px);   /* 下排（装备 / 移动 / 文字）的固定高度，文字栏在里面滚 */
+
+  /* 视图栏里一个格子的大小：按「视图栏真正能用的地方」算，宽高各算一遍取小值 ——
+       宽 = 中间列宽 − 面板边框与内边距 − 15 道格子缝（16 格）
+       高 = 视图栏高 − 房间栏 − 底部图例条 − 9 道格子缝（10 行）
+     改尺寸只要动这几个数，16×10 的地图在任何常见窗口下都正好铺满视图栏、又不出滚动条。 */
+  --w-mid: calc(100vw - var(--w-left) - var(--w-right) - 56px);  /* 中间列宽度：减去左右 14px 外边距和两道 14px 缝 */
+  --h-scene: calc(100vh - var(--h-bottom) - 139px);              /* 视图栏里留给地图那块的高度：减去房间栏、图例条和内边距 */
+  --cell: clamp(14px, min(calc((var(--w-mid) - 48px) / 16), calc((var(--h-scene) - 18px) / 10)), 64px);
 }
 
 * { box-sizing: border-box; }
@@ -159,10 +168,11 @@ body {
   padding: 14px;
 }
 
-/* 中间一列：上面文字栏吃掉剩下的高度，下面一条下排按内容高度 */
+/* 中间一列：上面视图栏吃掉剩下的高度，下面一条下排按固定高度
+   —— 下排必须有个上限，否则文字栏会被消息越顶越长，整页跟着滚动。 */
 .play-col {
   display: grid;
-  grid-template-rows: minmax(180px, 1fr) auto;
+  grid-template-rows: minmax(180px, 1fr) var(--h-bottom, 380px);
   gap: 14px;
   min-height: 0;
   min-width: 0;
@@ -175,15 +185,464 @@ body {
   grid-template-columns: minmax(0, 1fr) minmax(0, var(--w-move)) minmax(0, 1fr);
   gap: 14px;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
-/* 快捷区域1 / 快捷区域2：预留位，暂时留空。
-   虚线框只是标出位置，以后往里塞东西直接改这两个容器。 */
-.quick-zone {
-  border-style: dashed;
-  border-color: #262b34;
-  background: rgba(23, 26, 32, .45);
+/* 快捷区域1（装备）/ 快捷区域2（文字）：两个都装内容了，不再是虚线占位 */
+.quick-zone { min-height: 0; overflow: hidden; }
+.quick-zone .panel-body { padding: 8px 9px; min-height: 0; }
+
+/* 快捷区域2：上面文字记录（高度固定，里面自己滚），下面指令输入 */
+.text-zone { min-height: 0; overflow: hidden; }
+.text-zone .log {
+  flex: 1 1 0;
+  height: 0;          /* 高度只由面板决定，消息再多也不撑长页面 */
+  min-height: 0;
+  padding: 8px 12px;
+  font-size: 13.5px;
 }
+.text-zone .log p.line { margin-bottom: 4px; }
+.text-zone .cmdline {
+  margin: 0;
+  padding: 6px 9px 8px;
+  border-top: 1px solid var(--line-soft);
+  background: #14171c;
+}
+.text-zone .cmdline input { padding: 6px 9px; font-size: 13px; }
+.text-zone .cmdline .btn { padding: 6px 10px; }
+
+/* 快捷区域1：装备栏 */
+.equip-zone .panel-body { display: flex; flex-direction: column; gap: 9px; overflow-y: auto; }
+/* 标题条的 padding / 字号统一由下面的 .bottom-row .panel-head 管，这里只管右边的持握状态 */
+.equip-head .grip-tag {
+  margin-left: auto;
+  font-size: 11px;
+  line-height: 1.2;   /* 行高不压住的话，这个 tag 会把“装备”那条顶得比移动栏高 */
+  color: var(--amber);
+  border: 1px solid #3a3320;
+  border-radius: 4px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+.equip-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.equip-slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 58px;
+  padding: 4px 3px;
+  border: 1px dashed #333a46;
+  border-radius: 6px;
+  background: rgba(18, 21, 26, .75);
+  text-align: center;
+  transition: border-color .12s, background .12s;
+}
+.equip-slot .slot-label {
+  font-size: 10.5px;
+  color: var(--dim-2);
+  letter-spacing: .5px;
+  line-height: 1.1;
+}
+.equip-slot.filled { border-style: solid; border-color: #39404d; background: #12151a; }
+.equip-slot.drop-ok { border-color: var(--green); background: rgba(70, 130, 90, .14); }
+.equip-slot.drop-no { border-color: #d9705f; background: rgba(160, 70, 60, .14); }
+.equip-slot .item-chip { cursor: grab; }
+.equip-slot .remove-hint { font-size: 10px; color: var(--dim-2); }
+
+/* 物品 / 装备 / 人物 / 楼梯的占位图：黑底白字方块 */
+.item-chip,
+.tile-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 30px;
+  padding: 3px 4px;
+  background: #05070a;
+  color: #fff;
+  border: 1px solid #4a5260;
+  border-radius: 5px;
+  font-size: 11px;
+  line-height: 1.15;
+  overflow: hidden;
+  text-align: center;
+  word-break: break-word;
+}
+.item-chip .chip-detail { font-size: 9.5px; color: #9aa4b2; }
+.item-chip.dragging { opacity: .45; }
+.item-chip[draggable="true"] { cursor: grab; }
+
+/* 装备栏下面的背包列表（拖动的来源） */
+.bag-title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--dim);
+  border-top: 1px solid var(--line-soft);
+  padding-top: 7px;
+}
+.bag-title .bag-count { margin-left: auto; color: var(--dim-2); font-size: 11px; }
+.bag-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 190px;
+  overflow-y: auto;
+}
+.bag-list.drop-ok { outline: 1px dashed var(--green); outline-offset: 3px; }
+.bag-empty { font-size: 12px; color: var(--dim-2); }
+.bag-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+.bag-row:hover { border-color: #2b313b; background: #14171c; }
+.bag-row .item-chip { flex: 1 1 auto; }
+.bag-row .bag-acts { display: flex; gap: 3px; flex: 0 0 auto; }
+.bag-row .bag-acts .btn { padding: 3px 5px; font-size: 11px; }
+.bag-row .bag-acts .btn .ico { display: none; }
+
+/* ---------- 视图栏：格子场景 ---------- */
+
+.view-panel .bar { padding: 8px 14px; }
+.view-panel .bar h2 { font-size: 16px; letter-spacing: 1px; }
+.view-panel .view-hint { margin-left: auto; font-size: 11.5px; color: var(--dim-2); }
+
+/* 视图栏右上角的两个页签：场景 / 背包 */
+.view-tabs { margin-left: auto; display: flex; gap: 6px; }
+.view-tab {
+  padding: 3px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #171a1f;
+  color: var(--dim);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.view-tab:hover { border-color: var(--amber); color: var(--text); }
+.view-tab.active { border-color: var(--amber); background: #2a2318; color: var(--amber); }
+/* 场景：地图独占上方居中的一大块，颜色图例压在最下面一整条，
+   时钟浮在左上角（绝对定位，不占地图的地方）。 */
+.scene-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 0;
+  overflow: auto;
+}
+.scene-grid {
+  display: grid;
+  gap: 2px;
+  margin: auto;   /* 上下左右都居中：地图不再被左边的图例挤到右边去 */
+  /* 列数由 JS 写在 --scene-w 上，格子大小见 :root 的 --cell（按视图栏实际尺寸算） */
+  grid-template-columns: repeat(var(--scene-w, 16), var(--cell, 34px));
+  grid-auto-rows: var(--cell, 34px);
+}
+.scene-cell {
+  width: var(--cell, 34px);
+  height: var(--cell, 34px);
+  border-radius: 4px;
+  border: 1px solid #1b1f26;
+  background: #0d1015;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  font-size: 10px;
+  color: #fff;
+  overflow: hidden;
+}
+.scene-cell.wall { background: #1b2028; border-color: #262d38; }
+.scene-cell.obstacle { background: #23242b; border-color: #33363f; }
+.scene-cell.floor { background: #10141a; }
+.scene-cell.door { background: #2a2418; border-color: #6b5a2a; }
+.scene-cell.stairs { background: #1d2430; border-color: #3f556e; }
+.scene-cell.walkable:hover { border-color: var(--amber); cursor: pointer; }
+/* 这一格上有东西（物品 / 人物）：能点开菜单 */
+.scene-cell.has-thing { cursor: pointer; }
+.scene-cell.thing-sel { border-color: var(--amber); box-shadow: 0 0 0 1px var(--amber) inset; }
+.scene-cell .tile-chip {
+  position: absolute;
+  inset: 1px;
+  min-height: 0;
+  font-size: 9.5px;
+  padding: 2px;
+  border-radius: 3px;
+  border-color: #5a6373;
+}
+.scene-cell .tile-chip.chip-stairs { border-color: #6f8fb5; }
+.scene-cell .tile-chip.chip-npc { border-color: #b58a4a; }
+.scene-cell .tile-chip.chip-player { border-color: var(--amber); box-shadow: 0 0 0 1px var(--amber) inset; }
+/* 颜色图例：视图栏最下面一整条（原来跟地图并排，把地图挤到右边去了） */
+.scene-legend {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--dim-2);
+  margin: 0 -10px;
+  padding: 5px 10px 6px;
+  border-top: 1px solid var(--line-soft);
+  background: #14171c;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.scene-legend .lg { display: flex; align-items: center; gap: 4px; }
+.scene-legend .swatch { width: 11px; height: 11px; border-radius: 3px; border: 1px solid #39404d; }
+
+/* 场景里点物品 / 人物弹出的小菜单：跟背包菜单同一套样式，浮在地图上面 */
+.scene-menu { z-index: 40; }
+
+/* ---------- 视图栏的「背包」页签：背包面板 ---------- */
+
+/* 打开背包时它占满视图栏（场景先藏起来） */
+.bag-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  overflow: hidden;
+}
+.bag-panel.hidden { display: none; }
+
+.bag-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--dim);
+  flex: 0 0 auto;
+}
+.bag-top .bag-weight { margin-left: auto; color: var(--dim-2); }
+.bag-top .load-tag { margin-left: 6px; }
+
+/* 一格一堆：图标是小方块，点一下才出菜单 */
+.bag-grid {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(66px, 1fr));
+  gap: 7px;
+  align-content: start;
+  padding-right: 2px;
+}
+.bag-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 4px 4px;
+  border: 1px solid #2b313b;
+  border-radius: 8px;
+  background: #12151a;
+  cursor: pointer;
+  text-align: center;
+}
+.bag-cell:hover { border-color: var(--amber); background: #171a1f; }
+.bag-cell.sel { border-color: var(--amber); background: #1e1a12; }
+.bag-cell.dragging { opacity: .45; }
+.bag-cell.drop-ok { border-color: var(--green); background: rgba(70, 130, 90, .16); }
+.bag-cell.drop-no { border-color: #d9705f; }
+.bag-cell[draggable="true"] { cursor: grab; }
+.bag-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 2px;
+  background: #05070a;
+  color: #fff;
+  border: 1px solid #4a5260;
+  border-radius: 5px;
+  font-size: 10px;
+  line-height: 1.1;
+  overflow: hidden;
+  word-break: break-word;
+}
+.bag-cell .bag-name {
+  max-width: 100%;
+  font-size: 10px;
+  color: var(--dim-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bag-count {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  padding: 0 4px;
+  border: 1px solid #4a5260;
+  border-radius: 6px;
+  background: #05070a;
+  color: #fff;
+  font-size: 10px;
+  line-height: 15px;
+}
+.bag-loose {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  padding: 0 3px;
+  border-radius: 5px;
+  background: #3a3320;
+  color: var(--amber);
+  font-size: 9px;
+  line-height: 14px;
+}
+.bag-empty { grid-column: 1 / -1; color: var(--dim-2); font-size: 12px; padding: 6px 2px; }
+
+/* 翻页 */
+.bag-pager {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--dim);
+}
+.bag-pager .btn { padding: 3px 10px; }
+.bag-pager .page-now { min-width: 88px; text-align: center; color: var(--dim-2); }
+
+/* 点物品弹出来的小菜单 */
+.bag-menu {
+  position: absolute;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 118px;
+  padding: 5px;
+  gap: 3px;
+  border: 1px solid #3a4150;
+  border-radius: 8px;
+  background: #10131a;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .55);
+}
+.bag-menu .menu-title {
+  padding: 2px 6px 5px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 11.5px;
+  color: var(--text);
+}
+.bag-menu .menu-title small { color: var(--dim-2); }
+.bag-menu button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.bag-menu button:hover { border-color: var(--amber); background: #1a1f27; }
+.bag-menu button.danger:hover { border-color: #d9705f; color: #e58b7d; }
+.bag-menu .menu-sep { height: 1px; margin: 2px 4px; background: var(--line-soft); }
+
+/* 拆分数量：滑条 + 输入框，两个都能改（不拉满整栏，居中一条） */
+.bag-split {
+  flex: 0 0 auto;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 660px;
+  padding: 7px 12px;
+  border: 1px solid #3a3320;
+  border-radius: 8px;
+  background: #171a1f;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.bag-split input[type="range"] { flex: 0 1 240px; min-width: 90px; }
+.bag-split input[type="number"] {
+  width: 58px;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #0f1216;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+}
+.bag-split .btn { padding: 4px 10px; }
+
+/* 右侧栏的快捷栏：手动登记，空格子是拖动目标 */
+.quick.slot-target { border-style: dashed; }
+.quick.drop-ok { border-color: var(--green); background: rgba(70, 130, 90, .16); }
+.quick .quick-x {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  padding: 0 3px;
+  color: var(--dim-2);
+  font-size: 11px;
+  line-height: 14px;
+}
+.quick .quick-x:hover { color: #e58b7d; }
+.quick-missing { color: var(--dim-2); }
+
+/* ---------- 左侧栏：可折叠的分区 ---------- */
+
+.section > h4.section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.section > h4.section-head .chev {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--dim-2);
+  transition: transform .15s;
+}
+.section.collapsed > h4.section-head .chev { transform: rotate(-90deg); }
+.section.collapsed > .section-body { display: none; }
+.section-body { min-width: 0; }
+
+/* 负重状态：轻载 / 中载 / 重载 */
+.load-tag {
+  font-size: 11px;
+  border-radius: 4px;
+  padding: 0 5px;
+  border: 1px solid #39404d;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.load-tag.light { border-color: #2f4a37; color: #7fbf95; }
+.load-tag.medium { border-color: #4a4326; color: #d6bb6b; }
+.load-tag.heavy { border-color: #4d3327; color: #d98f6b; }
+.load-tag.over { border-color: #5a2a24; color: #e07a68; }
 
 /* 移动栏：只有九宫格，高度按内容来，别把文字栏挤小 */
 .move-panel { min-height: 0; }
@@ -196,12 +655,13 @@ body {
 .move-panel .dir .ico { width: 15px; height: 15px; }
 .move-panel .dir-grid { gap: 5px; }
 
-/* 移动栏的横幅（标题条）：比其它面板头矮一截，“移动”两个字也小一号。
+/* 下排三块（装备 / 移动 / 文字）的标题条统一成一样高、一样字号。
    注意前面已经定义了 .panel-head / .panel-head h3，选择器要写得比它们更具体
-   （多带一层 .move-panel），否则同权重时后面的规则会盖掉这里。 */
-.move-panel .move-head { padding: 3px 8px; gap: 6px; }
-.move-panel .move-head h3 { font-size: 12px; letter-spacing: .5px; }
-.move-panel .move-head .ico { width: 13px; height: 13px; }
+   （多带一层 .bottom-row），否则同权重时后面的规则会盖掉这里——踩过这个坑：
+   移动栏横幅一直是 46px 高、字也是 14px。 */
+.bottom-row .panel-head { padding: 3px 8px; gap: 6px; }
+.bottom-row .panel-head h3 { font-size: 12px; letter-spacing: .5px; }
+.bottom-row .panel-head .ico { width: 13px; height: 13px; }
 
 .panel {
   display: flex;
@@ -441,33 +901,43 @@ button.choice .label { white-space: pre-line; flex: 1; }
 
 .cmdline input:focus { outline: none; border-color: var(--amber); }
 
-/* ---------- 计时器（右侧栏最上面那条，做紧凑一点，别占地方） ---------- */
+/* ---------- 计时器（原来挂在右侧栏顶上，现在挪进视图栏：
+     场景页签浮在画面左上角，背包页签放在顶部那一行的最右边，两个页签都看得见） ---------- */
 
-.clock {
+.clock-chip {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 7px 12px;
-  background: linear-gradient(180deg, #1b2028, #14171c);
-  border-bottom: 1px solid var(--line-soft);
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid #3a4351;
+  border-radius: 999px;
+  background: rgba(15, 18, 23, .9);
   color: var(--amber);
+  white-space: nowrap;
 }
 
-.clock .ico { width: 14px; height: 14px; }
+.clock-chip .ico { width: 13px; height: 13px; }
 
-.clock .clock-text {
-  font-size: 14.5px;
+.clock-chip .clock-text {
+  font-size: 13.5px;
   letter-spacing: 1px;
   font-weight: 600;
 }
 
-.clock .clock-turns {
-  margin-left: auto;
+.clock-chip .clock-turns {
   color: var(--dim-2);
   font-size: 11.5px;
 }
 
-/* ---------- 六向移动 ---------- */
+/* 场景里那一份：浮在左上角，不占地图的面积 */
+.scene-clock {
+  position: absolute;
+  left: 10px;
+  top: 8px;
+  z-index: 3;
+}
+
+/* ---------- 移动（四个方向） ---------- */
 
 .dir-grid {
   display: grid;
@@ -767,6 +1237,7 @@ button.choice .label { white-space: pre-line; flex: 1; }
 .quick-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 
 .quick {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -886,6 +1357,17 @@ input[type="range"].rest-range::-moz-range-thumb {
 
 .hint-small.warn { color: var(--amber); }
 
+/* ---------- 右侧栏：文字已经精简过，这里再把间距收一收，不用滚动就能看全 ---------- */
+
+.side-right .panel-body { padding: 9px 11px; }
+.side-right .section { margin-bottom: 10px; }
+.side-right .section > h4 { margin-bottom: 6px; }
+.side-right .hint-small { margin-top: 4px; font-size: 11.5px; }
+.side-right .quick { min-height: 56px; padding: 6px 4px; gap: 2px; }
+.side-right .rest-box { padding: 8px; gap: 7px; }
+.side-right .save-pad { gap: 5px; }
+.side-right .btn-grid { gap: 6px; }
+
 /* ---------- 退出页 / 主菜单存档描述 ---------- */
 
 .exit-box { width: min(620px, 92vw); }
@@ -894,16 +1376,22 @@ input[type="range"].rest-range::-moz-range-thumb {
 
 .slot-saved-at { color: var(--dim-2); font-size: 12px; }
 
-/* 窄屏：改成单列堆叠，预留的快捷区域先收起来 */
+/* 窄屏：改成单列堆叠，四块（场景 / 背包 / 装备 / 文字）都要留住 */
 @media (max-width: 1080px) {
+  /* 单列时中间列不再是「窗口宽 − 左右栏」，格子大小直接按窗口宽算 */
+  :root { --cell: clamp(16px, min(4.6vw, 4.4vh), 42px); }
   .layout {
     grid-template-columns: 1fr;
     height: auto;
     min-height: 100vh;
   }
   .play-col { grid-template-rows: auto auto; }
-  .bottom-row { grid-template-columns: 1fr; }
-  .quick-zone { display: none; }
-  .main .log { height: 44vh; min-height: 180px; max-height: 44vh; }
+  /* 单列时下排不再限高，但文字栏仍然在自己那一块里滚 */
+  .bottom-row { grid-template-columns: 1fr; height: auto; overflow: visible; }
+  .view-panel .scene-wrap { min-height: 300px; }
+  .bag-panel { min-height: 320px; }
+  .quick-zone { overflow: visible; }
+  .text-zone { min-height: 300px; }
+  .text-zone .log { height: 240px; min-height: 200px; }
   .side-left, .side-right { max-height: 70vh; }
 }

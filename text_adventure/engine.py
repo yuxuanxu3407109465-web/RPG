@@ -31,6 +31,27 @@ DIRECTION_NAMES = {
     "north": "北", "south": "南", "east": "东",
     "west": "西", "up": "上", "down": "下",
 }
+# 走进去时用哪个方向当“对面”（例如从东边进屋，就站在屋里的西门口）
+OPPOSITE_DIRECTIONS = {
+    "north": "south", "south": "north", "east": "west",
+    "west": "east", "up": "down", "down": "up",
+}
+# 场景格子里走一格，坐标怎么变（x 向右、y 向下）。
+# 上下是楼梯，不是平面方向，所以在场景里另外处理（走到楼梯格上 / 站在楼梯旁边按上/下）。
+GRID_STEPS = {
+    "north": (0, -1), "south": (0, 1), "east": (1, 0), "west": (-1, 0),
+}
+# 门里的那一格该往哪个方向找（先试第一个，不行再试后面的）
+INWARD_STEPS = {
+    "north": ((0, 1), (1, 0), (-1, 0), (0, -1)),
+    "south": ((0, -1), (1, 0), (-1, 0), (0, 1)),
+    "west": ((1, 0), (0, 1), (0, -1), (-1, 0)),
+    "east": ((-1, 0), (0, 1), (0, -1), (1, 0)),
+    "up": ((0, 1), (0, -1), (1, 0), (-1, 0)),
+    "down": ((0, 1), (0, -1), (1, 0), (-1, 0)),
+}
+WALL_TILES = ("#", "~")  # 墙和障碍物都走不过去
+DOOR_TILES = ("+", "<", ">")  # 门和楼梯：走上去就换房间
 
 # 休息时长的中文写法
 REST_WORDS = {
@@ -143,6 +164,15 @@ class World:
         self.wear_slot_names = dict(self.armor_slots)  # 所有穿戴位（护甲 + 其他）的显示名
         self.wear_slot_names.update({slot: info["name"] for slot, info in self.gear_slots.items()})
         gear_kinds = {info["kind"] for info in self.gear_slots.values()}
+        for room_id, room in self.rooms.items():
+            # random_items：第一次进入这个地点时随机生成的地面物资（min ~ max 个）
+            for spec in room.get("random_items", []):
+                where = f"world.json 里的地点 {room_id}"
+                if spec.get("id") not in self.items:
+                    raise ValueError(f"{where}：random_items 里的物品 id 不在物品表里")
+                low, high = spec.get("min", 1), spec.get("max", 1)
+                if not 1 <= low <= high:
+                    raise ValueError(f"{where}：random_items 的个数要写 1 ≤ min ≤ max")
         for item_id, item in self.items.items():
             weapon = item.get("weapon")
             if weapon and not dice_rules.DICE_PATTERN.match(weapon.get("damage", "")):
@@ -204,6 +234,8 @@ class Game:
             (["走", "去", "go"], self.cmd_go),
             (["拿", "捡", "拾取", "take", "get"], self.cmd_take),
             (["放下", "丢掉", "drop"], self.cmd_drop),
+            (["拆分", "分开", "split"], self.cmd_split),
+            (["堆叠", "合并", "stack"], self.cmd_stack),
             (["背包", "物品", "inventory", "i"], self.cmd_inventory),
             (["地图", "map", "m"], self.cmd_map),
             (["角色", "状态", "status", "c"], self.cmd_status),
@@ -235,19 +267,28 @@ class Game:
 
     def reset(self):
         self.current_room = self.world.start_room
+        # 背包里每一项都是一“堆”，见下面「背包：一格一堆」那一段
         self.inventory = []
+        self.next_stack_id = 1  # 每堆东西的编号，界面靠它指定具体哪一堆
         self.equipment = {"main_hand": None, "off_hand": None}  # 双手武器会同时占两个位置
         self.worn = {slot: None for slot in self.world.wear_slot_names}  # 护甲、饰品、披风、背包
         self.stance = None  # 当前姿态 id
         self.turns = 0
         self.indoor_steps = 0  # 室内已经走了几步（凑满 10 步扣一次体力）
+        self.stamina_spent = 0  # 累计消耗了多少体力（攒满 THIRST_STAMINA 就口渴）
+        self.food_uses = []  # 最近几次进食的时间（绝对分钟数，用来判断饱腹）
         self.day = stats.START_DAY  # 计时器：第几天
         self.minutes = stats.START_MINUTES  # 计时器：当天已经过去的分钟数
         self._load_notice = ""  # 读档时若按新版本适配过，这里放一句提示
         # 去过的地点（地图上的显示方式不同，内容也只对去过的地点公开）
         self.visited = {self.current_room}
-        # 每个房间里现有的物品（会随玩家拿取/丢弃而变化）
+        # 每个房间里现有的物品（会随玩家拿取/丢弃而变化）。同一种东西地上可以摆好几件，
+        # 所以这是一串物品 id，可能重复；每件东西的格子记在 ground_positions 里（一一对应）。
         self.room_items = {rid: list(r.get("items", [])) for rid, r in self.world.rooms.items()}
+        # 场景格子：玩家现在站在哪一格 [x, y]，以及每个房间里每件地面物品的格子
+        # ground_positions[房间] = [[x, y], ...]，长度和 room_items[房间] 一样，按顺序对应
+        self.pos = None
+        self.ground_positions = {}
         # 每个 NPC 已经说到第几句
         self.dialogue_index = {nid: 0 for nid in self.world.npcs}
 
@@ -256,7 +297,8 @@ class Game:
         self.reset()
         self.character = character
         background = self.options.background(character.background)
-        self.inventory = list(background.get("starting_items", []))
+        for item_id in background.get("starting_items", []):
+            self.add_item(item_id)
         character.hp = self.options.max_hp(character)
         character.stamina = stats.stamina_max(character.attributes)
 
@@ -377,12 +419,227 @@ class Game:
     def _room(self):
         return self.world.rooms[self.current_room]
 
+    # ---------- 场景格子 ----------
+    #
+    # world.json 里每个房间可以写一段 grid（见数据文件里的注释）：
+    #   tiles   10 行 × 16 列的字符串，'#' 墙、'.' 地板、'~' 障碍物、'+' 门、'<' 上楼、'>' 下楼
+    #   doors   {出口方向: [x, y]}，和房间的 exits 一一对应
+    #   objects {物品 / NPC id: [x, y]}，只写初始位置的物品
+    # 没写 grid 的房间自动退回老做法（走一步 = 直接换房间），所以旧数据也能跑。
+
+    def room_grid(self, room_id=None):
+        """这个房间的格子场景；没写就返回 None。"""
+        room = self.world.rooms[room_id or self.current_room]
+        grid = room.get("grid")
+        if not grid or not grid.get("tiles"):
+            return None
+        return grid
+
+    def grid_size(self, grid):
+        """(宽, 高)：宽取第一行的长度，高取行数。"""
+        return len(grid["tiles"][0]), len(grid["tiles"])
+
+    def tile_at(self, grid, x, y):
+        """这一格是什么；越界一律当墙。"""
+        tiles = grid["tiles"]
+        if 0 <= y < len(tiles) and 0 <= x < len(tiles[y]):
+            return tiles[y][x]
+        return "#"
+
+    def tile_walkable(self, grid, x, y):
+        return self.tile_at(grid, x, y) not in WALL_TILES
+
+    def tile_is_door(self, grid, x, y):
+        return self.tile_at(grid, x, y) in DOOR_TILES
+
+    def door_direction(self, grid, pos):
+        """这一格是哪扇门 / 楼梯（出口方向）；不是门就返回 None。"""
+        for direction, coord in (grid.get("doors") or {}).items():
+            if list(coord)[:2] == [pos[0], pos[1]]:
+                return direction
+        return None
+
+    def door_tile(self, grid, direction):
+        """某个出口的门 / 楼梯在哪一格。"""
+        coord = (grid.get("doors") or {}).get(direction)
+        return (coord[0], coord[1]) if coord else None
+
+    def _npc_tiles(self, room_id, grid):
+        """房间里 NPC 占的格子（NPC 位置写在世界数据里，不会变）。"""
+        taken = set()
+        objects = grid.get("objects") or {}
+        for npc_id in self.world.rooms[room_id].get("npcs", []):
+            coord = objects.get(npc_id)
+            if coord:
+                taken.add((coord[0], coord[1]))
+        return taken
+
+    def ground_positions_in(self, room_id=None):
+        """房间里每件地面物品的格子坐标：[[x, y], ...]，和 room_items 一一对应。
+
+        世界数据里写了初始位置的就用写的（同种东西只有第一件用那个位置，其余另找地方）；
+        后来丢下的、或者数据里没写位置的，自动找最近的空格子，结果记进 self.ground_positions
+        （存进存档，一件东西一个格子）。列表短了补 None，长了截掉。
+        """
+        room_id = room_id or self.current_room
+        grid = self.room_grid(room_id)
+        if not grid:
+            return []
+        items = self.room_items[room_id]
+        table = self.ground_positions.setdefault(room_id, [])
+        del table[len(items):]  # 东西被拿走了，多出来的坐标一并丢掉
+        while len(table) < len(items):
+            table.append(None)
+        occupied = {tuple(c) for c in table if c} | self._npc_tiles(room_id, grid)
+        occupied.add(self.player_pos(grid))
+        authored = grid.get("objects") or {}
+        for index, item_id in enumerate(items):
+            if table[index]:
+                continue
+            coord = authored.get(item_id)
+            if coord and self.tile_walkable(grid, coord[0], coord[1]) and tuple(coord) not in occupied:
+                table[index] = [coord[0], coord[1]]
+            else:
+                free = self._nearest_free_tile(grid, self.player_pos(grid), occupied)
+                if free:
+                    table[index] = [free[0], free[1]]
+            if table[index]:
+                occupied.add(tuple(table[index]))
+        return table
+
+    def ground_names(self, room_id=None):
+        """地上东西的名字，同种几件合并写成「名字 ×N」。"""
+        room_id = room_id or self.current_room
+        order, counts = [], {}
+        for item_id in self.room_items[room_id]:
+            if item_id not in counts:
+                order.append(item_id)
+                counts[item_id] = 0
+            counts[item_id] += 1
+        return [self.world.items[i]["name"] + (f" ×{counts[i]}" if counts[i] > 1 else "")
+                for i in order]
+
+    def ground_names_at(self, pos, room_id=None):
+        """某一格上摆着哪些东西（名字列表）。"""
+        room_id = room_id or self.current_room
+        names = []
+        for item_id, coord in zip(self.room_items[room_id], self.ground_positions_in(room_id)):
+            if coord and coord[0] == pos[0] and coord[1] == pos[1]:
+                names.append(self.world.items[item_id]["name"])
+        return names
+
+    def _nearest_free_tile(self, grid, start, occupied):
+        """从 start 一圈圈往外找最近的空格子（不压墙、不压门、不压别的东西）。"""
+        width, height = self.grid_size(grid)
+        sx, sy = start
+        for radius in range(0, max(width, height) + 1):
+            found = []
+            for y in range(max(0, sy - radius), min(height, sy + radius + 1)):
+                for x in range(max(0, sx - radius), min(width, sx + radius + 1)):
+                    if max(abs(x - sx), abs(y - sy)) != radius:
+                        continue
+                    if not self.tile_walkable(grid, x, y) or self.tile_is_door(grid, x, y):
+                        continue
+                    if (x, y) in occupied:
+                        continue
+                    found.append((x, y))
+            if found:
+                found.sort(key=lambda p: (p[1], p[0]))
+                return found[0]
+        return None
+
+    def player_pos(self, grid=None):
+        """玩家现在站在哪一格；没有就按房间中心找一格空的定下来。
+
+        注意：这里不能再回头调 ground_positions_in（那个函数会来问玩家在哪一格），
+        所以占用情况直接读已经记下的坐标。
+        """
+        grid = grid if grid is not None else self.room_grid()
+        if not grid:
+            return (0, 0)
+        width, height = self.grid_size(grid)
+        if self.pos and self.tile_walkable(grid, self.pos[0], self.pos[1]):
+            return (self.pos[0], self.pos[1])
+        occupied = self._npc_tiles(self.current_room, grid) | {
+            tuple(c) for c in self.ground_positions.get(self.current_room, []) if c}
+        free = self._nearest_free_tile(grid, (width // 2, height // 2), occupied)
+        self.set_pos(free or (width // 2, height // 2))
+        return (self.pos[0], self.pos[1])
+
+    def set_pos(self, pos):
+        """记住玩家站在哪一格（存进存档）。"""
+        if pos:
+            self.pos = [int(pos[0]), int(pos[1])]
+
+    def near(self, pos, target):
+        """两格是不是挨着（同一格算，斜角也算）：拾取 / 说话要走到跟前。"""
+        if not pos or not target:
+            return True
+        return max(abs(pos[0] - target[0]), abs(pos[1] - target[1])) <= 1
+
+    def entry_tile(self, room_id, from_direction):
+        """从 from_direction 走进这个房间时，人物落在哪一格（门里面那一格）。"""
+        grid = self.room_grid(room_id)
+        if not grid:
+            return None
+        tile = self.door_tile(grid, OPPOSITE_DIRECTIONS.get(from_direction))
+        if not tile:
+            return None
+        occupied = self._npc_tiles(room_id, grid) | {
+            tuple(c) for c in self.ground_positions_in(room_id) if c}
+        for dx, dy in INWARD_STEPS.get(from_direction, ((0, 1),)):
+            x, y = tile[0] + dx, tile[1] + dy
+            if (self.tile_walkable(grid, x, y) and not self.tile_is_door(grid, x, y)
+                    and (x, y) not in occupied):
+                return (x, y)
+        return self._nearest_free_tile(grid, tile, occupied)
+
+    def scene_state(self):
+        """打包给网页版渲染场景：格子、门、人物、物品、玩家坐标。"""
+        grid = self.room_grid()
+        if not grid:
+            return None
+        width, height = self.grid_size(grid)
+        coords = self.ground_positions_in()
+        things = [
+            {"id": f"g{index}", "name": self.world.items[item_id]["name"],
+             "kind": "item", "x": coord[0], "y": coord[1]}
+            for index, (item_id, coord)
+            in enumerate(zip(self.room_items[self.current_room], coords))
+            if coord
+        ]
+        objects = grid.get("objects") or {}
+        for npc_id in self.world.rooms[self.current_room].get("npcs", []):
+            coord = objects.get(npc_id)
+            if coord:
+                things.append({"id": npc_id, "name": self.world.npcs[npc_id]["name"],
+                               "kind": "npc", "x": coord[0], "y": coord[1]})
+        x, y = self.player_pos(grid)
+        return {
+            "width": width,
+            "height": height,
+            "tiles": list(grid["tiles"]),
+            "doors": {d: list(c) for d, c in (grid.get("doors") or {}).items()},
+            "things": things,
+            "player": [x, y],
+        }
+
+    def _drop_tile(self, grid):
+        """丢在脚下：优先玩家自己这一格，被占了就找最近的空格子。"""
+        pos = self.player_pos(grid)
+        occupied = self._npc_tiles(self.current_room, grid) | {
+            tuple(c) for c in self.ground_positions_in() if c}
+        if self.tile_walkable(grid, pos[0], pos[1]) and not self.tile_is_door(grid, pos[0], pos[1]) \
+                and pos not in occupied:
+            return pos
+        return self._nearest_free_tile(grid, pos, occupied)
+
     def describe_room(self):
         room = self._room()
         lines = [f"【{room['name']}】", room["description"]]
-        items = self.room_items[self.current_room]
+        items = self.ground_names()
         if items:
-            lines.append("你看到：" + "、".join(self.world.items[i]["name"] for i in items))
+            lines.append("你看到：" + "、".join(items))
         npcs = room.get("npcs", [])
         if npcs:
             lines.append("这里有：" + "、".join(self.world.npcs[n]["name"] for n in npcs))
@@ -403,7 +660,7 @@ class Game:
     def cmd_examine(self, arg):
         if not arg:
             return "你想查看什么？"
-        visible_items = self.inventory + self.room_items[self.current_room]
+        visible_items = self.inventory_ids() + self.room_items[self.current_room]
         item_id = self._match(arg, visible_items, self.world.items)
         if item_id:
             return self.world.items[item_id]["description"]
@@ -413,62 +670,133 @@ class Game:
         return "这里没有这样东西。"
 
     def cmd_go(self, arg):
+        """走：房间里就挪一格，走到门/楼梯格上就换房间；没写场景的房间直接换房间。"""
         direction = DIRECTIONS.get(arg)
         if not direction:
             return "你想往哪个方向走？（东/南/西/北/上/下）"
+        grid = self.room_grid()
+        if grid:
+            return self._step(direction, grid)
+        return self._travel(direction, self._room())
+
+    def _step(self, direction, grid):
+        """在场景里走一格。"""
         room = self._room()
+        pos = self.player_pos(grid)
+        if direction in ("up", "down"):
+            return self._take_stairs(direction, grid, pos)
+        dx, dy = GRID_STEPS[direction]
+        target = (pos[0] + dx, pos[1] + dy)
+        if not self.tile_walkable(grid, target[0], target[1]):
+            return self._no_path(room, direction)
+        # 踩到门 / 楼梯格上就换房间，走过去的那一格由目标房间的“门里那格”决定
+        door_dir = self.door_direction(grid, target)
+        if door_dir:
+            return self._travel(door_dir, room)
+
+        error, overweight, cost = self._prepare_move()
+        if error:
+            return error
+        self.set_pos(target)
+        cost_note, notes = self._pay_move(overweight, cost)
+        self._regenerate()
+        text = f"移动至（第 {target[0] + 1} 列，第 {target[1] + 1} 行）"
+        text += ("，" + cost_note if cost_note else "") + "。"
+        if notes:
+            text += "\n" + notes
+        here = self.ground_names_at(target)
+        if here:
+            text += "\n脚下有：" + "、".join(here) + "。"
+        shock = self._check_shock()
+        if shock:
+            text += "\n\n" + shock
+        return text
+
+    def _take_stairs(self, direction, grid, pos):
+        """上下楼：站在楼梯格上（或紧挨着）才走得动。"""
+        room = self._room()
+        if direction not in room["exits"]:
+            return f"这里没有往{DIRECTION_NAMES[direction]}的楼梯。"
+        tile = self.door_tile(grid, direction)
+        if not tile:
+            return self._travel(direction, room)
+        near = max(abs(tile[0] - pos[0]), abs(tile[1] - pos[1])) <= 1
+        if not near:
+            name = "上" if direction == "up" else "下"
+            return f"楼梯不在这儿——你得先走到楼梯那格上（{name}楼口在第 {tile[0] + 1} 列，第 {tile[1] + 1} 行）。"
+        return self._travel(direction, room)
+
+    def _prepare_move(self):
+        """走一步之前的检查，返回 (错误文字, 是否超重, 这一步的体力消耗)。
+
+        室内外一样：每走 INDOOR_STEPS_PER_COST 步扣一次体力，没凑满的那几步消耗是 0。
+        口渴时这一步的消耗翻倍（见 stats.move_cost）。
+        """
+        if self.load_level() == "immobile":
+            capacity = stats.carry_capacity(self.character.attributes)
+            return (f"你背的东西太重了（负重 {self._carried_weight():g}/{capacity} kg，"
+                    f"超过上限的 {stats.IMMOBILE_WEIGHT_MULTIPLIER} 倍），一步也挪不动。先放下些东西吧。",
+                    False, 0)
+        overweight = self.load_level() == "overweight"
+        cost = 0
+        if self.character:
+            cost = self.next_move_cost(overweight)
+            if self.character.stamina < cost:
+                return (f"体力不够：走这一步要 {cost} 点，你只剩 {self.character.stamina} 点。\n"
+                        f"先休息一下吧（例如：休息 60）。", overweight, cost)
+        return (None, overweight, cost)
+
+    def _pay_move(self, overweight, cost):
+        """真正扣体力、推时间、数步数。
+
+        返回 (要显示的那句说明, 额外提示)：说明不带括号和句号，额外提示是新触发的
+        口渴之类，调用方另起一行接在正文后面。
+        """
+        self.turns += 1
+        self.indoor_steps = (self.indoor_steps + 1) % stats.INDOOR_STEPS_PER_COST
+        if not self.character:
+            return "", ""
+        note = self.spend_stamina(cost)
+        minutes = stats.move_minutes(overweight)
+        self.advance_time(minutes)
+        # 这一步花了多少体力、多少时间直接写进正文（文字栏里就能看到）。
+        # 没凑满 10 步的那几步不扣体力，写 0。控制台版和网页版共用这段。
+        extra = "，超重翻倍" if overweight else ""
+        return f"体力消耗 {cost}，用时 {format_duration(minutes)}{extra}", note
+
+    def _travel(self, direction, room):
+        """换到相邻的地点（可能是走过门，也可能是没有场景数据时的直接走）。"""
         exit_ = room["exits"].get(direction)
         if exit_ is None:
             return self._no_path(room, direction)
         # 出口可以是房间 id，也可以是带条件的对象
         if isinstance(exit_, dict):
             required = exit_.get("requires")
-            if required and required not in self.inventory:
+            # 拿在手上 / 挂在身上也算带着（手电筒装备着照样能下地下室）
+            if required and self.count_item(required) <= 0 and required not in self.equipped_ids():
                 return exit_.get("blocked_message", "你过不去。")
             exit_ = exit_["to"]
 
-        if self.load_level() == "immobile":
-            capacity = stats.carry_capacity(self.character.attributes)
-            return (f"你背的东西太重了（负重 {self._carried_weight():g}/{capacity} kg，"
-                    f"超过上限的 {stats.IMMOBILE_WEIGHT_MULTIPLIER} 倍），一步也挪不动。先放下些东西吧。")
-
-        outdoor = bool(room.get("outdoor"))
-        overweight = self.load_level() == "overweight"
-        cost = 0
-        if self.character:
-            cost = self.next_move_cost(outdoor, overweight)
-            if self.character.stamina < cost:
-                return (f"体力不够：走这一步要 {cost} 点，你只剩 {self.character.stamina} 点。\n"
-                        f"先休息一下吧（例如：休息 60）。")
+        error, overweight, cost = self._prepare_move()
+        if error:
+            return error
 
         first_visit = exit_ not in self.visited
         self.current_room = exit_
         self.visited.add(exit_)
-        self.turns += 1
-        if not outdoor:
-            self.indoor_steps = (self.indoor_steps + 1) % stats.INDOOR_STEPS_PER_COST
-        cost_note = ""
-        if self.character:
-            before = self.character.stamina
-            self.character.stamina = max(0, before - cost)
-            minutes = stats.move_minutes(outdoor, overweight)
-            self.advance_time(minutes)
-            # 这一步花了多少体力直接写进正文（文字栏里就能看到），
-            # 不用再去悬停移动按钮看提示。控制台版和网页版共用这段。
-            extra = "，超重翻倍" if overweight else ""
-            if outdoor or cost:
-                where = "" if outdoor else f"，室内每 {stats.INDOOR_STEPS_PER_COST} 步扣一次"
-                cost_note = (f"（移动消耗 {cost} 点体力：{before} → {self.character.stamina}"
-                             f"/{stats.stamina_max(self.character.attributes)}{where}，"
-                             f"用时 {format_duration(minutes)}{extra}）")
-            else:
-                cost_note = (f"（室内移动：已走 {self.indoor_steps}/{stats.INDOOR_STEPS_PER_COST} 步，"
-                             f"走满扣 {stats.move_cost(self.character.attributes, False, overweight)} 点体力，"
-                             f"用时 {format_duration(minutes)}{extra}）")
+        # 第一次进某个地点才掷一次随机物资（见 roll_room_spawns），之后再来不会再生成
+        if first_visit and self.character:
+            self.roll_room_spawns(exit_)
+        cost_note, notes = self._pay_move(overweight, cost)
+        entry = self.entry_tile(exit_, direction)
+        if entry:
+            self.set_pos(entry)
         self._regenerate()
         text = self.describe_room()
         if cost_note:
-            text += "\n" + cost_note
+            text += "\n" + cost_note + "。"
+        if notes:
+            text += "\n" + notes
         if first_visit and self.character:
             text += "\n\n探索了新地点。" + stats.gain_xp(
                 self.character, self.options.progression["explore_xp"], self.options
@@ -490,6 +818,21 @@ class Game:
         while self.minutes >= stats.MINUTES_PER_DAY:
             self.minutes -= stats.MINUTES_PER_DAY
             self.day += 1
+
+    def clock_total(self):
+        """从第 START_DAY 天 0 点算起的绝对分钟数：算时限（饱腹、进食窗口）用它。"""
+        return (self.day - stats.START_DAY) * stats.MINUTES_PER_DAY + self.minutes
+
+    def roll_room_spawns(self, room_id):
+        """第一次走进某个地点时，按世界数据里的 random_items 掷一次随机物资。
+
+        只在第一次进入时生成：之后再来（或者从存档读回来）都不会重新生成，
+        免得反复进出刷物资。
+        """
+        specs = self.world.rooms[room_id].get("random_items") or []
+        for spec in specs:
+            count = self.dice.rng.randint(int(spec.get("min", 1)), int(spec.get("max", 1)))
+            self.room_items[room_id] += [spec["id"]] * count
 
     def _no_path(self, room, direction):
         """那个方向走不通：普通房间说墙壁，走廊和室外说有障碍物。"""
@@ -555,11 +898,19 @@ class Game:
         return "\n".join(lines)
 
     def conditions(self):
-        """身上的异常状态。体力不足造成的力竭是实时算出来的，不写进存档。"""
+        """身上的异常状态。
+
+        体力不足造成的力竭、超重这些是实时算出来的，不写进存档；口渴、饱腹记在角色身上，
+        其中带时限（until）的过期后自动消失。
+        """
         c = self.character
         if not c:
             return []
+        self._purge_conditions()
         active = [dict(x) for x in c.conditions]
+        for entry in active:  # 有时限的状态把“还剩多久”算出来给界面看
+            if entry.get("until"):
+                entry["note"] = f"还剩 {format_duration(self.condition_minutes_left(entry['until']))}"
         if stats.is_exhausted(c) and not any(x.get("id") == "exhausted" for x in active):
             active.insert(0, {
                 "id": "exhausted",
@@ -572,6 +923,88 @@ class Game:
         if level != "normal":
             active.append(self._load_condition(level))
         return active
+
+    def _purge_conditions(self):
+        """把到期的临时状态（例如饱腹）从角色身上摘掉。"""
+        c = self.character
+        if not c:
+            return
+        now = self.clock_total()
+        c.conditions = [x for x in c.conditions if not x.get("until") or x["until"] > now]
+
+    def condition_minutes_left(self, until):
+        """某个时限状态还剩多少分钟。"""
+        return max(0, int(until - self.clock_total()))
+
+    def has_condition(self, condition_id):
+        """身上有没有这个异常状态（含力竭、超重这些实时算出来的）。"""
+        return any(x.get("id") == condition_id for x in self.conditions())
+
+    def thirsty(self):
+        """是不是口渴了：口渴时体力消耗翻倍（stats.move_cost）。"""
+        return self.has_condition("thirst")
+
+    def spend_stamina(self, amount):
+        """扣体力并累计消耗量；累计满 THIRST_STAMINA 点就口渴（喝水能解除）。
+
+        返回要补在正文里的提示（没触发口渴就是空字符串）。口渴是一次性的：
+        攒够一次就从头再数，已经口渴时再攒够也不会重复叠加。
+        """
+        c = self.character
+        if not c or amount <= 0:
+            return ""
+        c.stamina = max(0, c.stamina - amount)
+        self.stamina_spent += amount
+        if self.stamina_spent < stats.THIRST_STAMINA:
+            return ""
+        self.stamina_spent = 0
+        if self.thirsty():
+            return ""
+        c.conditions.append({
+            "id": "thirst",
+            "name": "口渴",
+            "source": "stamina",
+            "effect": f"体力消耗 ×{stats.THIRST_COST_MULTIPLIER}",
+            "note": "喝水（使用 矿泉水）可以解除",
+        })
+        return (f"你嗓子干得发疼——体力累计消耗了 {stats.THIRST_STAMINA} 点，你口渴了。\n"
+                f"（口渴：体力消耗 ×{stats.THIRST_COST_MULTIPLIER}，喝水可以解除）")
+
+    def food_blocked(self):
+        """饱腹期间不能再吃带食物标签的东西：返回拦下来的那句话，能吃就返回空。"""
+        until = self.full_until()
+        if not until or until <= self.clock_total():
+            return ""
+        return (f"你还在饱腹，{format_duration(self.condition_minutes_left(until))}内吃不下带食物的东西。\n"
+                f"（{stats.FULL_WINDOW_MINUTES} 分钟内连吃 {stats.FULL_FOOD_COUNT} 份食物就会饱腹，"
+                f"缓一缓再吃吧。）")
+
+    def full_until(self):
+        """饱腹到什么时候（绝对分钟数）；没饱腹返回 0。"""
+        entry = next((x for x in self.character.conditions if x.get("id") == "full"), None)
+        return entry.get("until", 0) if entry else 0
+
+    def note_food_eaten(self):
+        """记一次进食：半小时内吃到第三份就饱腹一小时。返回要补的文字，没事就是空。"""
+        c = self.character
+        if not c:
+            return ""
+        now = self.clock_total()
+        self.food_uses = [t for t in self.food_uses if now - t < stats.FULL_WINDOW_MINUTES]
+        self.food_uses.append(now)
+        if len(self.food_uses) < stats.FULL_FOOD_COUNT:
+            return ""
+        self.food_uses = []
+        self._purge_conditions()
+        c.conditions = [x for x in c.conditions if x.get("id") != "full"]
+        c.conditions.append({
+            "id": "full",
+            "name": "饱腹",
+            "source": "food",
+            "effect": f"{format_duration(stats.FULL_MINUTES)}内不能再吃带食物的东西",
+            "until": now + stats.FULL_MINUTES,
+        })
+        return (f"★ 吃得太急了——你饱腹了：{format_duration(stats.FULL_MINUTES)}内吃不下带食物的东西。")
 
     def load_level(self):
         """当前负重状态（normal / overweight / immobile），见 stats.load_level。"""
@@ -601,7 +1034,7 @@ class Game:
         return f"\n你现在{condition['name']}了：{condition['effect']}。（{condition['note']}）"
 
     def clear_condition(self, condition_id):
-        """清除异常状态（留给以后的解毒剂之类道具调用）。
+        """清除异常状态（例如喝水解除口渴；留给以后的解毒剂之类道具调用）。
 
         体力不足造成的力竭不能直接清掉，必须先把体力补回来；其它来源的力竭可以清。
         """
@@ -610,17 +1043,20 @@ class Game:
             return "还没有创建角色。"
         if condition_id == "exhausted" and stats.is_exhausted(c):
             return "这种力竭是体力耗尽引起的，清除异常状态的道具不管用，得先恢复体力。"
-        before = len(c.conditions)
-        c.conditions = [x for x in c.conditions if x.get("id") != condition_id]
-        if len(c.conditions) == before:
+        self._purge_conditions()
+        found = next((x for x in c.conditions if x.get("id") == condition_id), None)
+        if not found:
             return "身上没有这个异常状态。"
-        return "异常状态已解除。"
+        c.conditions = [x for x in c.conditions if x.get("id") != condition_id]
+        return f"{found.get('name', '异常状态')}解除了。"
 
-    def next_move_cost(self, outdoor, overweight=False):
-        """下一步要扣多少体力：室外每步都扣；室内只有凑满 10 步的那一步才扣。"""
-        cost = stats.move_cost(self.character.attributes, outdoor, overweight)
-        if outdoor or self.indoor_steps + 1 >= stats.INDOOR_STEPS_PER_COST:
-            return cost
+    def next_move_cost(self, overweight=False):
+        """下一步要扣多少体力：室内外一样，只有凑满 10 步的那一步才扣，其余是 0。
+
+        口渴时这一步的消耗翻倍；超重也翻倍，两者叠乘。
+        """
+        if self.indoor_steps + 1 >= stats.INDOOR_STEPS_PER_COST:
+            return stats.move_cost(overweight, self.thirsty())
         return 0
 
     def cmd_wait(self, arg):
@@ -644,12 +1080,228 @@ class Game:
         if c and self.turns % stats.REGEN_INTERVAL == 0:
             c.hp = min(self.options.max_hp(c), c.hp + stats.hp_regen(c.attributes))
 
+    # ---------- 背包：一格一堆 ----------
+    #
+    # self.inventory 里每一项都是一“堆”东西：
+    #     {"sid": 1, "id": "water", "count": 3, "auto": True}
+    # sid 是这一堆的编号（界面拖动 / 拆分时靠它指定具体哪一堆），
+    # auto=True 表示“以后捡到同种东西可以自动摞进来”。手动拆分出来的那一堆
+    # auto=False，所以不会被自动摞回去，但可以手动拖到同种物品上合并。
+    # 只有物品数据里带 stack 词条的才摞得起来，别的物品一格一件、也不能拆分。
+
+    def stack_limit(self, item_id):
+        """这一堆最多几个。"""
+        return stats.stack_max(self.world.items[item_id])
+
+    def _new_stack(self, item_id, count=1, auto=True):
+        stack = {"sid": self.next_stack_id, "id": item_id, "count": int(count), "auto": bool(auto)}
+        self.next_stack_id += 1
+        return stack
+
+    def add_item(self, item_id, count=1, auto=True):
+        """把东西放进背包：带 stack 词条又允许自动堆叠的，先往已有的堆里摞（摞满为止）。"""
+        left = int(count)
+        limit = self.stack_limit(item_id) if auto else 1
+        if limit > 1:
+            for stack in self.inventory:
+                if left <= 0:
+                    break
+                if stack["id"] != item_id or not stack["auto"]:
+                    continue
+                room = limit - stack["count"]
+                if room <= 0:
+                    continue
+                take = min(room, left)
+                stack["count"] += take
+                left -= take
+        while left > 0:
+            take = min(limit, left)
+            self.inventory.append(self._new_stack(item_id, take, auto))
+            left -= take
+
+    def take_item(self, item_id, count=1):
+        """从背包里拿走几个（按顺序拿，拿光了就把那一堆删掉），返回真正拿走的数量。"""
+        left = int(count)
+        taken = 0
+        for stack in list(self.inventory):
+            if left <= 0:
+                break
+            if stack["id"] != item_id:
+                continue
+            take = min(stack["count"], left)
+            stack["count"] -= take
+            left -= take
+            taken += take
+            if stack["count"] <= 0:
+                self.inventory.remove(stack)
+        return taken
+
+    def count_item(self, item_id):
+        """背包里这种东西一共有几个。"""
+        return sum(stack["count"] for stack in self.inventory if stack["id"] == item_id)
+
+    def inventory_ids(self):
+        """背包里所有物品 id（有几个就重复几次），指令解析用它来找东西。"""
+        ids = []
+        for stack in self.inventory:
+            ids += [stack["id"]] * stack["count"]
+        return ids
+
+    def find_stack(self, sid):
+        """按编号找一堆东西。"""
+        return next((stack for stack in self.inventory if stack["sid"] == sid), None)
+
+    def merge_stacks(self, source, target):
+        """把 source 这堆摞到 target 上（摞满为止，剩下的留在原来那堆）。"""
+        limit = self.stack_limit(target["id"])
+        room = limit - target["count"]
+        if room <= 0:
+            return 0
+        moved = min(room, source["count"])
+        target["count"] += moved
+        source["count"] -= moved
+        if source["count"] <= 0:
+            self.inventory.remove(source)
+        return moved
+
+    def _stack_arg(self, arg):
+        """解析“<物品名 或 堆号> [数量]”，返回 (指定的堆, 物品 id, 数量)。
+
+        第一段写成数字（例如界面拖动时发的“3”）就是指定第 3 堆，
+        否则按名字 / 别名找背包里的东西。认不出来时对应项是 None。
+        """
+        parts = (arg or "").split()
+        count = None
+        if len(parts) > 1 and parts[-1].isdigit():
+            count = int(parts[-1])
+            parts = parts[:-1]
+        head = " ".join(parts).strip()
+        if not head:
+            return None, None, count
+        stack = self.find_stack(int(head)) if head.isdigit() else None
+        if stack:
+            return stack, stack["id"], count
+        item_id = self._match(head, self.inventory_ids(), self.world.items)
+        return None, item_id, count
+
+    def cmd_split(self, arg):
+        """拆分：从一堆里分出几个，分出来的那堆不会被自动堆叠。"""
+        if not arg:
+            return "你想拆开什么？例如：拆分 矿泉水 2"
+        stack, item_id, count = self._stack_arg(arg)
+        if not item_id:
+            return f"你身上没有{arg}。"
+        name = self.world.items[item_id]["name"]
+        if self.stack_limit(item_id) <= 1:
+            return f"{name}没有堆叠词条，一格就是一件，拆不开。"
+        if stack is None:
+            stack = next((s for s in self.inventory if s["id"] == item_id and s["count"] > 1), None)
+        if stack is None:
+            return f"背包里的{name}只有一件，没什么好拆的。"
+        if stack["count"] < 2:
+            return f"这堆{name}只有 {stack['count']} 个，没什么好拆的。"
+        if count is None:
+            count = stack["count"] // 2
+        count = max(1, min(count, stack["count"] - 1))
+        split = self._new_stack(item_id, count, auto=False)
+        stack["count"] -= count
+        self.inventory.insert(self.inventory.index(stack) + 1, split)
+        return (f"你把{name}拆成 {stack['count']} 个和 {count} 个。"
+                f"分开的那 {count} 个不会自动摞回原堆，但可以再拖回去合并。")
+
+    def cmd_stack(self, arg):
+        """合并：把一堆摞到另一堆上。界面拖动时发“堆叠 <来源堆号> <目标堆号>”。"""
+        if not arg:
+            return "你想把什么摞起来？例如：堆叠 矿泉水"
+        parts = arg.split()
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            source, target = self.find_stack(int(parts[0])), self.find_stack(int(parts[1]))
+            if not source or not target:
+                return "这两堆东西已经不在背包里了。"
+            if source is target:
+                return "它们本来就是同一堆。"
+            if source["id"] != target["id"]:
+                return "只有同一种东西才摞得起来。"
+            name = self.world.items[target["id"]]["name"]
+            moved = self.merge_stacks(source, target)
+            if not moved:
+                return f"这堆{name}已经摞满了（{target['count']}/{self.stack_limit(target['id'])}）。"
+            text = f"你把 {moved} 个{name}摞到了一起，现在这堆有 {target['count']} 个。"
+            if source["count"] > 0:
+                text += f"（还剩下 {source['count']} 个，这堆满了）"
+            return text
+        item_id = self._match(arg, self.inventory_ids(), self.world.items)
+        if not item_id:
+            return f"你身上没有{arg}。"
+        name = self.world.items[item_id]["name"]
+        if self.stack_limit(item_id) <= 1:
+            return f"{name}没有堆叠词条，一格就是一件，摞不起来。"
+        stacks = [s for s in self.inventory if s["id"] == item_id]
+        if len(stacks) < 2:
+            return f"背包里的{name}只有一堆，不用合并。"
+        target = stacks[0]
+        moved = 0
+        for source in stacks[1:]:
+            if source not in self.inventory:
+                continue
+            moved += self.merge_stacks(source, target)
+        if not moved:
+            return f"{name}这几堆都已经摞满了（每堆 {self.stack_limit(item_id)} 个）。"
+        left = sum(s["count"] for s in self.inventory if s["id"] == item_id)
+        return f"你把{name}摞到一起，现在一共 {left} 个。"
+
+    def equipped_ids(self):
+        """手上和身上穿着的物品（双手武器两个槽是同一件，去重）。"""
+        return {i for i in self.equipment.values() if i} | {i for i in self.worn.values() if i}
+
+    def all_carried(self):
+        """背包 + 手上 + 身上：负重按这些算（装备了也一样压在身上）。"""
+        ids = self.inventory_ids()
+        ids += sorted(self.equipped_ids())
+        return ids
+
     def _carried_weight(self, extra=0):
-        """背包里所有东西的重量（extra 是准备拿起来的东西），按背着的背包的减重率打折。"""
-        raw = sum(self.world.items[i].get("weight", 1) for i in self.inventory) + extra
+        """身上所有东西的重量（extra 是准备拿起来的东西），按背着的背包的减重率打折。"""
+        raw = sum(self.world.items[i].get("weight", 1) for i in self.all_carried()) + extra
         # 重量保留 1 位小数，向下取整（用 Decimal 避免 0.1 这类小数的浮点误差）
         total = Decimal(str(round(raw, 6))) * (100 - self.backpack_reduction()) / 100
         return float(total.quantize(Decimal("0.1"), rounding=ROUND_FLOOR))
+
+    def can_stow(self, item_id):
+        """背包还塞得下这件东西吗？按负重上限算（塞进去会超重就是塞不下）。"""
+        if not self.character:
+            return True
+        capacity = stats.carry_capacity(self.character.attributes)
+        weight = self.world.items[item_id].get("weight", 1)
+        return self._carried_weight(weight) <= capacity
+
+    def _to_ground(self, item_id):
+        """把东西丢在当前房间的地上，并给它找个格子。"""
+        room_id = self.current_room
+        grid = self.room_grid()
+        # 先把坐标表补齐成和 room_items 一样长（_drop_tile 里也会补一遍），之后两边一起加，
+        # 顺序就一直对得上。没有场景数据的房间只留 None。
+        table = (self.ground_positions_in(room_id) if grid
+                 else self.ground_positions.setdefault(room_id, []))
+        while len(table) < len(self.room_items[room_id]):
+            table.append(None)
+        tile = self._drop_tile(grid) if grid else None
+        self.room_items[room_id].append(item_id)
+        table.append([tile[0], tile[1]] if tile else None)
+        return tile
+
+    def stow(self, item_id):
+        """把一件装备/武器放回背包；塞不下就丢在脚下。返回要补的那句话（放得下就是空）。"""
+        name = self.world.items[item_id]["name"]
+        if self.can_stow(item_id):
+            self.add_item(item_id)
+            return ""
+        self._to_ground(item_id)
+        return f"\n背包已经塞不下了，{name}被你丢在脚下。"
+
+    def stow_all(self, item_ids):
+        """把一堆东西放回背包，返回要补的说明（可能有好几句）。"""
+        return "".join(self.stow(i) for i in sorted(item_ids))
 
     def backpack_reduction(self):
         """背着的背包的减重率（%），没背就是 0。"""
@@ -666,24 +1318,61 @@ class Game:
         item_id = self._match(arg, items, self.world.items)
         if not item_id:
             return "这里没有这样东西。"
+        name = self.world.items[item_id]["name"]
+        # 拾取要走到跟前（同一格或相邻一格，斜角也算），不能远程拿；查看不受限
+        index = items.index(item_id)
+        grid = self.room_grid()
+        if grid:
+            pos = self.player_pos(grid)
+            coords = self.ground_positions_in()
+
+            def distance(at):
+                coord = coords[at] if at < len(coords) else None
+                if not coord:
+                    return 99
+                return max(abs(coord[0] - pos[0]), abs(coord[1] - pos[1]))
+
+            # 同一种东西地上可能摆着好几件：拿离自己最近的那一件
+            index = min((at for at, i in enumerate(items) if i == item_id), key=distance)
+            coord = coords[index] if index < len(coords) else None
+            if coord and not self.near(pos, coord):
+                return (f"{name}在（第 {coord[0] + 1} 列，第 {coord[1] + 1} 行），"
+                        f"你得先走到那一格旁边再拿。")
         # 超重也能拿，只是会影响移动（见 stats.load_level）
         before = self.load_level()
-        items.remove(item_id)
-        self.inventory.append(item_id)
-        return f"你拿起了{self.world.items[item_id]['name']}。" + self._load_change_note(before)
+        items.pop(index)
+        table = self.ground_positions.get(self.current_room) or []
+        if index < len(table):
+            table.pop(index)  # 坐标和物品一一对应，删东西要连它的那一格一起删
+        self.add_item(item_id)  # 进背包就自动摞进同种的那一堆
+        return f"你拿起了{name}。" + self._load_change_note(before)
 
     def cmd_drop(self, arg):
+        """放下 / 丢掉。后面可以写数量（例如：放下 矿泉水 3），不写就是一件。"""
         if not arg:
             return "你想放下什么？"
-        item_id = self._match(arg, self.inventory, self.world.items)
+        parts = arg.split()
+        count = 1
+        if len(parts) > 1 and parts[-1].isdigit():
+            count = max(1, int(parts[-1]))
+            arg = " ".join(parts[:-1])
+        # 手上拿着的、身上穿着的也算“你身上的东西”
+        item_id = self._match(arg, self.inventory_ids() + sorted(self.equipped_ids()), self.world.items)
         if not item_id:
             return "你身上没有这样东西。"
+        name = self.world.items[item_id]["name"]
         before = self.load_level()
-        self._unequip(item_id)
-        self.inventory.remove(item_id)
-        self.room_items[self.current_room].append(item_id)
-        return (f"你放下了{self.world.items[item_id]['name']}。" + self._check_stance()
-                + self._load_change_note(before))
+        in_bag = self.count_item(item_id)
+        if not in_bag:  # 装备着的：先脱下来，再丢在地上
+            self._unequip(item_id)
+            self._to_ground(item_id)
+            return f"你放下了{name}。" + self._check_stance() + self._load_change_note(before)
+        count = min(count, in_bag)
+        self.take_item(item_id, count)
+        for _ in range(count):
+            self._to_ground(item_id)
+        text = f"你放下了{name} ×{count}。" if count > 1 else f"你放下了{name}。"
+        return text + self._check_stance() + self._load_change_note(before)
 
     def cmd_use(self, arg):
         """使用物品。效果写在物品数据的 use 字段里，见 items.py。"""
@@ -691,24 +1380,30 @@ class Game:
             return "还没有创建角色。"
         if not arg:
             return "你想用什么？例如：使用 能量棒"
-        item_id = self._match(arg, self.inventory, self.world.items)
+        item_id = self._match(arg, self.inventory_ids(), self.world.items)
         if not item_id:
             return f"你身上没有{arg}。"
         return items.use(self, self.character, item_id)
 
     def cmd_inventory(self, arg):
-        if not self.inventory:
-            return "你的背包是空的。"
-        slot_names = {"main_hand": "主手", "off_hand": "副手"}
-        names = []
-        for i in self.inventory:
-            where = self.item_location(i)
-            names.append(self.world.items[i]["name"] + (f"（{where}）" if where else ""))
-        text = "你带着：" + "、".join(names)
+        """背包和装备分开列：装备着的东西不在背包里；同种东西摞成一堆显示。"""
+        lines = []
+        if self.inventory:
+            parts = []
+            for stack in self.inventory:
+                name = self.world.items[stack["id"]]["name"]
+                parts.append(name if stack["count"] <= 1 else f"{name} ×{stack['count']}")
+            lines.append("背包里：" + "、".join(parts))
+        else:
+            lines.append("你的背包是空的。")
+        equipped = [(self.item_location(i), self.world.items[i]["name"])
+                    for i in sorted(self.equipped_ids())]
+        if equipped:
+            lines.append("装备着：" + "、".join(f"{where}{name}" for where, name in equipped))
         if self.character:
             capacity = stats.carry_capacity(self.character.attributes)
-            text += f"\n负重：{self._carried_weight():g}/{capacity} kg"
-        return text
+            lines.append(f"负重：{self._carried_weight():g}/{capacity} kg")
+        return "\n".join(lines)
 
     def cmd_map(self, arg):
         return render_map(self.world, self.current_room, self.visited, self.room_items)
@@ -842,6 +1537,10 @@ class Game:
         """身上重甲带来的每回合行动点减少量（每件重甲的 ap_penalty 相加）。"""
         return sum(self._armor(i).get("ap_penalty", 0) for i in self.worn.values() if self._armor(i))
 
+    def _take_from_inventory(self, item_id):
+        """从背包里拿出这件东西（装备时会用到）；不在背包里就什么也不做。"""
+        self.take_item(item_id, 1)
+
     def _wear(self, item_id):
         """穿戴到对应的位置：有空位就放空位（饰品有两个），都满了就换下第一个。"""
         name = self.world.items[item_id]["name"]
@@ -850,6 +1549,7 @@ class Game:
         candidates = self.world.wear_candidates(item_id)
         slot = next((s for s in candidates if not self.worn[s]), candidates[0])
         old = self.worn[slot]
+        self._take_from_inventory(item_id)
         self.worn[slot] = item_id
         slot_name = self.world.wear_slot_names[slot]
         armor = self._armor(item_id)
@@ -865,9 +1565,11 @@ class Game:
         else:
             reduction = self.world.items[item_id]["gear"].get("weight_reduction")
             text = f"你装备了{name}（{slot_name}" + (f"，减重 {reduction}%" if reduction else "") + "）。"
+        note = ""
         if old:
             text = f"你换下了{self.world.items[old]['name']}，" + text
-        return text
+            note = self.stow(old)  # 换下来的那件回背包（塞不下就丢在脚下）
+        return text + note
 
     def _check_stance(self):
         """换下武器后，如果不再满足当前姿态的武器要求，就自动解除姿态。"""
@@ -878,18 +1580,80 @@ class Game:
             return f"\n你手里没有{weapon}武器了，{stance['name']}姿态解除。"
         return ""
 
+    def _switch_hand(self, item_id, want):
+        """把已经拿在手上的武器换到另一只手：另一只手空着就挪过去，有武器就互换。
+
+        返回一句结果文字；这种情况不适用（双手武器、对面拿的是盾牌或不是武器）返回 None，
+        调用方会退回“你已经拿着 X 了”。
+        """
+        source = next((s for s, held in self.equipment.items() if held == item_id), None)
+        if not source or source == want:
+            return None
+        where = "主手" if want == "main_hand" else "副手"
+        from_where = "主手" if source == "main_hand" else "副手"
+        name = self.world.items[item_id]["name"]
+        if self._weapon(item_id).get("hands", 1) == 2:
+            return None  # 双手武器本来就占两只手，先卸下再说
+        other = self.equipment[want]
+        if other and (self._shield(other) or not self._weapon(other)):
+            return (f"{name}现在拿在{from_where}；{where}那边的{self.world.items[other]['name']}"
+                    f"不是武器，换不过去——先把它收起来。")
+        self.equipment[source], self.equipment[want] = other, item_id
+        if other:
+            return f"你把{name}换到{where}，{self.world.items[other]['name']}换到{from_where}。"
+        return f"你把{name}从{from_where}换到{where}。"
+
+    def _equip_weapon_into(self, item_id, slot):
+        """把武器拿到指定的那只手上（网页版拖到哪个方框就进哪只手）。"""
+        name = self.world.items[item_id]["name"]
+        weapon = self._weapon(item_id)
+        put_away = set()
+        if weapon.get("hands", 1) == 2:
+            # 双手武器占两只手，先把手上的东西都收起来
+            put_away = {i for i in self.equipment.values() if i}
+            self.equipment = {"main_hand": item_id, "off_hand": item_id}
+            where = "双手"
+        else:
+            current = {i for i in self.equipment.values() if i}
+            two_handed_held = any(
+                self._weapon(i) and self._weapon(i).get("hands", 1) == 2 for i in current)
+            if two_handed_held:  # 手上是双手武器，得先整个放下
+                put_away |= current
+                self.equipment = {"main_hand": None, "off_hand": None}
+            elif self.equipment.get(slot):
+                put_away.add(self.equipment[slot])
+            self.equipment[slot] = item_id
+            where = "主手" if slot == "main_hand" else "副手"
+        self._take_from_inventory(item_id)
+        text = f"你把{name}拿在{where}。"
+        if put_away:
+            text = "你收起了" + "、".join(self.world.items[i]["name"] for i in put_away) + "，" + text
+        return text + self.stow_all(put_away) + self._check_stance()
+
     def cmd_equip(self, arg):
         if not arg:
             return "你想装备什么？"
-        item_id = self._match(arg, self.inventory, self.world.items)
+        # 末尾可以写“主手 / 副手”，指定拿到哪只手上（网页版拖动时会带上）
+        want = None
+        parts = (arg or "").split()
+        if len(parts) > 1 and parts[-1] in ("主手", "副手"):
+            want = "main_hand" if parts[-1] == "主手" else "off_hand"
+            arg = " ".join(parts[:-1])
+        item_id = self._match(arg, self.inventory_ids(), self.world.items)
         if not item_id:
+            held = self._match(arg, sorted(self.equipped_ids()), self.world.items)
+            if held and want:
+                # 已经拿在手上的武器：拖到另一只手的方框上就直接换手
+                switched = self._switch_hand(held, want)
+                if switched:
+                    return switched
+            if held:
+                return f"你已经拿着{self.world.items[held]['name']}了。"
             return "你身上没有这样东西。"
         name = self.world.items[item_id]["name"]
         if self.world.wear_candidates(item_id):
             before = self.load_level()  # 换背包会改变减重率
             return self._wear(item_id) + self._load_change_note(before)
-        if item_id in self.equipment.values():
-            return f"你已经拿着{name}了。"
         if self._shield(item_id):
             return self._equip_shield(item_id)
         weapon = self._weapon(item_id)
@@ -897,6 +1661,8 @@ class Game:
             return f"{name}没法装备。"
         if self.options.perk_effect(self.character.perks, "no_weapons") if self.character else False:
             return f"你是踢腿的武道家，不用武器——{name}拿在手上反而碍事。"
+        if want:
+            return self._equip_weapon_into(item_id, want)
 
         two_handed = weapon.get("hands", 1) == 2
         main = self.equipment["main_hand"]
@@ -916,10 +1682,11 @@ class Game:
             put_away.add(self.equipment["main_hand"])
             self.equipment["main_hand"], where = item_id, "主手"
 
+        self._take_from_inventory(item_id)
         text = f"你把{name}拿在{where}。"
         if put_away:
             text = "你收起了" + "、".join(self.world.items[i]["name"] for i in put_away) + "，" + text
-        return text + self._check_stance()
+        return text + self.stow_all(put_away) + self._check_stance()
 
     def _equip_shield(self, item_id):
         """盾牌固定拿在副手；原来副手的东西收起来，拿着双手武器的话也要放下。"""
@@ -929,10 +1696,11 @@ class Game:
             put_away = {main}
             self.equipment["main_hand"] = None
         self.equipment["off_hand"] = item_id
+        self._take_from_inventory(item_id)
         text = f"你把{self.world.items[item_id]['name']}拿在副手。"
         if put_away:
             text = "你收起了" + "、".join(self.world.items[i]["name"] for i in put_away) + "，" + text
-        return text + self._check_stance()
+        return text + self.stow_all(put_away) + self._check_stance()
 
     def cmd_unequip(self, arg):
         if not arg:
@@ -944,11 +1712,13 @@ class Game:
             return "你身上没装备这样东西。"
         before = self.load_level()
         self._unequip(item_id)
+        note = self.stow(item_id)  # 脱下就回背包；塞不下就丢在脚下
         if item_id in worn and not self._armor(item_id):
-            return f"你取下了{self.world.items[item_id]['name']}。" + self._load_change_note(before)
+            return f"你取下了{self.world.items[item_id]['name']}。" + note + self._load_change_note(before)
         if item_id in worn and self._armor(item_id):
-            return f"你脱下了{self.world.items[item_id]['name']}。现在总护甲 {self.armor_total()}。"
-        return f"你收起了{self.world.items[item_id]['name']}。" + self._check_stance()
+            return (f"你脱下了{self.world.items[item_id]['name']}。现在总护甲 {self.armor_total()}。"
+                    + note + self._load_change_note(before))
+        return f"你收起了{self.world.items[item_id]['name']}。" + note + self._check_stance()
 
     def cmd_stance(self, arg):
         if not self.character:
@@ -1340,6 +2110,12 @@ class Game:
         if not npc_id:
             return "你想和谁说话？"
         npc = self.world.npcs[npc_id]
+        # 说话也要走到跟前（同一格或相邻一格，斜角也算），不能隔着半张地图聊
+        grid = self.room_grid()
+        coord = (grid.get("objects") or {}).get(npc_id) if grid else None
+        if coord and not self.near(self.player_pos(grid), coord):
+            return (f"{npc['name']}在（第 {coord[0] + 1} 列，第 {coord[1] + 1} 行），"
+                    f"你得先走到跟前再说话。")
         lines = npc["dialogue"]
         index = self.dialogue_index[npc_id]
         self.dialogue_index[npc_id] = min(index + 1, len(lines) - 1)
@@ -1354,9 +2130,12 @@ class Game:
         state = {
             "character": self.character.to_dict(),
             "current_room": self.current_room,
-            "inventory": self.inventory,
+            "inventory": self.inventory,   # 一格一堆：[{"sid":1,"id":"water","count":3,"auto":true}]
+            "next_stack_id": self.next_stack_id,
             "turns": self.turns,
             "indoor_steps": self.indoor_steps,
+            "stamina_spent": self.stamina_spent,  # 累计消耗的体力（攒满就口渴）
+            "food_uses": self.food_uses,          # 最近几次进食的时间（判断饱腹）
             "day": self.day,
             "minutes": self.minutes,
             "visited": sorted(self.visited),
@@ -1365,6 +2144,8 @@ class Game:
             "stance": self.stance,
             "room_items": self.room_items,
             "dialogue_index": self.dialogue_index,
+            "pos": self.pos,
+            "ground_positions": self.ground_positions,  # 每件地面物品一个格子，和 room_items 一一对应
         }
         # 写盘成功之后才切换当前槽：写失败时至少不会连"当前用的是哪个槽"都改掉
         try:
@@ -1415,13 +2196,26 @@ class Game:
         self.current_room = state["current_room"]
         self.turns = state["turns"]
         self.indoor_steps = state.get("indoor_steps", 0)
+        self.stamina_spent = int(state.get("stamina_spent") or 0)
+        self.food_uses = [int(t) for t in state.get("food_uses", [])
+                          if isinstance(t, (int, float))]
         self.day = state.get("day", stats.START_DAY)
         self.minutes = state.get("minutes", stats.START_MINUTES)
         self.visited = set(state.get("visited", [self.current_room]))
         self.stance = state.get("stance")
+        # 场景格子：玩家站在哪一格，以及地面物品的坐标
+        self.pos = state.get("pos")
+        if not isinstance(self.pos, (list, tuple)) or len(self.pos) != 2:
+            self.pos = None
         # 三张表都要按当前世界数据重建，顺序不能换：装备栏依赖清理后的背包
-        notes = self._load_room_items(state.get("room_items", {}))
+        notes = self._load_room_items(state.get("room_items", {}),
+                                      state.get("ground_positions"),
+                                      state.get("item_positions"))
         notes += self._load_inventory(state.get("inventory", []))
+        # 存档里记的堆号计数器接着用，别和后加的东西撞号
+        saved_sid = state.get("next_stack_id")
+        if isinstance(saved_sid, int) and saved_sid > self.next_stack_id:
+            self.next_stack_id = saved_sid
         notes += self._load_equipment(state.get("equipment"))
         notes += self._load_worn(state.get("worn"))
         self.dialogue_index = state.get("dialogue_index", {})
@@ -1450,27 +2244,53 @@ class Game:
         return f"{slot} 号存档已清空。"
 
 
-    def _load_room_items(self, saved):
-        """按当前世界数据重建房间物品表，返回适配提示。
+    def _load_room_items(self, saved, saved_positions=None, legacy_positions=None):
+        """按当前世界数据重建房间物品表和地面坐标，返回适配提示。
 
         存档里记的是当时每个房间的地面物品。世界数据之后可能加房间、
         加物品或删物品，所以不能直接赋值：以当前世界为基准，逐房间比对，
         存档里没有的新房间补上默认值，存档里有但世界已不存在的条目丢掉。
+
+        地面坐标和物品是一一对应的两串（见 ground_positions_in），所以删掉不存在的
+        物品时，它的那一格也要跟着删。老存档里坐标是按物品 id 记的字典
+        （item_positions），顺手搬成新写法。
         """
         items = self.world.items
+        saved = saved if isinstance(saved, dict) else {}
+        saved_positions = saved_positions if isinstance(saved_positions, dict) else {}
+        legacy_positions = legacy_positions if isinstance(legacy_positions, dict) else {}
         rebuilt = {}
+        positions = {}
         added_rooms = 0
         removed_items = 0
         for room_id, room in self.world.rooms.items():
-            if room_id in saved:
-                keep = [i for i in saved[room_id] if i in items]
-                removed_items += len(saved[room_id]) - len(keep)
-                rebuilt[room_id] = keep
-            else:
+            if room_id not in saved:
                 # 新房间：世界数据里还没有存档记录，用世界默认值填上
                 rebuilt[room_id] = list(room.get("items", []))
                 added_rooms += 1
+                continue
+            entries = saved[room_id] if isinstance(saved[room_id], list) else []
+            old_table = saved_positions.get(room_id)
+            old_dict = legacy_positions.get(room_id)
+            keep, coords = [], []
+            for index, item_id in enumerate(entries):
+                if item_id not in items:
+                    removed_items += 1
+                    continue
+                coord = None
+                if isinstance(old_table, list) and index < len(old_table):
+                    coord = old_table[index]
+                elif isinstance(old_dict, dict):
+                    # 老存档：一个物品 id 一个坐标，用掉就删，同种多出来的那几件另找地方
+                    coord = old_dict.pop(item_id, None)
+                keep.append(item_id)
+                coords.append([int(coord[0]), int(coord[1])]
+                              if isinstance(coord, (list, tuple)) and len(coord) == 2 else None)
+            rebuilt[room_id] = keep
+            if any(c for c in coords):
+                positions[room_id] = coords
         self.room_items = rebuilt
+        self.ground_positions = positions
 
         notes = []
         if added_rooms:
@@ -1484,28 +2304,48 @@ class Game:
 
         与地面物品同理：存档里的物品 id 可能在世界数据里已被删除或改名，
         直接赋值会让之后的拿取、查看、放下在查物品表时崩溃。
+        老存档里背包是一串物品 id（一格一件），这里顺手搬成堆的格式。
         """
         items = self.world.items
-        kept = [i for i in saved if i in items]
-        removed = len(saved) - len(kept)
-        self.inventory = kept
+        self.inventory = []
+        removed = 0
+        for entry in saved if isinstance(saved, list) else []:
+            if isinstance(entry, dict):
+                item_id, count, auto = entry.get("id"), entry.get("count", 1), entry.get("auto", True)
+            else:  # 老存档：直接就是物品 id（同种的会在这里重新摞起来）
+                item_id, count, auto = entry, 1, True
+            if item_id not in items:
+                removed += 1
+                continue
+            try:
+                count = max(1, int(count))
+            except (TypeError, ValueError):
+                count = 1
+            self.add_item(item_id, count, auto=bool(auto))
+        # 堆号重新排一遍：存档里的编号可能和清理后的背包对不上
+        for index, stack in enumerate(self.inventory, start=1):
+            stack["sid"] = index
+        self.next_stack_id = len(self.inventory) + 1
         return [f"背包里有 {removed} 件物品已不存在"] if removed else []
 
     def _load_equipment(self, saved):
         """按清理后的背包重建装备栏，返回适配提示。
 
-        装备栏里存的是物品 id：物品若已失效或已不在背包里，就不能继续挂在
-        手上，否则状态面板和武器类型判断会查到不存在的物品。
+        装备栏里存的是物品 id。新版本的背包和装备是分开的：装备着的东西
+        不在背包里；旧存档里它同时还在背包里，所以这里顺手把它从背包拿走。
         """
         if not isinstance(saved, dict):
             saved = {}
         equipment = {"main_hand": None, "off_hand": None}
         for slot in equipment:
             held = saved.get(slot)
-            if held and held in self.inventory:
+            if held and held in self.world.items:
                 equipment[slot] = held
+                if self.count_item(held):  # 旧存档：装备也留在背包里，这里搬出来
+                    self.take_item(held, 1)
         # 双手武器两个槽存同一个 id，按件数去重后再报数字
-        dropped = {h for h in (saved.get(slot) for slot in equipment) if h and h not in self.inventory}
+        dropped = {h for h in (saved.get(slot) for slot in equipment)
+                   if h and h not in self.world.items}
         self.equipment = equipment
         return [f"已卸下 {len(dropped)} 件失效装备"] if dropped else []
 
@@ -1514,32 +2354,54 @@ class Game:
         if not isinstance(saved, dict):
             saved = {}
         self.worn = {slot: None for slot in self.world.wear_slot_names}
+        restored = 0
         dropped = 0
         for slot, item_id in saved.items():
             if not item_id:
                 continue
-            valid = (item_id in self.inventory and slot in self.worn
+            valid = (item_id in self.world.items and slot in self.worn
                      and slot in self.world.wear_candidates(item_id))
             if valid:
                 self.worn[slot] = item_id
+                if self.count_item(item_id):  # 旧存档：穿着的东西也在背包里
+                    self.take_item(item_id, 1)
+            elif item_id in self.world.items and not self.count_item(item_id):
+                # 这个装备位在现在的世界数据里没有了（例如照明位被删掉）：
+                # 东西不能凭空消失，塞回背包
+                self.add_item(item_id)
+                restored += 1
             else:
                 dropped += 1
-        return [f"已取下 {dropped} 件失效的穿戴装备"] if dropped else []
+        notes = []
+        if restored:
+            notes.append(f"{restored} 件东西原来的装备位没有了，已经放回背包")
+        if dropped:
+            notes.append(f"已取下 {dropped} 件失效的穿戴装备")
+        return notes
 
     def cmd_help(self, arg):
         return (
             "可用指令：\n"
             "  看 / look              查看周围\n"
-            "  北、南、东、西 / n s e w  移动（也可以写“走 北”）\n"
-            "  查看 <东西>              仔细查看物品或人物\n"
-            "  拿 <东西> / 放下 <东西>   拾取或丢弃物品\n"
-            "  使用 <东西>             使用物品（例如：使用 能量棒）\n"
-            "  背包 / i               查看携带的物品\n"
+            "  北、南、东、西 / n s e w  移动（也可以写“走 北”）：在场景里走一格；\n"
+            "                          走到门 / 楼梯那一格就换地点，楼梯要先走到它旁边\n"
+            "  查看 <东西>              仔细查看物品或人物（隔着多远都能看）\n"
+            "  拿 <东西> / 放下 <东西> [数量]  拾取或丢弃物品（放下 矿泉水 3 = 丢 3 瓶）\n"
+            "                          拿东西要先走到跟前（同一格或相邻一格，斜角也算）\n"
+            "  使用 <东西>             使用物品（例如：使用 肉罐头、使用 矿泉水）\n"
+            "                          肉罐头：体力 +20、生命 +1；矿泉水：体力 +10，还能解除口渴\n"
+            "                          累计消耗 60 点体力会口渴（体力消耗翻倍，喝水解除）；\n"
+            "                          半小时内吃三份带食物的东西会饱腹，之后一小时内吃不下食物\n"
+            "  拆分 <东西> [数量]        把一堆可堆叠的东西拆成两堆，拆出来的那堆不会被自动堆叠\n"
+            "  堆叠 <东西> / 堆叠 <堆号> <堆号>  把同种物品摞成一堆（拖到另一堆上也是这个意思）\n"
+            "  背包 / i               查看携带的物品（同种东西显示成 矿泉水 ×3）\n"
             "  地图 / m               查看地图\n"
             "  角色 / c               查看角色卡（属性、衍生数值）\n"
             "  技能 / 技能 <树名>        查看技能树，例如：技能 锐器\n"
             "  学习 <技能>              花技能点解锁技能\n"
             "  装备 <物品> / 卸下 <物品>  拿起或收起武器，穿戴或取下护甲、饰品、披风、背包\n"
+            "                          武器可以指定手：装备 撬棍 副手（网页版拖到哪个方框就是哪只手）\n"
+            "                          已经拿在手上的武器拖到另一只手就是换手，不用先卸下\n"
             "  姿态 / 姿态 <名字>        查看或切换姿态，“姿态 取消”解除\n"
             "  掷骰 <骰子>              掷骰，例如：掷骰 2d6+1\n"
             "  检定 <属性> <难度>        做一次属性检定（d20 + 属性×1.5 ≥ 难度），例如：检定 敏捷 15\n"
@@ -1553,7 +2415,7 @@ class Game:
             "  等待 / wait             原地等一回合（战斗外 1 分钟，也算生命恢复的回合）\n"
             "  休息 <时长>             恢复体力并推进时间，例如：休息 30、休息 2小时（1~480 分钟）\n"
             "                          体力满了也能休息，只是时间照样过去\n"
-            "  说话 <人>               和 NPC 交谈\n"
+            "  说话 <人>               和 NPC 交谈（同样要先走到跟前）\n"
             "  存档 [槽位] / 读档 [槽位]  保存或读取进度（槽位 1~3，不写就用当前槽）\n"
             "  清空 <槽位>             删掉某个槽位的存档，例如：清空 2\n"
             "  退出 / quit            离开游戏"

@@ -15,12 +15,18 @@
 
 加新效果只要往 EFFECTS 里注册一个函数，不用改引擎和界面。
 物品信息和公式都来自数据与 stats.py，这里只负责“把效果套到角色身上”。
+
+带“食物”标签（`"tags": ["food"]`）的东西多两条规矩，判定都在 engine.py 里：
+饱腹期间吃不下（`Game.food_blocked`），每吃一份都记一笔（`Game.note_food_eaten`，
+半小时内吃三份就饱腹一小时）。
 """
 
 import math
 from fractions import Fraction
 
 import stats
+
+FOOD_TAG = "food"
 
 
 def _amount(effect, cap):
@@ -45,7 +51,10 @@ def _effect_hp(game, character, effect):
 
 
 def _effect_cure(game, character, effect):
-    """解除异常状态。体力不足引起的力竭清不掉，会由 clear_condition 说明原因。"""
+    """解除异常状态。体力不足引起的力竭清不掉，会由 clear_condition 说明原因；
+    身上本来就没这个状态时什么都不显示。"""
+    if not game.has_condition(effect.get("condition")):
+        return ""
     return game.clear_condition(effect.get("condition"))
 
 
@@ -59,6 +68,11 @@ EFFECTS = {
 def is_usable(item):
     """这件物品有没有写使用效果（界面据此决定要不要给“使用”按钮）。"""
     return bool(item.get("use"))
+
+
+def is_food(item):
+    """这件物品带不带“食物”标签：饱腹期间吃不下，吃了也会累计到饱腹里。"""
+    return FOOD_TAG in (item.get("tags") or [])
 
 
 def effect_list(use_data):
@@ -75,6 +89,11 @@ def use(game, character, item_id):
     use_data = item.get("use")
     if not use_data:
         return f"{item['name']}现在派不上用场。"
+    # 饱腹期间吃不下带食物标签的东西（判定和提示都在引擎里）
+    if is_food(item):
+        blocked = game.food_blocked()
+        if blocked:
+            return blocked
 
     lines = []
     if use_data.get("message"):
@@ -90,6 +109,10 @@ def use(game, character, item_id):
 
     if use_data.get("consume", True):
         game._unequip(item_id)
-        game.inventory.remove(item_id)
+        game.take_item(item_id, 1)  # 从背包里吃掉一个（一格一堆的要从那堆里扣）
         lines.append(f"{item['name']}用掉了。")
+        if is_food(item):
+            note = game.note_food_eaten()
+            if note:
+                lines.append(note)
     return "\n".join(lines)
