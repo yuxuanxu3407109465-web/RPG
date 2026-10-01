@@ -1803,9 +1803,9 @@ class Game:
         return stats.dodge(self.character.attributes) + bonuses.get("dodge", 0)
 
     def grip_style(self):
-        """武器持握方式（stats.GRIPS 的 id）：徒手、单手（另一只手空着）、双持、双手。持盾等盾牌做出来后再加。"""
+        """武器持握方式（stats.GRIPS 的 id）：徒手、单手（另一只手空着）、双持、双手、持盾（任一只手拿着盾牌）。"""
         main, off = self.equipment["main_hand"], self.equipment["off_hand"]
-        if self._shield(off):
+        if self._shield(main) or self._shield(off):
             return "shield"
         if not main and not off:
             return "unarmed"

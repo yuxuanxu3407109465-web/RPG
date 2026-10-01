@@ -555,7 +555,7 @@
       "description": "一面透明的聚碳酸酯防暴盾，边缘有几道深深的抓痕。",
       "weight": 4,
       "shield": {},
-      "hold": "off_hand"
+      "hold": "one_hand"
     },
     "riding_jacket": {
       "name": "骑行夹克",

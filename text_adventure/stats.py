@@ -88,19 +88,20 @@ def widen_crit_range(crit_range, multiplier):
 # 手持物（武器、盾牌……）的类别：
 #   one_hand  单手：主手、副手都能拿
 #   two_hand  双手：只能拿在主手，并且强制占掉副手（副手原来的东西会被卸下）
-#   main_hand 主手：只能拿在主手（极少数特殊物品）
-#   off_hand  副手：只能拿在副手（例如盾牌）
+#   main_hand 主手：只能拿在主手
+#   off_hand  副手：只能拿在副手
+# 主手 / 副手类只有在数据里明确写了 hold 才算；没写的武器、盾牌一律按单手。
 HOLD_TYPES = {"one_hand": "单手", "two_hand": "双手", "main_hand": "主手", "off_hand": "副手"}
 
 
 def hold_type(item):
-    """手持物的类别：数据里写了 hold 就用它；没写的武器按单手，盾牌按副手。不是手持物返回 None。"""
+    """手持物的类别：数据里写了 hold 就用它；没写的武器、盾牌一律按单手。不是手持物返回 None。"""
     if item.get("hold"):
         return item["hold"]
     if item.get("weapon"):
         return "two_hand" if item["weapon"].get("hands") == 2 else "one_hand"
     if "shield" in item:
-        return "off_hand"
+        return "one_hand"
     return None
 
 
