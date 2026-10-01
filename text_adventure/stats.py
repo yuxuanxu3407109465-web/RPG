@@ -66,13 +66,13 @@ WEAPON_ATTRIBUTES = {
 MELEE_WEAPON_TYPES = {"long_blade", "short_blade", "blunt", UNARMED}
 
 
-CRIT_DAMAGE_BONUS = 100  # 暴击额外伤害（%），在其他修正之后结算；“要害”标签的武器是 130
+CRIT_DAMAGE_BONUS = 50  # 暴击额外伤害（%），在其他修正之后结算；“要害”标签的武器是 80
 
 # 武器标签：一件武器的具体特性由它带的标签决定（world.json 里武器的 "tags"）
 WEAPON_TAGS = {
     "reach": ("长柄", "攻击范围 1 → 2 格"),
     "armor_piercing": ("破甲", "无视 2 点护甲"),
-    "deadly": ("要害", "暴击增伤 100% → 130%"),
+    "deadly": ("要害", "暴击增伤 50% → 80%"),
     "sharp": ("锋利", "伤害 +15%"),
     "backstab": ("背刺", "偷袭时伤害 +200%"),
     "parry": ("招架", "闪避 +1"),
@@ -80,7 +80,7 @@ WEAPON_TAGS = {
 }
 REACH_RANGE = 2
 TAG_ARMOR_IGNORE = 2
-DEADLY_CRIT_DAMAGE_BONUS = 130
+DEADLY_CRIT_DAMAGE_BONUS = 80
 SHARP_DAMAGE_PERCENT = 15
 BACKSTAB_DAMAGE_PERCENT = 200
 PARRY_DODGE = 1
@@ -257,7 +257,7 @@ def crit_range(weapon_type, weapon=None):
 
 def damage_multiplier(modifiers, crit=False, crit_bonus=None):
     """总伤害倍率：加算类先相加（力量 +30%、锋利 +15% → ×1.45），乘算类各自相乘（绝境 ×1.3），
-    暴击再乘（×2，要害 ×2.3）。modifiers 是 [(来源, 百分比, ADD/MUL)]。
+    暴击再乘（×1.5，要害 ×1.8）。modifiers 是 [(来源, 百分比, ADD/MUL)]。
     用分数计算，避免 7 × 1.2 算成 8.3999999 这类浮点误差影响取整。"""
     multiplier = Fraction(100 + sum(v for _, v, kind in modifiers if kind == ADD), 100)
     for _, percent, kind in modifiers:
@@ -273,7 +273,7 @@ DAMAGE_TYPES = {"physical": "物理", "fire": "火焰", "bleed": "流血", "acid
 
 
 def final_damage(raw, modifiers, armor, crit=False, damage_type="physical", crit_bonus=None):
-    """最终伤害：骰出的伤害 × 各项修正（相乘）×（暴击 2），向下取整，再减护甲，最低为 0。
+    """最终伤害：骰出的伤害 × 修正（加算 / 乘算）×（暴击 1.5，要害 1.8），向下取整，再减护甲，最低为 0。
     护甲只减物理伤害；火焰等其他类型的伤害不受护甲影响。"""
     scaled = math.floor(raw * damage_multiplier(modifiers, crit, crit_bonus))
     return max(0, scaled - armor) if damage_type == "physical" else max(0, scaled)
@@ -530,7 +530,7 @@ BLEED_TURNS = 3
 BLEED_STACKS_PER_HIT = 2  # 放血一次施加的层数
 
 
-DOT_STACK_DAMAGE_PERCENT = 10  # 剜创：目标身上每层持续伤害，伤害 +10%
+DOT_STACK_DAMAGE_PERCENT = 15  # 剜创：目标身上每层持续伤害，伤害 +15%
 
 
 def riposte_per_turn(a):
@@ -539,7 +539,7 @@ def riposte_per_turn(a):
 
 
 def blade_armor_ignore(a):
-    """放血、卸刃无视的护甲点数 = 4 + 敏捷 ÷ 4。"""
+    """卸刃无视的护甲点数 = 4 + 敏捷 ÷ 4。"""
     return 4 + a["agility"] // 4
 
 

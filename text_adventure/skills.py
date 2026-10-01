@@ -233,8 +233,7 @@ SKILL_VALUES = {
                                f"伤害 +{stats.SNEAK_ATTACK_DAMAGE_PERCENT}%"),
     "psionic_bolt": lambda c, o: (f"按你现在的属性：范围 {stats.incinerate_range(c.attributes)} 格，"
                                f"造成 {stats.psionic_bolt_damage(c.level)} 点火焰伤害"),
-    "bleed": lambda c, o: (f"按你现在的属性：无视 {stats.blade_armor_ignore(c.attributes)} 点护甲，"
-                           f"流血最多叠 {stats.bleed_max_stacks(c.attributes)} 层，"
+    "bleed": lambda c, o: (f"按你现在的属性：流血最多叠 {stats.bleed_max_stacks(c.attributes)} 层，"
                            f"每层每回合 {o.perk_effect(c.perks, 'bleed_damage') or stats.BLEED_DAMAGE} 点"),
     "long_slash": lambda c, o: (f"按你现在的属性：撤步后撤 {stats.sidestep_distance(c.attributes)} 格，"
                              f"卸刃无视 {stats.blade_armor_ignore(c.attributes)} 点护甲、"
