@@ -228,6 +228,16 @@
       "effects": {
         "weight_reduction": 20
       }
+    },
+    {
+      "id": "blade_dancer",
+      "name": "刀锋舞者",
+      "kind": "mixed",
+      "description": "无法使用枪械；手持的重刃 / 轻刃武器同时视为重刃和轻刃（两边的技能、姿态都能用）。",
+      "effects": {
+        "no_firearms": true,
+        "blades_as_both": true
+      }
     }
   ]
 }

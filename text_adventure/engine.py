@@ -1555,7 +1555,18 @@ class Game:
         return self.world.items[item_id].get("weapon") if item_id else None
 
     def _wielded_types(self):
-        return {self._weapon(i)["type"] for i in self.equipment.values() if self._weapon(i)}
+        types = set()
+        for i in self.equipment.values():
+            if self._weapon(i):
+                types |= self.weapon_counts_as(self._weapon(i)["type"])
+        return types
+
+    def weapon_counts_as(self, weapon_type):
+        """这类武器在应用技能 / 姿态时算哪些类型。刀锋舞者（perk）：重刃、轻刃互相视为对方。"""
+        if (weapon_type in stats.BLADE_TYPES and self.character
+                and self.options.perk_effect(self.character.perks, "blades_as_both")):
+            return set(stats.BLADE_TYPES)
+        return {weapon_type}
 
     def _shield(self, item_id):
         """是不是盾牌（物品带 shield 字段就算，内容可以是空的）。"""
@@ -1746,6 +1757,9 @@ class Game:
             return f"{name}没法装备。"
         if self._weapon(item_id) and self.character and self.options.perk_effect(self.character.perks, "no_weapons"):
             return f"你是踢腿的武道家，不用武器——{name}拿在手上反而碍事。"
+        if (self._weapon(item_id) and self._weapon(item_id)["type"] == "firearm" and self.character
+                and self.options.perk_effect(self.character.perks, "no_firearms")):
+            return f"你是刀锋舞者，不碰枪——{name}还是留给别人吧。"
         return self._hold(item_id, want)
 
     def cmd_unequip(self, arg):
@@ -1804,7 +1818,7 @@ class Game:
         """用某类武器攻击时的精准 =（武器对应属性 × 1.5，劣质武器 × 1）+（姿态加成，只加在姿态要求的武器上）。"""
         base = stats.accuracy(self.character.attributes, weapon_type, poor)
         stance = self._current_stance()
-        if stance and stance["weapon_type"] == weapon_type:
+        if stance and stance["weapon_type"] in self.weapon_counts_as(weapon_type):
             base += stances.stance_bonuses(self.character, stance, self.skill_trees).get("accuracy", 0)
         return base + (stats.LAST_STAND_BONUS if self.last_stand() else 0)
 
@@ -1955,7 +1969,7 @@ class Game:
                           + [v for _, v in self.passive_effects("strength_penalty_percent")])
             mods.append(("力量", stats.melee_damage_bonus(c.attributes, per_point, penalty), stats.ADD))
         stance = self._current_stance()
-        if stance and stance["weapon_type"] == weapon_type:
+        if stance and stance["weapon_type"] in self.weapon_counts_as(weapon_type):
             bonus = stances.stance_bonuses(c, stance, self.skill_trees).get("melee_damage_bonus", 0)
             mods.append((f"{stance['name']}姿态", bonus, stats.ADD))  # 技能：加算
         mods.append(("力竭", stats.attack_penalty(c), stats.MUL))  # 状态：乘算

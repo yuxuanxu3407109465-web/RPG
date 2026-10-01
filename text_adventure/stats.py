@@ -583,6 +583,8 @@ def sneak_attack_accuracy_bonus(a):
 # ---------- 射程 ----------
 
 # 各类枪械的原始射程（格，暂定）；枪械的其余设计暂缓
+BLADE_TYPES = ("long_blade", "short_blade")  # 重刃、轻刃（刀锋舞者把它们互相视为对方）
+
 FIREARM_BASE_RANGES = {
     "shotgun": ("霰弹枪", 2),
     "pistol": ("手枪", 6),
