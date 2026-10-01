@@ -15,10 +15,11 @@
     "unarmed": "徒手"
   },
   "armor_slots": {
-    "head": "头部",
-    "body": "身体",
-    "legs": "腿部",
-    "feet": "脚部"
+    "head": "头部防具",
+    "body": "身体防具",
+    "hands": "手部防具",
+    "legs": "腿部防具",
+    "feet": "脚部防具"
   },
   "gear_slots": {
     "accessory_1": {
