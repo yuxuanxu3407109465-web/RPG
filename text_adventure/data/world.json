@@ -401,7 +401,10 @@
       "weapon": {
         "type": "blunt",
         "damage": "1d10",
-        "improvised": true
+        "improvised": true,
+        "tags": [
+          "parry"
+        ]
       },
       "hold": "two_hand"
     },
@@ -479,7 +482,11 @@
       "weapon": {
         "type": "short_blade",
         "damage": "1d4",
-        "crit_range": "18-20"
+        "crit_range": "18-20",
+        "tags": [
+          "backstab",
+          "deadly"
+        ]
       },
       "hold": "one_hand"
     },
