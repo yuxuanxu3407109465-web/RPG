@@ -17,13 +17,13 @@ def carry_capacity(a):
     return 10 + a["strength"] * 4
 
 
-STRENGTH_DAMAGE_PERCENT = 10  # 力量每比 5 多 / 少 1 点，近战伤害 ±10%
+STRENGTH_DAMAGE_PERCENT = 15  # 力量每比 5 多 / 少 1 点，近战伤害 ±15%
 
 
 def melee_damage_bonus(a, per_point=STRENGTH_DAMAGE_PERCENT, penalty_per_point=STRENGTH_DAMAGE_PERCENT):
-    """近战伤害加成（%）：力量每比 5 多 1 点 +10%，每少 1 点 −10%（力量 3 为 −20%）。
+    """近战伤害加成（%）：力量每比 5 多 1 点 +15%，每少 1 点 −15%（力量 3 为 −30%）。
     适用于所有近战武器（锐器、钝器、武术），不适用于枪械。
-    技能可以分别改加值和惩罚的每点数值（势大力沉：加值每点 15%，惩罚每点 5%）。"""
+    技能可以分别改加值和惩罚的每点数值（势大力沉：加值每点 20%，惩罚每点 10%）。"""
     diff = a["strength"] - 5
     return diff * (per_point if diff > 0 else penalty_per_point)
 
@@ -66,7 +66,42 @@ WEAPON_ATTRIBUTES = {
 MELEE_WEAPON_TYPES = {"long_blade", "short_blade", "blunt", UNARMED}
 
 
-CRIT_DAMAGE_BONUS = 50  # 暴击额外伤害（%），在其他修正之后结算
+CRIT_DAMAGE_BONUS = 100  # 暴击额外伤害（%），在其他修正之后结算；“要害”标签的武器是 130
+
+# 武器标签：一件武器的具体特性由它带的标签决定（world.json 里武器的 "tags"）
+WEAPON_TAGS = {
+    "reach": ("长柄", "攻击范围 1 → 2 格"),
+    "armor_piercing": ("破甲", "无视 2 点护甲"),
+    "deadly": ("要害", "暴击增伤 100% → 130%"),
+    "sharp": ("锋利", "伤害 +15%"),
+    "backstab": ("背刺", "偷袭时伤害 +200%"),
+    "parry": ("招架", "闪避 +1"),
+    "heavy": ("沉重", "精准 −6，伤害 +60%"),
+}
+REACH_RANGE = 2
+TAG_ARMOR_IGNORE = 2
+DEADLY_CRIT_DAMAGE_BONUS = 130
+SHARP_DAMAGE_PERCENT = 15
+BACKSTAB_DAMAGE_PERCENT = 200
+PARRY_DODGE = 1
+HEAVY_ACCURACY = -6
+HEAVY_DAMAGE_PERCENT = 60
+
+
+def tag_damage_modifiers(tags, sneak=False):
+    """武器标签带来的伤害修正 [(来源, %)]：锋利、沉重，偷袭时再加背刺。"""
+    mods = []
+    if "sharp" in tags:
+        mods.append(("锋利", SHARP_DAMAGE_PERCENT))
+    if "heavy" in tags:
+        mods.append(("沉重", HEAVY_DAMAGE_PERCENT))
+    if sneak and "backstab" in tags:
+        mods.append(("背刺", BACKSTAB_DAMAGE_PERCENT))
+    return mods
+
+
+def crit_damage_bonus(tags):
+    return DEADLY_CRIT_DAMAGE_BONUS if "deadly" in tags else CRIT_DAMAGE_BONUS
 # 各类武器的默认暴击范围；单件武器可以在 world.json 里用 crit_range 覆盖
 # （例如弯刀、反曲刀这类宽暴击范围的锐器写 "18-20"，基础伤害相应降到 1d6）
 CRIT_RANGES = {
@@ -199,14 +234,14 @@ def crit_range(weapon_type, weapon=None):
     return CRIT_RANGES.get(weapon_type, DEFAULT_CRIT_RANGE)
 
 
-def damage_multiplier(modifiers, crit=False):
-    """各来源的修正（%）相乘，例如 +20% 和 +20% 是 ×1.2×1.2 = ×1.44；暴击再 ×1.5。
+def damage_multiplier(modifiers, crit=False, crit_bonus=None):
+    """各来源的修正（%）相乘，例如 +20% 和 +20% 是 ×1.2×1.2 = ×1.44；暴击再 ×2（要害 ×2.3）。
     用分数计算，避免 7 × 1.2 算成 8.3999999 这类浮点误差影响取整。"""
     multiplier = Fraction(1)
     for percent in modifiers:
         multiplier *= Fraction(100 + percent, 100)
     if crit:
-        multiplier *= Fraction(100 + CRIT_DAMAGE_BONUS, 100)
+        multiplier *= Fraction(100 + (CRIT_DAMAGE_BONUS if crit_bonus is None else crit_bonus), 100)
     return multiplier
 
 
@@ -214,10 +249,10 @@ def damage_multiplier(modifiers, crit=False):
 DAMAGE_TYPES = {"physical": "物理", "fire": "火焰", "bleed": "流血", "acid": "强酸"}
 
 
-def final_damage(raw, modifiers, armor, crit=False, damage_type="physical"):
-    """最终伤害：骰出的伤害 × 各项修正（相乘）×（暴击 1.5），向下取整，再减护甲，最低为 0。
+def final_damage(raw, modifiers, armor, crit=False, damage_type="physical", crit_bonus=None):
+    """最终伤害：骰出的伤害 × 各项修正（相乘）×（暴击 2），向下取整，再减护甲，最低为 0。
     护甲只减物理伤害；火焰等其他类型的伤害不受护甲影响。"""
-    scaled = math.floor(raw * damage_multiplier(modifiers, crit))
+    scaled = math.floor(raw * damage_multiplier(modifiers, crit, crit_bonus))
     return max(0, scaled - armor) if damage_type == "physical" else max(0, scaled)
 
 

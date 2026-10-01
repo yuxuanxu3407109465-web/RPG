@@ -548,7 +548,8 @@ class Session:
         hold = stats.HOLD_TYPES.get(stats.hold_type(data), "")
         if weapon:
             kind = ("代用" if weapon.get("improvised") else "") + self.world.weapon_types.get(weapon["type"], weapon["type"])
-            return f"{hold}{kind} {stats.weapon_damage(data)}"
+            tags = "·".join(stats.WEAPON_TAGS[x][0] for x in weapon.get("tags", []))
+            return f"{hold}{kind} {stats.weapon_damage(data)}" + (f" {tags}" if tags else "")
         if "shield" in data:
             return f"{hold}盾牌"
         gear = data.get("gear")

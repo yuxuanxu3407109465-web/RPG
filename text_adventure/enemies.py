@@ -48,7 +48,8 @@ class Enemy:
 
     def accuracy(self):
         base = stats.accuracy(self.attributes, self.attack["type"], self.attack.get("poor", False))
-        return base + self.attack.get("accuracy_bonus", 0)  # 武器等阶
+        heavy = stats.HEAVY_ACCURACY if "heavy" in self.attack.get("tags", []) else 0
+        return base + self.attack.get("accuracy_bonus", 0) + heavy  # 武器等阶、沉重标签
 
     def dodge(self):
         return stats.dodge(self.attributes)
@@ -64,10 +65,12 @@ class Enemy:
 
     def damage_modifiers(self):
         """伤害修正（%），和玩家一样：近战吃力量修正。"""
+        mods = []
         if self.attack["type"] in stats.MELEE_WEAPON_TYPES:
             bonus = stats.melee_damage_bonus(self.attributes)
-            return [("力量", bonus)] if bonus else []
-        return []
+            if bonus:
+                mods.append(("力量", bonus))
+        return mods + stats.tag_damage_modifiers(self.attack.get("tags", []))
 
 
 class EnemyBook:
@@ -151,7 +154,7 @@ class EnemyBook:
             quality = stats.quality_bonus(item)
             weapon_name = item["name"] if not quality else f"{stats.quality_name(item)} {item['name']}"
             attack = {"name": weapon_name, "type": w["type"], "damage": stats.weapon_damage(item),
-                      "accuracy_bonus": quality}
+                      "accuracy_bonus": quality, "tags": list(w.get("tags", []))}
             if w.get("crit_range"):
                 attack["crit_range"] = w["crit_range"]
         else:

@@ -193,6 +193,9 @@ class World:
                 name, low, high = stats.ARMOR_CLASSES[armor["class"]]
                 if not low <= armor.get("value", 0) <= high:
                     raise ValueError(f"{where}：{name}的基础护甲值要在 {low}~{high} 之间")
+            for tag in (weapon or {}).get("tags", []):
+                if tag not in stats.WEAPON_TAGS:
+                    raise ValueError(f"world.json 里的武器 {item_id}：标签要是 {'、'.join(stats.WEAPON_TAGS)} 之一")
             if item.get("hold") and item["hold"] not in stats.HOLD_TYPES:
                 raise ValueError(f"world.json 里的物品 {item_id}：手持类别要是 {'、'.join(stats.HOLD_TYPES)} 之一")
             if item.get("quality", "normal") not in stats.QUALITIES:
@@ -1500,7 +1503,8 @@ class Game:
                 return "伤害未定"
             multiplier = stats.damage_multiplier([value for _, value in w["damage_modifiers"]])
             return (f"伤害 {w['damage']}" + (f" ×{float(multiplier):g}" if multiplier != 1 else "")
-                    + f"，暴击 {w['crit_range']}" + (f"，射程 {w['range']}" if w.get("range") else ""))
+                    + f"，暴击 {w['crit_range']}" + (f"，射程 {w['range']}" if w.get("range") else "")
+                    + (f"，标签：{'、'.join(w['tag_names'])}" if w.get("tag_names") else ""))
 
         weapons = "\n".join(
             f"  {w['hand']} {w['name']}（{w['type']}）：精准 {w['accuracy']:g}（{w['attribute']}"
@@ -1803,7 +1807,9 @@ class Game:
     def dodge(self):
         """闪避（含姿态加成）。"""
         bonuses = stances.stance_bonuses(self.character, self._current_stance(), self.skill_trees)
-        return stats.dodge(self.character.attributes) + bonuses.get("dodge", 0)
+        parry = sum(stats.PARRY_DODGE for i in set(self.equipment.values())
+                    if self._weapon(i) and "parry" in self._weapon(i).get("tags", []))
+        return stats.dodge(self.character.attributes) + bonuses.get("dodge", 0) + parry
 
     def grip_style(self):
         """武器持握方式（stats.GRIPS 的 id）：徒手、单手（另一只手空着）、双持、双手、持盾（任一只手拿着盾牌）。"""
@@ -1881,8 +1887,10 @@ class Game:
             weapon_type = self._weapon(item_id)["type"] if item_id else stats.UNARMED
             poor = bool(item_id and self._weapon(item_id).get("poor"))
             quality = stats.quality_bonus(self.world.items[item_id]) if item_id else 0
+            tags = self._weapon(item_id).get("tags", []) if item_id else []
             base = stats.accuracy(self.character.attributes, weapon_type, poor)
-            total = self.accuracy(weapon_type, poor) + quality
+            heavy = stats.HEAVY_ACCURACY if "heavy" in tags else 0
+            total = self.accuracy(weapon_type, poor) + quality + heavy
             summary.append({
                 "hand": hand,
                 "name": self.item_display_name(item_id) if item_id else self._unarmed_attack()["name"],
@@ -1890,13 +1898,18 @@ class Game:
                 "weapon_type": weapon_type,
                 "attribute": self.options.attribute_name(stats.WEAPON_ATTRIBUTES[weapon_type]),
                 "accuracy": total,
-                "stance_bonus": total - base - quality,
+                "stance_bonus": total - base - quality - heavy,
+                "tags": tags,
+                "tag_names": [stats.WEAPON_TAGS[x][0] for x in tags],
+                "armor_ignore": stats.TAG_ARMOR_IGNORE if "armor_piercing" in tags else 0,
+                "crit_bonus": stats.crit_damage_bonus(tags),
                 "quality_bonus": quality,
                 "damage": stats.weapon_damage(self.world.items[item_id]) if item_id else self._unarmed_attack()["damage"],
-                "range": (stats.MELEE_RANGE if weapon_type in stats.MELEE_WEAPON_TYPES else None) if item_id
+                "range": ((stats.REACH_RANGE if "reach" in tags else stats.MELEE_RANGE)
+                          if weapon_type in stats.MELEE_WEAPON_TYPES else None) if item_id
                 else self._unarmed_attack().get("range", stats.MELEE_RANGE),
                 "crit_range": self._crit_range(weapon_type, item_id),
-                "damage_modifiers": self.damage_modifiers(weapon_type),
+                "damage_modifiers": self.damage_modifiers(weapon_type) + stats.tag_damage_modifiers(tags),
             })
         return summary
 
@@ -1971,10 +1984,9 @@ class Game:
         usage = ("用法：试攻击 目标闪避 目标护甲（例如：试攻击 15 3），或者 试攻击 敌人 等阶"
                  "（例如：试攻击 僵尸 精英）；不写就用你自己的闪避、护甲 0")
         advantage = "优势" in arg.split()  # 模拟洞察：自己的攻击 2d20 取高
-        sneak = "偷袭" in arg.split()  # 模拟偷袭：学了暗袭才有加成
+        sneak = "偷袭" in arg.split()  # 模拟偷袭（目标没发现你）：暗袭技能、背刺标签各自加成
         arg = " ".join(p for p in arg.split() if p not in ("优势", "偷袭"))
-        if sneak and "sneak_attack" not in self.character.learned_skills:
-            return "还没学会暗袭，偷袭没有额外加成。"
+        has_sneak_skill = "sneak_attack" in self.character.learned_skills
         enemy = self._parse_enemy(arg) if arg and not arg.split()[0].replace(".", "").isdigit() else None
         if enemy:
             target, armor = enemy.dodge(), enemy.armor
@@ -1988,20 +2000,24 @@ class Game:
             if len(parts) > 2:
                 return usage
         weapon = self.weapon_summary()[0]
-        if sneak:  # 暗袭：命中 +（敏捷 + 感知）÷ 2，伤害 +100%（和其他修正相乘，所以先后不影响结果）
+        if sneak:
             weapon = dict(weapon)
-            weapon["accuracy"] += stats.sneak_attack_accuracy_bonus(self.character.attributes)
-            weapon["damage_modifiers"] = weapon["damage_modifiers"] + [("暗袭", stats.SNEAK_ATTACK_DAMAGE_PERCENT)]
+            if has_sneak_skill:  # 暗袭：命中 +（敏捷 + 感知）÷ 2，伤害 +100%
+                weapon["accuracy"] += stats.sneak_attack_accuracy_bonus(self.character.attributes)
+                weapon["damage_modifiers"] = weapon["damage_modifiers"] + [("暗袭", stats.SNEAK_ATTACK_DAMAGE_PERCENT)]
+            if "backstab" in weapon["tags"]:  # 背刺标签：偷袭伤害 +200%
+                weapon["damage_modifiers"] = weapon["damage_modifiers"] + [("背刺", stats.BACKSTAB_DAMAGE_PERCENT)]
         result = self.dice.attack(weapon["accuracy"], target, weapon["crit_range"], advantage=advantage)
         who = enemy.name if enemy else "目标"
         lines = [
             f"用{weapon['name']}{'偷袭' if sneak else '试攻击'}{who}（{weapon['type']}，精准看{weapon['attribute']}"
-            + (f"，含暗袭 +{stats.sneak_attack_accuracy_bonus(self.character.attributes)}" if sneak else "")
+            + (f"，含暗袭 +{stats.sneak_attack_accuracy_bonus(self.character.attributes)}" if sneak and has_sneak_skill else "")
             + f"），闪避 {dice_rules.format_number(target)}、护甲 {armor}：",
             result.text,
         ]
         if result.hit:
-            damage_text, damage = self._roll_damage(weapon, armor, result.crit, self.armor_ignore())
+            damage_text, damage = self._roll_damage(weapon, armor, result.crit,
+                                                    self.armor_ignore() + weapon["armor_ignore"])
             lines.append(damage_text)
             if enemy and weapon["damage"]:
                 enemy.hp = max(0, enemy.hp - damage)
@@ -2021,9 +2037,10 @@ class Game:
             detail = "×".join(f"{float(stats.damage_multiplier([v])):g}" for v in modifiers)
             names = "、".join(f"{name} {value:+d}%" for name, value in weapon["damage_modifiers"])
             steps.append(f"修正 ×{detail}（{names}）")
+        crit_bonus = weapon.get("crit_bonus", stats.CRIT_DAMAGE_BONUS)
         if crit:
-            steps.append(f"暴击 +{stats.CRIT_DAMAGE_BONUS}%")
-        exact = roll.total * stats.damage_multiplier(modifiers, crit)
+            steps.append(f"暴击 +{crit_bonus}%")
+        exact = roll.total * stats.damage_multiplier(modifiers, crit, crit_bonus)
         if exact != roll.total:
             steps[-1] += f" = {float(exact):g}，向下取整 {math.floor(exact)}"
         effective_armor = max(0, armor - armor_ignore)
@@ -2031,7 +2048,7 @@ class Game:
             steps.append(f"护甲 {armor} 无视 {armor_ignore} → −{effective_armor}")
         elif armor:
             steps.append(f"护甲 −{armor}")
-        damage = stats.final_damage(roll.total, modifiers, effective_armor, crit)
+        damage = stats.final_damage(roll.total, modifiers, effective_armor, crit, crit_bonus=crit_bonus)
         return "，".join(steps) + f" → 造成 {damage} 点伤害", damage
 
     def cmd_defend_test(self, arg):
@@ -2055,9 +2072,11 @@ class Game:
             if block.success:
                 return "\n".join(lines + ["（测试，不会真的扣你的生命）"])
         if result.hit:
+            tags = enemy.attack.get("tags", [])
             weapon = {"name": enemy.attack["name"], "damage": enemy.attack["damage"],
-                      "damage_modifiers": enemy.damage_modifiers()}
-            text, damage = self._roll_damage(weapon, self.armor_total(), result.crit)
+                      "damage_modifiers": enemy.damage_modifiers(), "crit_bonus": stats.crit_damage_bonus(tags)}
+            text, damage = self._roll_damage(weapon, self.armor_total(), result.crit,
+                                             stats.TAG_ARMOR_IGNORE if "armor_piercing" in tags else 0)
             hp_max = self.options.max_hp(c)
             lines += [text, f"你的生命 {c.hp} → {max(0, c.hp - damage)}/{hp_max}"]
         lines.append("（测试，不会真的扣你的生命）")

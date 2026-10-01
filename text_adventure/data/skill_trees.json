@@ -426,16 +426,16 @@
       "branch": "two_hand",
       "name": "势大力沉",
       "cost": 1,
-      "description": "双手持用武器时，力量带来的伤害加值从每点 10% 变为每点 15%（力量 7：+20% → +30%）；力量低于 5 的惩罚从每点 −10% 减轻为每点 −5%（力量 3：−20% → −10%）。",
+      "description": "双手持用武器时，力量带来的伤害加值从每点 15% 变为每点 20%（力量 7：+30% → +40%）；力量低于 5 的惩罚从每点 −15% 减轻为每点 −10%（力量 3：−30% → −20%）。",
       "effects": [
         {
           "type": "strength_damage_percent",
-          "value": 15,
+          "value": 20,
           "grip": "two_hand"
         },
         {
           "type": "strength_penalty_percent",
-          "value": 5,
+          "value": 10,
           "grip": "two_hand"
         }
       ]
