@@ -227,15 +227,16 @@ def _format_skill(character, skill, tree, trees, options, weapon_types):
 
 # 技能数据里写 "value": "名字"，技能树就按角色当前属性算出数值显示
 SKILL_VALUES = {
-    "psionic_heal": lambda c: f"按你现在的属性：回复 {stats.psionic_heal(c.attributes, c.level)} 点生命",
-    "riposte": lambda c: f"按你现在的属性：每回合最多反击 {stats.riposte_per_turn(c.attributes)} 次",
-    "sneak_attack": lambda c: (f"按你现在的属性：偷袭时命中 +{stats.sneak_attack_accuracy_bonus(c.attributes)}，"
+    "psionic_heal": lambda c, o: f"按你现在的属性：回复 {stats.psionic_heal(c.attributes, c.level)} 点生命",
+    "riposte": lambda c, o: f"按你现在的属性：每回合最多反击 {stats.riposte_per_turn(c.attributes)} 次",
+    "sneak_attack": lambda c, o: (f"按你现在的属性：偷袭时命中 +{stats.sneak_attack_accuracy_bonus(c.attributes)}，"
                                f"伤害 +{stats.SNEAK_ATTACK_DAMAGE_PERCENT}%"),
-    "psionic_bolt": lambda c: (f"按你现在的属性：范围 {stats.incinerate_range(c.attributes)} 格，"
+    "psionic_bolt": lambda c, o: (f"按你现在的属性：范围 {stats.incinerate_range(c.attributes)} 格，"
                                f"造成 {stats.psionic_bolt_damage(c.level)} 点火焰伤害"),
-    "bleed": lambda c: (f"按你现在的属性：无视 {stats.blade_armor_ignore(c.attributes)} 点护甲，"
-                        f"流血最多叠 {stats.bleed_max_stacks(c.attributes)} 层"),
-    "long_slash": lambda c: (f"按你现在的属性：撤步后撤 {stats.sidestep_distance(c.attributes)} 格，"
+    "bleed": lambda c, o: (f"按你现在的属性：无视 {stats.blade_armor_ignore(c.attributes)} 点护甲，"
+                           f"流血最多叠 {stats.bleed_max_stacks(c.attributes)} 层，"
+                           f"每层每回合 {o.perk_effect(c.perks, 'bleed_damage') or stats.BLEED_DAMAGE} 点"),
+    "long_slash": lambda c, o: (f"按你现在的属性：撤步后撤 {stats.sidestep_distance(c.attributes)} 格，"
                              f"卸刃无视 {stats.blade_armor_ignore(c.attributes)} 点护甲、"
                              f"缴械难度 {stats.disarm_difficulty(c.attributes)}"),
 }
@@ -245,7 +246,7 @@ def skill_details(character, skill, trees, options):
     """技能描述之外的详细数值：能获得的姿态（按当前属性算好），以及各姿态下的额外效果。"""
     details = stances.describe_granted(character, skill, trees, options)
     if skill.get("value"):
-        details.append(SKILL_VALUES[skill["value"]](character))
+        details.append(SKILL_VALUES[skill["value"]](character, options))
     for stance_id, effect in skill.get("stance_effects", {}).items():
         details.append(f"[{trees.stance(stance_id)['name']}] {effect}")
     return details

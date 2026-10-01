@@ -135,6 +135,8 @@
 - 创建角色时在“背景”之后、“属性分配”之前选择，花 perk 点；可以反复点选 / 取消，perk 点不能为负。初始 perk 点 `progression.starting_perk_points` = **2**。**正面 perk（`kind: positive`，默认）花 1 点；有正有负的 perk（`kind: mixed`）不花点**；单独写了 `cost` 就按写的（`CharacterOptions.perk_cost`）。
 - 写在 `data/character_options.json` 的 `perks`：`cost`、`description`、`effects`。效果目前支持：`attribute_points`（额外可支配属性点，加到属性分配总数里）、`perk_points`（额外 perk 点）、`no_companions`（无法携带同伴，同伴上限为 0，`CharacterOptions.companion_limit`）。
 - 现有 perk：**孤独之路**（有正有负：+4 可支配属性点、+2 perk 点，无法携带同伴）；**早熟**（有正有负：+2 可支配属性点，经验获取 −20%，和智力倍率相乘）；**致命**（1 点：攻击命中时 5% 概率触发——对非首领立刻杀死，对首领改为这一击伤害 +100%；等战斗流程接上）；**警觉**（1 点：视野 +2，先攻检定优势——先攻检定等战斗流程接上）；**顽强**（1 点：每级生命上限额外 +2）；**踢腿的武道家**（有正有负：不能用枪械和近战武器，徒手变为踢击 1d6、射程 2；盾牌照样能拿）。
+- 新增 perk：**受欢迎**（1 点：开局多带一名同伴，同伴上限 +1；和孤独之路互斥，perk 的 `conflicts`）；**绝境**（1 点：生命低于 30% 时闪避、精准 +3，伤害 +30%）；**庸医**（有正有负：寻常医疗物资——物品标签 `basic_medical`，例如绷带——治不了流血，要用医疗箱或灵能；自己造成的流血每层每回合 4 → 6）；**井井有条**（1 点：减重率 +20%，和背包的减重率相加）。
+- 新的效果键：`companion_limit_bonus`、`extra_starting_companions`、`last_stand`、`no_basic_bleed_cure`、`bleed_damage`、`weight_reduction`；互斥用 `conflicts`。
 - **每个 perk 只能选一次**。
 - 已支持的 perk 效果键：`attribute_points`、`perk_points`、`no_companions`、`xp_percent`、`sight_bonus`、`hp_per_level`、`no_weapons`、`unarmed_attack`（替换空手攻击）；`instant_kill_percent`、`initiative_advantage` 已写进数据，等战斗流程接上。玩家的生命上限、经验倍率要用 `CharacterOptions.max_hp(character)` / `xp_multiplier(character)`，不要直接调 `stats.max_hp`。
 

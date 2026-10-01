@@ -498,6 +498,10 @@ def attack_penalty(character):
 
 # ---------- 锐器技能的数值 ----------
 
+LAST_STAND_HP_PERCENT = 30  # 绝境（perk）：生命低于上限的 30% 时……
+LAST_STAND_BONUS = 3  # ……闪避、精准 +3
+LAST_STAND_DAMAGE_PERCENT = 30  # ……伤害 +30%
+
 BLEED_DAMAGE = 4  # 每层流血在目标回合开始时的伤害（流血伤害，不受护甲减免）
 BLEED_TURNS = 3
 BLEED_STACKS_PER_HIT = 2  # 放血一次施加的层数

@@ -1369,12 +1369,15 @@ class Game:
         return "".join(self.stow(i) for i in sorted(item_ids))
 
     def backpack_reduction(self):
-        """背着的背包的减重率（%），没背就是 0。"""
+        """减重率（%）= 背着的背包 + perk（井井有条 +20%），加算，最高 100。"""
+        perk = self.options.perk_effect(self.character.perks, "weight_reduction") if self.character else 0
+        backpack = 0
         for item_id in self.worn.values():
             gear = self.world.items[item_id].get("gear") if item_id else None
             if gear and gear.get("weight_reduction"):
-                return gear["weight_reduction"]
-        return 0
+                backpack = gear["weight_reduction"]
+                break
+        return min(100, backpack + perk)
 
     def cmd_take(self, arg):
         if not arg:
@@ -1802,14 +1805,26 @@ class Game:
         stance = self._current_stance()
         if stance and stance["weapon_type"] == weapon_type:
             base += stances.stance_bonuses(self.character, stance, self.skill_trees).get("accuracy", 0)
-        return base
+        return base + (stats.LAST_STAND_BONUS if self.last_stand() else 0)
+
+    def last_stand(self):
+        """绝境（perk）：生命低于上限的 30% 时生效。"""
+        c = self.character
+        if not c or not self.options.perk_effect(c.perks, "last_stand"):
+            return False
+        return c.hp * 100 < self.options.max_hp(c) * stats.LAST_STAND_HP_PERCENT
+
+    def bleed_damage(self):
+        """自己造成的流血每层每回合伤害（庸医：4 → 6）。"""
+        return self.options.perk_effect(self.character.perks, "bleed_damage") or stats.BLEED_DAMAGE
 
     def dodge(self):
         """闪避（含姿态加成）。"""
         bonuses = stances.stance_bonuses(self.character, self._current_stance(), self.skill_trees)
         parry = sum(stats.PARRY_DODGE for i in set(self.equipment.values())
                     if self._weapon(i) and "parry" in self._weapon(i).get("tags", []))
-        return stats.dodge(self.character.attributes) + bonuses.get("dodge", 0) + parry
+        last_stand = stats.LAST_STAND_BONUS if self.last_stand() else 0
+        return stats.dodge(self.character.attributes) + bonuses.get("dodge", 0) + parry + last_stand
 
     def grip_style(self):
         """武器持握方式（stats.GRIPS 的 id）：徒手、单手（另一只手空着）、双持、双手、持盾（任一只手拿着盾牌）。"""
@@ -1941,6 +1956,8 @@ class Game:
             bonus = stances.stance_bonuses(c, stance, self.skill_trees).get("melee_damage_bonus", 0)
             mods.append((f"{stance['name']}姿态", bonus))
         mods.append(("力竭", stats.attack_penalty(c)))
+        if self.last_stand():
+            mods.append(("绝境", stats.LAST_STAND_DAMAGE_PERCENT))
         return [(name, value) for name, value in mods if value]
 
     def _parse_enemy(self, arg):

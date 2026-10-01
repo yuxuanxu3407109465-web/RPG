@@ -131,7 +131,10 @@
         "attribute_points": 4,
         "perk_points": 2,
         "no_companions": true
-      }
+      },
+      "conflicts": [
+        "popular"
+      ]
     },
     {
       "id": "precocious",
@@ -183,6 +186,47 @@
           "damage": "1d6",
           "range": 2
         }
+      }
+    },
+    {
+      "id": "popular",
+      "name": "受欢迎",
+      "kind": "positive",
+      "conflicts": [
+        "lone_wolf"
+      ],
+      "description": "开局可以多带一名同伴，同伴上限 +1。",
+      "effects": {
+        "companion_limit_bonus": 1,
+        "extra_starting_companions": 1
+      }
+    },
+    {
+      "id": "last_stand",
+      "name": "绝境",
+      "kind": "positive",
+      "description": "生命低于 30% 时，闪避和精准 +3，造成的伤害 +30%。",
+      "effects": {
+        "last_stand": true
+      }
+    },
+    {
+      "id": "quack",
+      "name": "庸医",
+      "kind": "mixed",
+      "description": "用寻常绷带止不住流血，必须用更好的医疗物资（例如医疗箱）或灵能技能；但你造成的流血每层每回合 4 → 6 点。",
+      "effects": {
+        "no_basic_bleed_cure": true,
+        "bleed_damage": 6
+      }
+    },
+    {
+      "id": "organized",
+      "name": "井井有条",
+      "kind": "positive",
+      "description": "东西收拾得整整齐齐：减重率 +20%（和背包的减重率相加）。",
+      "effects": {
+        "weight_reduction": 20
       }
     }
   ]

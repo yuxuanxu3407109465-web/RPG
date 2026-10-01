@@ -98,6 +98,12 @@ def use(game, character, item_id):
     if not use_data:
         return f"{item['name']}现在派不上用场。"
 
+    # 庸医：寻常医疗物资（basic_medical 标签，例如绷带）治不了流血
+    cures_bleeding = any(e.get("type") == "cure" and e.get("condition") == "bleeding" for e in effect_list(use_data))
+    if (cures_bleeding and "basic_medical" in item.get("tags", [])
+            and game.options.perk_effect(character.perks, "no_basic_bleed_cure")):
+        return f"你笨手笨脚地缠了半天，{item['name']}止不住血——得用更好的医疗物资（例如医疗箱）或者灵能。"
+
     lines = []
     if use_data.get("message"):
         lines.append(use_data["message"])

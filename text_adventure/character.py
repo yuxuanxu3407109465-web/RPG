@@ -132,7 +132,7 @@ class CharacterOptions:
         """同伴上限：魅力决定；选了“无法携带同伴”的 perk 就是 0。"""
         if self.perk_effect(character.perks, "no_companions"):
             return 0
-        return stats.companion_limit(character.attributes)
+        return stats.companion_limit(character.attributes) + self.perk_effect(character.perks, "companion_limit_bonus")
 
 
 def format_sheet(character, options, items, carried_weight=None, tree_names=None, bonuses=None,
@@ -321,7 +321,9 @@ class CharacterCreator:
             self.ask.print(f"\n【同伴】你选择了{names}，不会带同伴。")
             companions = []
         else:
-            companions = self._companions(stats.companion_limit(attributes))
+            limit = stats.companion_limit(attributes) + self.options.perk_effect(perks, "companion_limit_bonus")
+            picks = 1 + self.options.perk_effect(perks, "extra_starting_companions")  # 受欢迎：开局多带一个
+            companions = self._companions(limit, picks)
         character = Character(name, gender, age, height, appearance, background, attributes, companions)
         character.perks = perks
         character.skill_points = self.options.progression["starting_skill_points"]
@@ -373,6 +375,10 @@ class CharacterCreator:
             if index == len(self.options.perks):
                 return chosen
             perk_id = self.options.perks[index]["id"]
+            clash = [p for p in chosen if p in self.options.perk(perk_id).get("conflicts", [])]
+            if perk_id not in chosen and clash:
+                self.ask.print(f"  和已选的{self.options.perk(clash[0])['name']}冲突，不能同时选。")
+                continue
             trial = [p for p in chosen if p != perk_id] if perk_id in chosen else chosen + [perk_id]
             if remaining(trial) < 0:
                 self.ask.print("  perk 点不够（取消这个会让已选的 perk 点数不够用）。")
@@ -386,21 +392,25 @@ class CharacterCreator:
             self.ask.print(f"\n（perk 额外给了 {extra_points} 点可支配属性点）")
         return self.ask.attributes(self.options.default_attributes(), rules, self.options.attributes)
 
-    def _companions(self, limit):
+    def _companions(self, limit, picks=1):
+        """选同伴：一般开局最多带 1 个，受欢迎这类 perk 可以多带；总数不超过同伴上限。"""
         if limit == 0:
             self.ask.print("\n【同伴】你的魅力太低（至少需要 5），没有人愿意跟你一起行动。")
             return []
-        self.ask.print(f"\n【同伴】要带一个同伴一起行动吗？（你的同伴上限：{limit}）")
-        presets = self.options.companions
-        labels = ["不带同伴，独自行动"]
-        labels += [f"{c['name']}（{c['relationship']}）：{c['appearance']}" for c in presets]
-        labels.append("自定义同伴")
-        index = self.ask.choice("选择编号：", labels)
-        if index == 0:
-            return []
-        if index <= len(presets):
-            return [Companion(**presets[index - 1])]
-        return [self._custom_companion()]
+        picks = min(picks, limit)
+        chosen = []
+        while len(chosen) < picks:
+            left = picks - len(chosen)
+            self.ask.print(f"\n【同伴】要带同伴一起行动吗？（还能带 {left} 个，同伴上限：{limit}）")
+            presets = [c for c in self.options.companions if c["name"] not in {x.name for x in chosen}]
+            labels = ["不带了" if chosen else "不带同伴，独自行动"]
+            labels += [f"{c['name']}（{c['relationship']}）：{c['appearance']}" for c in presets]
+            labels.append("自定义同伴")
+            index = self.ask.choice("选择编号：", labels)
+            if index == 0:
+                break
+            chosen.append(Companion(**presets[index - 1]) if index <= len(presets) else self._custom_companion())
+        return chosen
 
     def _custom_companion(self):
         limits = self.options.limits
