@@ -69,23 +69,32 @@
 
     <div class="play-col">
 
-      <!-- 视图栏：格子场景，人物在这里走动；点上面的「背包」页签，
-           这一栏就换成背包（装备、拆分、翻页都在那边）。
-           时钟不在这儿写死：场景页签和背包页签各自渲染一份（app.js 的 clockChip） -->
+      <!-- 视图栏：格子场景，人物在这里走动；点上面的页签换成背包或技能树。
+           时钟不在这儿写死：三个页签各自渲染一份（app.js 的 clockChip） -->
       <main class="main view-panel" data-region="视图栏">
-        <header class="bar room-bar">
+        <header class="bar room-bar" id="room-bar">
           <h2 id="room-name">—</h2>
           <span class="room-sub" id="room-sub"></span>
+          <!-- 说话时房间信息让位给这条横幅（对话框）：显示当前这一句，
+               点视图栏任意位置就是「继续」，看下一句。平时它是空的、不占地方。 -->
+          <div class="talk-banner hidden" id="talk-banner">
+            <span class="talk-speaker" id="talk-speaker"></span>
+            <p class="talk-text" id="talk-text"></p>
+            <span class="talk-hint" id="talk-hint">点视图栏任意位置继续</span>
+          </div>
           <div class="view-tabs" id="view-tabs">
             <button type="button" class="view-tab active" data-view-tab="scene">场景</button>
             <button type="button" class="view-tab" data-view-tab="bag">背包</button>
+            <button type="button" class="view-tab" data-view-tab="skills">技能树</button>
           </div>
         </header>
         <div class="scene-wrap" id="scene-body"></div>
         <div class="bag-panel hidden" id="bag-panel"></div>
+        <!-- 技能树页签：一页一屏、靠翻页看，不上下滚动；点一个技能才在下面展开详细描述 -->
+        <div class="skill-panel hidden" id="skill-panel"></div>
       </main>
 
-      <!-- 下排：快捷区域1（装备） | 移动栏 | 快捷区域2（文字） -->
+      <!-- 下排：快捷区域1（装备） | 技能栏 | 快捷区域2（文字） -->
       <div class="bottom-row">
 
         <!-- 快捷区域1：装备栏，每个位置一个方框，可以拖动装备 / 脱下
@@ -99,13 +108,14 @@
           <div class="panel-body" id="equip-body"></div>
         </section>
 
-        <!-- 移动栏 -->
-        <section class="panel move-panel" data-region="移动栏">
-          <div class="panel-head move-head">
-            <svg class="ico" aria-hidden="true"><use href="#i-map"></use></svg>
-            <h3>移动</h3>
+        <!-- 技能栏：10 页 × 9 格，靠拖入登记（技能或背包里的物品），点一下释放 / 使用 -->
+        <section class="panel move-panel skill-zone" data-region="技能栏">
+          <div class="panel-head move-head skill-head">
+            <svg class="ico" aria-hidden="true"><use href="#i-skills"></use></svg>
+            <h3>技能</h3>
+            <span class="slot-page" id="slot-page">第 1 / 10 页</span>
           </div>
-          <div class="panel-body" id="move-body"></div>
+          <div class="panel-body skill-slots-body" id="skill-slots-body"></div>
         </section>
 
         <!-- 快捷区域2：文字记录 + 指令输入 -->
@@ -116,7 +126,7 @@
           </div>
           <div class="log" id="log"></div>
           <form class="cmdline" id="cmd-form" autocomplete="off">
-            <input id="cmd-input" type="text" placeholder="也可以直接输入指令，例如：技能 锐器 / 掷骰 2d6+1 / 检定 70">
+            <input id="cmd-input" type="text" placeholder="也可以直接输入指令，例如：说话 老张 / 继续 / 掷骰 2d6+1 / 检定 70">
             <button class="btn primary" type="submit">
               <svg class="ico" aria-hidden="true"><use href="#i-check"></use></svg>
               <span>执行</span>

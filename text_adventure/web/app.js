@@ -3,10 +3,12 @@
    角色创建走 /api/new → /api/answer 的一问一答。
 
    界面区域命名（写代码/改布局时按名字找，约定见 ../界面区域.md）：
-     左侧栏 / 视图栏 / 移动栏 / 快捷区域1 / 快捷区域2 / 右侧栏
-   本文件里 左侧栏 = #char-body，视图栏 = #scene-body（格子场景，人物真的在里面走；
-   左上角浮着时钟，点格子上的物品 / 人物弹小菜单，颜色图例在视图栏最下面一条），
-   移动栏 = #move-body，快捷区域1 = #equip-body（装备栏，拖动装备），
+     左侧栏 / 视图栏 / 技能栏 / 快捷区域1 / 快捷区域2 / 右侧栏
+   本文件里 左侧栏 = #char-body，视图栏 = #scene-body + #bag-panel + #skill-panel
+   （右上角三个页签：场景 / 背包 / 技能树，同一时刻只显示一个；
+    场景左上角浮着时钟，点格子上的物品 / 人物弹小菜单，颜色图例在视图栏最下面一条），
+   技能栏 = #skill-slots-body（10 页 × 9 格，拖入登记 / 点一下释放 / 拖出取消），
+   快捷区域1 = #equip-body（装备栏，拖动装备），
    快捷区域2 = #log（文字记录）+ #cmd-form（指令输入），右侧栏 = #action-body。 */
 (function () {
   'use strict';
@@ -27,12 +29,19 @@
     log: document.getElementById('log'),
     roomName: document.getElementById('room-name'),
     roomSub: document.getElementById('room-sub'),
+    roomBar: document.getElementById('room-bar'),          // 视图栏顶部那条（房间信息 / 对话框）
+    talkBanner: document.getElementById('talk-banner'),    // 说话时占着这条：显示当前这一句
+    talkSpeaker: document.getElementById('talk-speaker'),
+    talkText: document.getElementById('talk-text'),
+    talkHint: document.getElementById('talk-hint'),
     charBody: document.getElementById('char-body'),   // 左侧栏
-    moveBody: document.getElementById('move-body'),    // 移动栏
     actionBody: document.getElementById('action-body'),  // 右侧栏
     sceneBody: document.getElementById('scene-body'),  // 视图栏（格子场景）
     bagPanel: document.getElementById('bag-panel'),    // 视图栏（背包页签）
-    viewTabs: document.getElementById('view-tabs'),    // 视图栏右上角 场景 / 背包
+    skillPanel: document.getElementById('skill-panel'), // 视图栏（技能树页签）
+    viewTabs: document.getElementById('view-tabs'),    // 视图栏右上角 场景 / 背包 / 技能树
+    skillSlotsBody: document.getElementById('skill-slots-body'),  // 技能栏（10 页 × 9 格）
+    slotPage: document.getElementById('slot-page'),               // 技能栏标题上的页码
     equipBody: document.getElementById('equip-body'),  // 快捷区域1（装备栏）
     equipGrip: document.getElementById('equip-grip'),  // 装备栏标题上的持握状态
     // 快捷区域1 / 快捷区域2：留空的预留位，以后往里塞东西时直接渲染到这两个容器
@@ -147,10 +156,47 @@
     node.scrollTop = node.scrollHeight;
   }
 
+  // 移动不在文字栏留痕：走一步就往文字栏丢一句“> 走 北”＋一格结果，问一句 / 走一步就刷一屏。
+  // 走到哪儿看视图栏的场景图，走不通由浮层提示。这里把移动的回声和它那一段结果都滤掉。
+  // 注意：直接敲方向（“东”“n”“north”）也是移动（engine.DIRECTIONS 那套），别漏掉。
+  var MOVE_WORDS = ['走', '去', 'go'];
+  var DIR_WORDS = ['北', '南', '东', '西', '上', '下',
+                   'n', 's', 'e', 'w', 'u', 'd',
+                   'north', 'south', 'east', 'west', 'up', 'down'];
+  function isMoveLine(line) {
+    var text = String(line || '').trim();
+    if (text.indexOf('> ') === 0) text = text.slice(2).trim();
+    if (!text) return false;
+    var lower = text.toLowerCase();
+    if (DIR_WORDS.indexOf(lower) >= 0) return true;          // 光敲一个方向
+    if (lower.split(/\s+/)[0] === 'go') return true;
+    for (var i = 0; i < MOVE_WORDS.length; i++) {
+      if (text.indexOf(MOVE_WORDS[i]) === 0) return true;    // 走 北 / 去 东
+    }
+    return false;
+  }
+
+  // 文字栏只收真正的反馈：移动结果和台词都不往里写
+  // （台词由视图栏的对话框显示，服务端也不会把这些行下发到 lines 里）
+  function logLines(lines) {
+    if (!lines) return [];
+    var out = [];
+    for (var i = 0; i < lines.length; i++) {
+      if (isMoveLine(lines[i])) {
+        // 这一段后面紧跟着的是走路结果（【新地点】和描写），一起跳过
+        while (i + 1 < lines.length && !isMoveLine(lines[i + 1]) &&
+               String(lines[i + 1]).indexOf('> ') !== 0) i++;
+        continue;
+      }
+      out.push(lines[i]);
+    }
+    return out;
+  }
+
   function setBusy(flag) {
     busy = flag;
-    // 移动块和右侧栏是两块面板，请求中都要点不动
-    [el.actionBody, el.moveBody].forEach(function (node) {
+    // 右侧栏和技能栏是两块面板，请求中都要点不动（技能栏格子也能点，别让人连点两下）
+    [el.actionBody, el.skillSlotsBody].forEach(function (node) {
       if (!node) return;
       node.style.pointerEvents = flag ? 'none' : '';
       node.style.opacity = flag ? '.6' : '';
@@ -204,17 +250,18 @@
     if (skill.ap_cost) meta.push(skill.ap_cost + ' 行动点');
     if (skill.cooldown) meta.push(skill.cooldown);
     if (skill.weapon) meta.push('需要手持' + skill.weapon);
+    var state2 = skillLearnState(tree, skill);
     var action;
-    if (skill.learned) {
+    if (state2.kind === 'learned') {
       action = '<span class="skill-done">' + icon('check') + '<span>已学会</span></span>';
-    } else if (!tree.unlocked) {
-      action = '<span class="skill-locked">' + icon('x') + '<span>' + esc(tree.locked_message) + '</span></span>';
-    } else if (skill.unmet && skill.unmet.length) {
-      action = '<span class="skill-locked" title="' + esc(skill.unmet.join('、')) + '">' +
-        icon('x') + '<span>' + esc(skill.unmet.join('、')) + '</span></span>';
+    } else if (state2.kind === 'locked') {
+      action = '<span class="skill-locked">' + icon('x') + '<span>' + esc(state2.why) + '</span></span>';
+    } else if (state2.kind === 'unmet') {
+      action = '<span class="skill-locked" title="' + esc(state2.why) + '">' +
+        icon('x') + '<span>' + esc(state2.why) + '</span></span>';
     } else {
       action = '<button type="button" class="btn small primary" data-learn="' + esc(skill.name) + '">' +
-        icon('learn') + '<span>学习（' + skill.cost + ' 点）</span></button>';
+        icon('learn') + '<span>学习（' + state2.cost + ' 点）</span></button>';
     }
     var desc = skill.description;
     if (skill.details && skill.details.length) {
@@ -263,106 +310,465 @@
     el.modalBody.innerHTML = html;
   }
 
-  /* ---------- 右侧栏的背包快捷栏（3 格，手动登记） ---------- */
+  /* ---------- 技能栏的登记格子（10 页 × 9 格） ---------- */
 
-  var QUICK_KEY = 'fengcheng.quick';
-  var QUICK_MAX = 3;
-  // 固定 3 格：每格要么是空（null），要么是 {id, name}。只有手动登记 / 拖进去才有东西，
-  // 背包里的东西不会自动冒上来。
-  var pinned = loadPinned();
+  // 一格最多登记一件东西：技能（点一下「用 <技能>」）或物品（点一下使用 / 装备 / 查看）。
+  // 存在浏览器本地（localStorage），按「页 × 9 + 格」编号存放；背包里已经没有的物品
+  // 会在每次拿到新状态时自动清掉登记（见 pruneSlots）。
+  var SLOT_KEY = 'fengcheng.slots';
+  var SLOT_PAGES = 10;
+  var SLOT_PER_PAGE = 9;
+  var SLOT_TOTAL = SLOT_PAGES * SLOT_PER_PAGE;
+  var slotPageNo = 0;          // 技能栏当前第几页（从 0 开始）
+  var slots = loadSlots();
 
-  function loadPinned() {
-    var slots = [null, null, null];
+  function loadSlots() {
+    var list = new Array(SLOT_TOTAL);
+    for (var i = 0; i < SLOT_TOTAL; i++) list[i] = null;
     try {
-      var list = JSON.parse(window.localStorage.getItem(QUICK_KEY) || '[]');
-      if (Object.prototype.toString.call(list) !== '[object Array]') return slots;
-      for (var i = 0; i < QUICK_MAX && i < list.length; i++) {
-        var entry = list[i];
-        if (!entry) continue;
-        if (typeof entry === 'string') slots[i] = { id: entry, name: entry };  // 老数据：只存了 id
-        else if (entry.id) slots[i] = { id: entry.id, name: entry.name || entry.id };
-      }
+      var saved = JSON.parse(window.localStorage.getItem(SLOT_KEY) || '[]');
+      if (Object.prototype.toString.call(saved) !== '[object Array]') return list;
+      for (var n = 0; n < SLOT_TOTAL && n < saved.length; n++) list[n] = normReg(saved[n]);
     } catch (err) { /* 读不出来就当没登记过 */ }
-    return slots;
+    return list;
   }
 
-  function savePinned() {
-    try { window.localStorage.setItem(QUICK_KEY, JSON.stringify(pinned)); } catch (err) { /* 无痕模式就算了 */ }
+  // 登记项统一成 {kind:'skill'|'item', id, name, cmd(只有物品要)}
+  function normReg(entry) {
+    if (!entry || !entry.id) return null;
+    if (entry.kind === 'skill') return { kind: 'skill', id: entry.id, name: entry.name || entry.id };
+    if (entry.kind === 'item') {
+      return { kind: 'item', id: entry.id, name: entry.name || entry.id, cmd: entry.cmd || '' };
+    }
+    // 老版本的背包快捷栏只存了 {id, name}：当物品登记读进来
+    return { kind: 'item', id: entry.id, name: entry.name || entry.id, cmd: entry.cmd || '' };
   }
 
-  function pinnedIndex(id) {
-    for (var i = 0; i < pinned.length; i++) {
-      if (pinned[i] && pinned[i].id === id) return i;
+  function saveSlots() {
+    try { window.localStorage.setItem(SLOT_KEY, JSON.stringify(slots)); } catch (err) { /* 无痕模式就算了 */ }
+  }
+
+  // 同一个东西只在技能栏里占一格：登记新格子时先摘掉旧的
+  function slotIndexOf(kind, id) {
+    for (var i = 0; i < SLOT_TOTAL; i++) {
+      var e = slots[i];
+      if (e && e.kind === kind && e.id === id) return i;
     }
     return -1;
   }
 
-  // 登记到指定格子（同一件东西在别处也会先摘掉，免得一格东西占两格）
-  function pinAt(slot, id, name) {
-    slot = Math.max(0, Math.min(QUICK_MAX - 1, slot));
-    var at = pinnedIndex(id);
-    if (at >= 0) pinned[at] = null;
-    pinned[slot] = { id: id, name: name || id };
-    savePinned();
-    refreshQuick();
+  function registerSlot(slot, kind, id, name, cmd) {
+    if (slot < 0 || slot >= SLOT_TOTAL || !id) return;
+    var at = slotIndexOf(kind, id);
+    if (at >= 0) slots[at] = null;
+    slots[slot] = { kind: kind, id: id, name: name || id, cmd: cmd || '' };
+    saveSlots();
+    refreshSlots();
   }
 
-  function unpin(slot) {
-    pinned[slot] = null;
-    savePinned();
-    refreshQuick();
+  function clearSlotReg(slot) {
+    if (slot < 0 || slot >= SLOT_TOTAL) return;
+    slots[slot] = null;
+    saveSlots();
+    refreshSlots();
   }
 
-  // 第一个空格子，没有就返回 0（顶掉第一格）
-  function freeQuickSlot() {
-    for (var i = 0; i < QUICK_MAX; i++) {
-      if (!pinned[i]) return i;
-    }
-    return 0;
+  // 两格对调（拖到别的格子上就是交换）
+  function swapSlots(a, b) {
+    if (a === b || a < 0 || b < 0 || a >= SLOT_TOTAL || b >= SLOT_TOTAL) return;
+    var tmp = slots[a];
+    slots[a] = slots[b];
+    slots[b] = tmp;
+    saveSlots();
+    refreshSlots();
   }
 
-  function refreshQuick() {
-    if (!lastState) return;
-    renderActions(lastState);
-    if (itemMenuSid !== null) renderBag(lastState);
-  }
-
-  // 快捷栏里放哪三件：只认登记的，登记的物品不在背包里就显示成空格
-  function quickItems(state) {
+  // 登记的技能 / 物品现在还作数吗？物品不在背包里就直接清掉登记（用完了不再占着格子）
+  function slotAlive(state, entry) {
+    if (!entry) return false;
     var inv = (state && state.inventory) || [];
-    return pinned.map(function (pin) {
-      if (!pin) return null;
-      var hit = inv.filter(function (x) { return x.id === pin.id; })[0];
-      return hit || { id: pin.id, name: pin.name, missing: true };
-    });
-  }
-
-  function quickBar(state) {
-    var items = quickItems(state);
-    var html = '<div class="quick-grid">';
-    for (var i = 0; i < QUICK_MAX; i++) {
-      var item = items[i];
-      if (!item || item.missing) {
-        var label = item ? esc(item.name + '（没带）') : '空';
-        html += '<span class="quick quick-empty slot-target' + (item ? ' quick-missing' : '') +
-          '" data-quick-slot="' + i + '" title="' +
-          esc(item ? item.name + '：登记过，但背包里现在没有'
-            : '空格子：把背包里的东西拖到这里就算登记（先用视图栏的「背包」页签打开背包）') + '">' +
-          '<span class="quick-name">' + label + '</span></span>';
-        continue;
-      }
-      var quick = item.quick || { cmd: '查看 ' + item.name, label: '查看' };
-      html += '<button type="button" class="quick slot-target" data-quick-slot="' + i + '" data-cmd="' +
-        esc(quick.cmd) + '" title="' + esc(item.name + '：点一下就是「' + quick.label +
-          '」；也可以把别的物品拖进来替换') + '">' +
-        itemIcon(item.id) + '<span class="quick-name">' + esc(item.name) + '</span>' +
-        '<span class="quick-act">' + esc(quick.label) + '</span>' +
-        '<span class="quick-x" data-quick-clear="' + i + '" title="从快捷栏取下">✕</span></button>';
+    if (entry.kind === 'item') {
+      return inv.some(function (x) { return x.id === entry.id; });
     }
-    return html + '</div>';
+    var active = (state && state.active_skills) || [];
+    return active.some(function (x) { return x.id === entry.id; });
   }
 
-  // 浮层里要显示什么，由 modalKind 决定
+  function pruneSlots(state) {
+    var changed = false;
+    for (var i = 0; i < SLOT_TOTAL; i++) {
+      if (slots[i] && !slotAlive(state, slots[i])) { slots[i] = null; changed = true; }
+    }
+    if (changed) saveSlots();
+    return changed;
+  }
+
+  function refreshSlots() {
+    if (!lastState) return;
+    renderSlotsPanel(lastState);
+    if (viewMode === 'bag') renderBag(lastState);
+  }
+
+  function skillById(state, id) {
+    var list = (state && state.active_skills) || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id === id) return list[i];
+    }
+    return null;
+  }
+
+  // 一格：空的是拖动目标，有东西的能拖走 / 点一下用 / 右上角 ✕ 取消登记
+  function slotCell(state, index) {
+    var entry = slots[index];
+    var inPage = index % SLOT_PER_PAGE + 1;
+    if (!entry) {
+      return '<span class="slot-cell slot-empty-cell" data-slot-cell="' + index + '" tabindex="0" title="第 ' +
+        (index + 1) + ' 格：把背包里的物品或技能树里已学会的主动技能拖进来登记">' +
+        '<span class="slot-index">' + inPage + '</span><span class="slot-sub">空</span></span>';
+    }
+    var cmd = entry.kind === 'skill' ? ('用 ' + entry.name) : (entry.cmd || ('查看 ' + entry.name));
+    var sub = entry.kind === 'skill' ? '技能' : '物品';
+    var extra = '';
+    if (entry.kind === 'skill') {
+      var sk = skillById(state, entry.id);
+      if (sk) {
+        sub = sk.ap_cost ? (sk.ap_cost + ' 行动点') : '技能';
+        extra = ' title="' + esc(entry.name + '：点一下释放（' + sub + '）；拖到别的格子＝交换，拖出技能栏＝取消登记') + '"';
+      }
+    } else {
+      extra = ' title="' + esc(entry.name + '：点一下' + (entry.cmd ? '使用' : '查看') +
+        '；拖到别的格子＝交换，拖出技能栏＝取消登记') + '"';
+    }
+    return '<button type="button" class="slot-cell filled ' +
+      (entry.kind === 'skill' ? 'slot-skill' : 'slot-item') + '" data-slot-cell="' + index +
+      '" data-cast="' + (entry.kind === 'skill' ? esc(entry.name) : '') + '" data-cmd="' +
+      (entry.kind === 'item' ? esc(cmd) : '') + '" draggable="true" tabindex="0"' + extra + '>' +
+      '<span class="slot-index">' + inPage + '</span>' +
+      '<span class="slot-name">' + esc(entry.name) + '</span>' +
+      '<span class="slot-sub">' + esc(sub) + '</span>' +
+      '<span class="slot-x" data-slot-clear="' + index + '" title="取消登记">✕</span></button>';
+  }
+
+  function slotsPanel(state) {
+    var html = '<div class="slot-grid">';
+    for (var i = 0; i < SLOT_PER_PAGE; i++) {
+      html += slotCell(state, slotPageNo * SLOT_PER_PAGE + i);
+    }
+    return html + '</div>' +
+      '<div class="slot-pager">' +
+      '<button type="button" class="btn" data-slot-page="prev"' +
+      (slotPageNo === 0 ? ' disabled' : '') + '>‹ 上一页</button>' +
+      '<span class="page-now">第 ' + (slotPageNo + 1) + ' / ' + SLOT_PAGES + ' 页</span>' +
+      '<button type="button" class="btn" data-slot-page="next"' +
+      (slotPageNo >= SLOT_PAGES - 1 ? ' disabled' : '') + '>下一页 ›</button>' +
+      '<button type="button" class="btn" data-slot-page="1">回到第 1 页</button>' +
+      '</div>';
+  }
+
+  function renderSlotsPanel(state) {
+    if (el.slotPage) el.slotPage.textContent = '第 ' + (slotPageNo + 1) + ' / ' + SLOT_PAGES + ' 页';
+    if (!el.skillSlotsBody) return;
+    el.skillSlotsBody.innerHTML = slotsPanel(state);
+    bindSlotsDrag();
+  }
+
+  // 格子之间拖动 = 交换；拖到技能栏外面松手 = 取消登记
+  function slotDraggedOut(event) {
+    if (!dragSlot || !el.skillSlotsBody) return;
+    var box = el.skillSlotsBody.getBoundingClientRect();
+    var out = event.clientX < box.left || event.clientX > box.right ||
+              event.clientY < box.top || event.clientY > box.bottom;
+    if (out) clearSlotReg(dragSlot);
+  }
+
+  function bindSlotsDrag() {
+    if (!el.skillSlotsBody) return;
+    Array.prototype.forEach.call(el.skillSlotsBody.querySelectorAll('.slot-cell'), function (cell) {
+      var index = parseInt(cell.getAttribute('data-slot-cell'), 10);
+      cell.addEventListener('dragover', function (event) {
+        if (!dragSlot && !dragItem) return;
+        event.preventDefault();
+        cell.classList.remove('drop-ok', 'drop-no');
+        var ok = dragSlot !== null ? true : canDropIntoSlot(dragItem, index);
+        cell.classList.add(ok ? 'drop-ok' : 'drop-no');
+      });
+      cell.addEventListener('dragleave', function () {
+        cell.classList.remove('drop-ok', 'drop-no');
+      });
+      cell.addEventListener('drop', function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        cell.classList.remove('drop-ok', 'drop-no');
+        if (dragSlot !== null) {
+          swapSlots(dragSlot, index);   // 格子之间：交换
+          dragSlot = null;
+          return;
+        }
+        if (!dragItem) return;
+        if (!canDropIntoSlot(dragItem, index)) {
+          showToast('这一格只能放技能或背包里的物品');
+          dragItem = null;
+          return;
+        }
+        registerSlot(index, dragItem.kind, dragItem.id, dragItem.name, dragItem.cmd);
+        dragItem = null;
+      });
+      if (!cell.getAttribute('draggable')) return;
+      cell.addEventListener('dragstart', function (event) {
+        dragSlot = index;
+        cell.classList.add('dragging');
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', String(index));
+        }
+      });
+      cell.addEventListener('dragend', function (event) {
+        cell.classList.remove('dragging');
+        tagDropOut(false);
+        slotDraggedOut(event || {});
+        dragSlot = null;
+        dragItem = null;
+        clearDropHints();
+      });
+    });
+    // 往技能栏任意位置拖（包括格子之间的空隙），松手就是登记过去
+    if (!el.skillSlotsBody.getAttribute('data-slot-bound')) {
+      el.skillSlotsBody.setAttribute('data-slot-bound', '1');
+      el.skillSlotsBody.addEventListener('dragover', function (event) {
+        if (!dragSlot && !dragItem) return;
+        event.preventDefault();
+        tagDropOut(true);
+      });
+      el.skillSlotsBody.addEventListener('drop', function (event) {
+        event.preventDefault();
+        tagDropOut(false);
+        if (dragSlot !== null) { dragSlot = null; return; }   // 落在空隙上：什么也不做
+        if (!dragItem) return;
+        registerSlot(freeSlotInPage(), dragItem.kind, dragItem.id, dragItem.name, dragItem.cmd);
+        dragItem = null;
+      });
+    }
+  }
+
+  function tagDropOut(on) {
+    if (el.skillSlotsBody) el.skillSlotsBody.classList.toggle('drop-out', !!on);
+  }
+
+  // 这一页第一个空格；满了就顶掉第一格
+  function freeSlotInPage() {
+    var base = slotPageNo * SLOT_PER_PAGE;
+    for (var i = 0; i < SLOT_PER_PAGE; i++) {
+      if (!slots[base + i]) return base + i;
+    }
+    return base;
+  }
+
+  function canDropIntoSlot(drag, index) {
+    if (!drag || index < 0 || index >= SLOT_TOTAL) return false;
+    if (drag.kind === 'skill') return !!skillById(lastState, drag.id);
+    if (drag.kind === 'item') return !!bagItemById(drag.id) || !!(lastState && (lastState.inventory || []).some(function (x) {
+      return x.id === drag.id;
+    }));
+    return false;
+  }
+
+  /* ---------- 技能树：能学 / 已学 / 学不了 ---------- */
+
+  // 一行技能的状态：浮层和视图栏的技能树页签共用这一份判断
+  function skillLearnState(tree, skill) {
+    if (skill.learned) return { kind: 'learned' };
+    if (!tree.unlocked) return { kind: 'locked', why: tree.locked_message };
+    if (skill.unmet && skill.unmet.length) return { kind: 'unmet', why: skill.unmet.join('、') };
+    return { kind: 'can', cost: skill.cost };
+  }
+
+  /* ---------- 视图栏的「技能树」页签：一页一屏、翻页、选中才展开 ---------- */
+
+  var SKILL_PER_PAGE = 32;      // 一页最多几个技能格子（技能一格很小，一页放得下）
+  var skillPageNo = 0;
+  var onlyLearned = false;      // 只显示已学会（挑技能栏要登记的技能时好用）
+  var skillSelId = null;        // 选中的技能（下面那块详细描述）
+
+  // 把技能按技能树切成"一页一屏"的块：一棵树一个块，超过 SKILL_PER_PAGE 再拆页。
+  // 分支只用一行小字标出来，不再各占一页（不然 39 个技能要翻 18 页）。
+  function skillBlocks(state, onlyLearnedFlag) {
+    var sk = state && state.skills;
+    if (!sk || !sk.trees) return [];
+    var blocks = [];
+    sk.trees.forEach(function (tree) {
+      var items = [];
+      var groups = [];
+      if (tree.branches && tree.branches.length) {
+        if (tree.skills.some(function (s) { return !s.branch; })) groups.push({ name: '', id: '' });
+        tree.branches.forEach(function (b) { groups.push({ name: b.name, id: b.id }); });
+      } else {
+        groups.push({ name: '', id: '' });
+      }
+      groups.forEach(function (group) {
+        var list = tree.skills.filter(function (s) {
+          if ((s.branch || '') !== group.id) return false;
+          return onlyLearnedFlag ? s.learned : true;
+        });
+        if (list.length) items.push({ group: group.name, items: list });
+      });
+      if (!items.length) return;
+      var rest = items.slice();
+      while (rest.length) {
+        var take = [], count = 0;
+        while (rest.length) {
+          var head = rest[0];
+          var room = SKILL_PER_PAGE - count;
+          if (count && head.items.length > room) break;   // 这一组放不进本页，留给下一页
+          take.push({ group: head.group, items: head.items.slice(0, room) });
+          count += Math.min(head.items.length, room);
+          if (head.items.length > room) {
+            rest[0] = { group: head.group, items: head.items.slice(room) };
+          } else {
+            rest.shift();
+          }
+          if (count >= SKILL_PER_PAGE) break;
+        }
+        blocks.push({ tree: tree, title: tree.name, groups: take });
+      }
+    });
+    return blocks;
+  }
+
+  function skillTile(tree, skill) {
+    var st = skillLearnState(tree, skill);
+    var cls = 'skill-tile ' + (st.kind === 'learned' ? 'learned' : st.kind === 'can' ? 'can-learn' : 'locked');
+    if (skill.id === skillSelId) cls += ' sel';
+    var active = skill.active ? '主动' : '被动';
+    var title = skill.name + '（' + active + '）：点一下在下面看详细说明';
+    var drag = skill.learned && skill.active ? ' draggable="true"' : '';
+    return '<button type="button" class="' + cls + '" data-skill-sel="' + esc(skill.id) +
+      '" data-skill-drag="' + esc(skill.name) + '"' + drag + ' title="' + esc(title) + '">' +
+      esc(skill.name) + '<span class="tile-cost">·' + skill.cost + '点</span></button>';
+  }
+
+  function skillTreePage(state) {
+    var blocks = skillBlocks(state, onlyLearned);
+    if (skillPageNo >= blocks.length) skillPageNo = Math.max(0, blocks.length - 1);
+    var body;
+    if (!blocks.length) {
+      body = '<div class="skill-group-title">' +
+        (onlyLearned ? '还没有学会任何技能。' : '这棵树里没有技能。') + '</div>';
+    } else {
+      var page = blocks[skillPageNo];
+      var html = '<div class="skill-group-title">' + esc(page.title) +
+        (page.tree.unlocked ? '' : '（' + esc(page.tree.locked_message) + '）') + '</div>';
+      html += '<div class="skill-tiles">';
+      page.groups.forEach(function (group) {
+        if (group.group) {
+          html += '<span class="tile-branch">' + esc(group.group) + '</span>';
+        }
+        group.items.forEach(function (s) { html += skillTile(page.tree, s); });
+      });
+      html += '</div>';
+      body = html;
+    }
+    return '<div class="skill-list">' + body + '</div>' +
+      '<div class="bag-pager">' +
+      '<button type="button" class="btn" data-skill-page="prev"' +
+      (skillPageNo === 0 ? ' disabled' : '') + '>‹</button>' +
+      '<span class="page-now">第 ' + (blocks.length ? skillPageNo + 1 : 0) + ' / ' + blocks.length + ' 页</span>' +
+      '<button type="button" class="btn" data-skill-page="next"' +
+      (skillPageNo >= blocks.length - 1 ? ' disabled' : '') + '>›</button>' +
+      '</div>';
+  }
+
+  // 选中的技能：详细描述 + 能不能学 / 学不学得起，学习按钮就在这儿
+  function skillDetail(state) {
+    if (!skillSelId) {
+      return '<div class="skill-detail"><p class="detail-empty">' +
+        '点上面的技能格子看详细说明；已学会的主动技能可以直接拖到下面的技能栏登记。</p></div>';
+    }
+    var found = null;
+    (state.skills.trees || []).forEach(function (tree) {
+      tree.skills.forEach(function (s) { if (s.id === skillSelId) found = { tree: tree, skill: s }; });
+    });
+    if (!found) {
+      skillSelId = null;
+      return '<div class="skill-detail"><p class="detail-empty">这个技能不在当前技能树里了。</p></div>';
+    }
+    var skill = found.skill;
+    var st = skillLearnState(found.tree, skill);
+    var meta = [skill.cost + ' 点', skill.active ? '主动' : '被动'];
+    if (skill.ap_cost) meta.push(skill.ap_cost + ' 行动点');
+    if (skill.cooldown) meta.push(skill.cooldown);
+    if (skill.weapon) meta.push('需要手持' + skill.weapon);
+    var desc = skill.description;
+    if (skill.details && skill.details.length) desc += '\n' + skill.details.join('\n');
+
+    var act;
+    if (st.kind === 'learned') {
+      act = '<span class="skill-done">' + icon('check') + '<span>已学会</span></span>' +
+        (skill.active ? '<span class="detail-meta">已学会的主动技能可以拖到下面的技能栏登记</span>' : '');
+    } else if (st.kind === 'locked') {
+      act = '<span class="skill-locked">' + icon('x') + '<span>' + esc(st.why) + '</span></span>';
+    } else if (st.kind === 'unmet') {
+      act = '<span class="skill-locked">' + icon('x') + '<span>还差：' + esc(st.why) + '</span></span>';
+    } else {
+      act = '<button type="button" class="btn small primary" data-learn="' + esc(skill.name) + '">' +
+        icon('learn') + '<span>学习（' + st.cost + ' 点）</span></button>';
+    }
+    return '<div class="skill-detail">' +
+      '<div class="detail-head"><span class="detail-name">' + esc(skill.name) + '</span>' +
+      '<span class="detail-meta">' + esc(found.tree.name + ' · ' + meta.join(' · ')) + '</span></div>' +
+      '<p class="detail-desc">' + esc(desc) + '</p>' +
+      '<div class="detail-act">' + act + '</div>' +
+      '</div>';
+  }
+
+  function renderSkillPanel(state) {
+    if (!el.skillPanel) return;
+    var sk = state && state.skills;
+    if (!sk) { el.skillPanel.innerHTML = '<p class="detail-empty">还没有角色。</p>'; return; }
+    el.skillPanel.innerHTML =
+      '<div class="skill-top">' +
+      '<span>可用技能点：<strong>' + esc(sk.points) + '</strong></span>' +
+      '<span class="detail-meta">绿色＝已学会，亮边框＝现在能学，灰的＝条件不够</span>' +
+      '<button type="button" class="btn small fold-btn' + (onlyLearned ? ' on' : '') +
+      '" data-skill-only="1">' + (onlyLearned ? '显示全部' : '只看已学会') + '</button>' +
+      '</div>' +
+      '<div class="skill-list-wrap">' +
+      skillTreePage(state) +
+      skillDetail(state) + '</div>';
+    bindSkillTileDrag();
+  }
+
+  // 已学会的主动技能可以拖到技能栏登记（拖的时候记下 name，点一下就是「用 <name>」）
+  function bindSkillTileDrag() {
+    if (el.skillPanel && !el.skillPanel.getAttribute('data-tile-bound')) {
+      el.skillPanel.setAttribute('data-tile-bound', '1');
+      el.skillPanel.addEventListener('dragstart', function (event) {
+        var tile = event.target.closest ? event.target.closest('[data-skill-drag]') : null;
+        if (!tile || !tile.getAttribute('draggable')) return;
+        dragItem = { from: 'skill', kind: 'skill', id: tile.getAttribute('data-skill-sel'),
+                     name: tile.getAttribute('data-skill-drag') };
+        tile.classList.add('dragging');
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', dragItem.name);
+        }
+      });
+      el.skillPanel.addEventListener('dragend', function (event) {
+        var tile = event.target.closest ? event.target.closest('[data-skill-drag]') : null;
+        if (tile) tile.classList.remove('dragging');
+        tagDropOut(false);
+        dragItem = null;
+        clearDropHints();
+      });
+    }
+  }
+
+  // 技能树页签里点技能 / 翻页，都只是重画这一块
+  function refreshSkillPanel() {
+    if (lastState && viewMode === 'skills') renderSkillPanel(lastState);
+  }
+
+  /* ---------- 浮层里要显示什么，由 modalKind 决定 ---------- */
+
   function renderModal(state) {
     if (!state) return;
     if (modalKind === 'skills') renderSkillsModal(state);
@@ -798,9 +1204,50 @@
     }
   }
 
+  /* ---------- 视图栏顶部的对话框（横幅） ---------- */
+
+  // 说话 / 往下接话时，房间信息让位给对话框：横幅上写当前这一句。
+  // state.talk 是服务端给的（{speaker, text}），不在说话时是 null。
+  function renderTalk(state) {
+    if (!el.talkBanner) return;
+    var talk = state && state.talk;
+    if (talk) {
+      el.talkSpeaker.textContent = talk.speaker ? talk.speaker + '：' : '';
+      el.talkText.textContent = talk.text || '';
+      el.talkBanner.classList.remove('hidden');
+    } else {
+      el.talkBanner.classList.add('hidden');
+      el.talkSpeaker.textContent = '';
+      el.talkText.textContent = '';
+    }
+    if (el.roomBar) el.roomBar.classList.toggle('talking', !!talk);
+  }
+
+  // 点视图栏任意位置：对话框还开着就往下接一句。
+  // 但只有"场景"这一块算：技能树 / 背包面板里的点击要留给它们自己
+  //（不然说着话就点不了技能格子、也点不开背包里的东西）。
+  function clickTalkBanner(event) {
+    if (!lastState || !lastState.talk) return false;
+    if (viewMode !== 'scene') return false;   // 不在场景页签里，点击是那个页签自己的操作
+    if (busy) return true;                    // 正在等上一句的回复，别重复发
+    if (event) {
+      var node = event.target;
+      // 页签、指令行这类控件还是按它们自己的功能走
+      while (node && node !== document.body) {
+        if (node.id === 'view-tabs' || node.id === 'cmd-form') return false;
+        if (node.id === 'skill-panel' || node.id === 'bag-panel') return false;
+        node = node.parentNode;
+      }
+    }
+    return sendCommand('继续') !== null;
+  }
+
   function renderState(state) {
     if (!state) return;
     lastState = state;
+    // 背包里已经没有的东西（用完了 / 丢掉了）不再占着技能栏的登记格子
+    pruneSlots(state);
+    renderTalk(state);
     if (state.room) {
       el.roomName.textContent = state.room.name;
       var bits = [];
@@ -810,12 +1257,9 @@
     }
     renderChar(state);
     renderActions(state);
-    renderView(state);   // 视图栏：场景 或 背包（两个页签）
+    renderView(state);   // 视图栏：场景 / 背包 / 技能树（三个页签）
+    renderSlotsPanel(state);   // 技能栏：10 页 × 9 格
     renderDeath(state);
-    // 技能浮层开着的话，学完技能要跟着刷新
-    if (modalKind === 'skills' && !el.modal.classList.contains('hidden')) {
-      renderModal(state);
-    }
   }
 
   /* ---------- 可折叠的分区（左侧栏） ---------- */
@@ -978,25 +1422,23 @@
 
   function renderActions(state) {
     // 按界面区域分工（区域约定见 ../界面区域.md）：
-    //   移动栏 = #move-body，右侧栏 = #action-body（背包快捷栏 / 休息 / 存档读档 / 系统），
+    //   技能栏 = #skill-slots-body，右侧栏 = #action-body（休息 / 存档读档 / 系统），
     //   快捷区域1 = #equip-body 的装备栏，快捷区域2 = #log + #cmd-form。
-    //   背包 = 视图栏的 #bag-panel（点视图栏右上角「背包」页签打开）；
+    //   背包 / 技能树 = 视图栏的两个页签（点视图栏右上角）；
     //   地上的物品和人物在场景里点方块出菜单（thingMenu），不再占右侧栏。
-    if (el.moveBody) el.moveBody.innerHTML = moveSection(state);
     renderEquip(state);
     el.actionBody.innerHTML =
-      bagSection(state) +
       (state.rest ? restSection(state) : '') +
       saveSection(state) +
       systemSection();
     bindActionControls();
-    bindQuickSlots();   // 快捷栏每次重画都要重新挂拖动
   }
 
   /* ---------- 快捷区域1：装备栏（拖动装备 / 脱下） ---------- */
 
   // 拖动中的东西：{from, id, name} —— from 是 'bag'（背包里的某一堆，带 sid）或装备位 id
   var dragItem = null;
+  var dragSlot = null;   // 技能栏里正在拖的那一格（格子之间拖动＝交换，拖出去＝取消登记）
 
   function chip(name, detail, cls) {
     return '<span class="item-chip ' + (cls || '') + '" title="' + esc(name + (detail ? '（' + detail + '）' : '')) + '">' +
@@ -1077,6 +1519,18 @@
     return !!(item && item.slots && item.slots.indexOf(slotId) >= 0);
   }
 
+  // 能拿在手上的东西（武器、盾牌）：装备位下发的 slots 里带主手 / 副手
+  function canHold(item) {
+    return !!(item && item.slots &&
+      (item.slots.indexOf('main_hand') >= 0 || item.slots.indexOf('off_hand') >= 0));
+  }
+
+  // 单手物：主手副手都能拿的那种（双手物只能拿在主手）。
+  // 前端判断换手用这个，不再看是不是武器——盾牌也是单手物，一样能换手。
+  function oneHanded(item) {
+    return canHold(item) && item.slots.indexOf('off_hand') >= 0;
+  }
+
   function bagItemById(itemId) {
     return ((lastState && lastState.inventory) || []).filter(function (x) { return x.id === itemId; })[0];
   }
@@ -1102,20 +1556,20 @@
       if (other) {
         var otherPayload = bagItemById(other.id) || other;
         if (!slotAccepts({ slots: otherPayload.slots || [] }, drag.from)) return false;
+        // 换手：两只手上的东西都得是单手物（武器、盾牌都算）才换得动
         if (drag.from === 'main_hand' || drag.from === 'off_hand') {
-          // 换手只支持武器之间（盾牌不能换到主手）
-          return !!(item.weapon && otherPayload.weapon);
+          return oneHanded(item) && oneHanded(otherPayload);
         }
       }
     }
     return true;
   }
 
-  // 武器拖到哪只手的方框上，就让引擎放进哪只手；护甲 / 饰品不用带这个尾巴
+  // 武器 / 盾牌拖到哪只手的方框上，就让引擎放进哪只手；护甲 / 饰品不用带这个尾巴
   function handHint(drag, slotId) {
     if (slotId !== 'main_hand' && slotId !== 'off_hand') return '';
     var item = dragPayloadItem(drag);
-    if (!item || !item.weapon) return '';
+    if (!canHold(item)) return '';
     return slotId === 'main_hand' ? ' 主手' : ' 副手';
   }
 
@@ -1147,13 +1601,17 @@
     showToast('已脱下' + name);
   });
 
-  /* ---------- 视图栏：场景 / 背包两个页签 ---------- */
+  /* ---------- 视图栏：场景 / 背包 / 技能树三个页签 ---------- */
 
   var VIEW_KEY = 'fengcheng.view';
-  var viewMode = loadView();   // 'scene' = 场景，'bag' = 背包
+  var VIEW_TABS = { scene: 1, bag: 1, skills: 1 };
+  var viewMode = loadView();   // 'scene' = 场景，'bag' = 背包，'skills' = 技能树
 
   function loadView() {
-    try { return window.localStorage.getItem(VIEW_KEY) === 'bag' ? 'bag' : 'scene'; } catch (err) { return 'scene'; }
+    try {
+      var saved = window.localStorage.getItem(VIEW_KEY);
+      return VIEW_TABS[saved] ? saved : 'scene';
+    } catch (err) { return 'scene'; }
   }
 
   function saveView() {
@@ -1161,7 +1619,7 @@
   }
 
   function setView(mode) {
-    viewMode = (mode === 'bag') ? 'bag' : 'scene';
+    viewMode = VIEW_TABS[mode] ? mode : 'scene';
     saveView();
     itemMenuSid = null;
     splitSid = null;
@@ -1169,17 +1627,22 @@
     if (lastState) renderView(lastState);
   }
 
-  // 这一栏要么显示场景，要么显示背包（不叠着来）
+  // 这一栏要么显示场景，要么显示背包，要么显示技能树（不叠着来）
   function renderView(state) {
+    var scene = viewMode === 'scene';
     var bagging = viewMode === 'bag';
+    var skilling = viewMode === 'skills';
     if (el.bagPanel) el.bagPanel.classList.toggle('hidden', !bagging);
-    if (el.sceneBody) el.sceneBody.classList.toggle('hidden', bagging);
+    if (el.skillPanel) el.skillPanel.classList.toggle('hidden', !skilling);
+    if (el.sceneBody) el.sceneBody.classList.toggle('hidden', !scene);
     if (el.viewTabs) {
       Array.prototype.forEach.call(el.viewTabs.querySelectorAll('.view-tab'), function (tab) {
         tab.classList.toggle('active', tab.getAttribute('data-view-tab') === viewMode);
       });
     }
-    if (bagging) renderBag(state); else renderScene(state);
+    if (bagging) renderBag(state);
+    else if (skilling) renderSkillPanel(state);
+    else renderScene(state);
   }
 
   /* ---------- 视图栏的背包面板：一格一堆，翻页 / 点菜单 / 拖动 ---------- */
@@ -1241,7 +1704,7 @@
   function itemMenu(state) {
     var item = stackBySid(state, itemMenuSid);
     if (!item) return '';
-    var at = pinnedIndex(item.id);
+    var at = slotIndexOf('item', item.id);
     var html = '<div class="bag-menu" id="bag-menu"><div class="menu-title">' + esc(item.name) +
       (item.count > 1 ? ' <small>×' + item.count + '</small>' : '') +
       '<br><small>' + esc(item.detail) + ' · ' + esc(item.weight) + ' kg/个</small></div>';
@@ -1262,7 +1725,8 @@
         '<span>堆叠</span></button>';
     }
     html += '<button type="button" data-bag-act="pin">' + icon('bag') + '<span>' +
-      (at >= 0 ? '从快捷栏取下' : '登记到快捷栏') + '</span></button>';
+      (at >= 0 ? '已在技能栏第 ' + (at % SLOT_PER_PAGE + 1) + ' 格（再点取消）' : '登记到技能栏') +
+      '</span></button>';
     html += '<div class="menu-sep"></div>';
     html += '<button type="button" class="danger" data-bag-act="drop">' + icon('drop') +
       '<span>丢弃 1 个</span></button>';
@@ -1305,7 +1769,7 @@
 
     var html = bagTop(state, inv) +
       '<p class="hint-small">点物品出菜单（查看 / 使用 / 拆分 / 堆叠 / 丢弃）；拖到左边装备框＝装备，' +
-      '拖到同种物品上＝叠成一堆，拖到右侧快捷栏＝登记。</p>' +
+      '拖到同种物品上＝叠成一堆，拖到技能栏（下排中间）＝登记到技能格子。</p>' +
       '<div class="bag-grid" id="bag-grid">';
     if (!inv.length) html += '<span class="bag-empty">背包是空的。捡东西、或者从身上脱下装备都会回到这里。</span>';
     slice.forEach(function (item) { html += bagCell(item); });
@@ -1315,7 +1779,6 @@
     el.bagPanel.innerHTML = html;
     bindBag();
     bindSplitBox();
-    bindQuickSlots();
   }
 
   function bindBag() {
@@ -1344,7 +1807,9 @@
         renderBag(lastState);
       });
       cell.addEventListener('dragstart', function (event) {
-        dragItem = { from: 'bag', sid: sid, id: item.id, name: item.name, count: item.count };
+        // kind/cmd 是给技能栏格子登记用的（点一下就用 / 装备 / 查看）
+        dragItem = { from: 'bag', sid: sid, id: item.id, name: item.name, count: item.count,
+                     kind: 'item', cmd: (item.quick && item.quick.cmd) || ('查看 ' + item.name) };
         cell.classList.add('dragging');
         if (event.dataTransfer) {
           event.dataTransfer.effectAllowed = 'move';
@@ -1399,31 +1864,7 @@
     menu.style.top = top + 'px';
   }
 
-  /* ---------- 右侧栏的快捷栏：拖动登记 ---------- */
-
-  function bindQuickSlots() {
-    var slots = el.actionBody ? el.actionBody.querySelectorAll('[data-quick-slot]') : [];
-    Array.prototype.forEach.call(slots, function (slot) {
-      var index = parseInt(slot.getAttribute('data-quick-slot'), 10);
-      slot.addEventListener('dragover', function (event) {
-        if (!dragItem || dragItem.from !== 'bag') return;
-        event.preventDefault();
-        slot.classList.add('drop-ok');
-      });
-      slot.addEventListener('dragleave', function () { slot.classList.remove('drop-ok'); });
-      slot.addEventListener('drop', function (event) {
-        event.preventDefault();
-        event.stopPropagation();
-        slot.classList.remove('drop-ok');
-        if (!dragItem || dragItem.from !== 'bag') { dragItem = null; return; }
-        var name = dragItem.name;
-        pinAt(index, dragItem.id, name);
-        dragItem = null;
-        showToast('把' + name + '放到了快捷栏第 ' + (index + 1) + ' 格。');
-      });
-    });
-  }
-
+  // 技能栏格子里的东西怎么登记：见上面「技能栏的登记格子」一节
   function currentSlotItem(slotId) {
     var slot = equipSlotById(slotId);
     return slot && slot.item ? slot.item : null;
@@ -1443,7 +1884,7 @@
     if (!el.sceneBody) return;
     var sc = state && state.scene;
     if (!sc) {
-      el.sceneBody.innerHTML = '<span class="empty">这个地点还没有场景图，用下面的移动按钮走。</span>';
+      el.sceneBody.innerHTML = '<span class="empty">这个地点还没有场景图；用方向键走动，或者点场景里能走的格子。</span>';
       return;
     }
     var things = {};
@@ -1586,6 +2027,16 @@
   }
 
   function bindScene() {
+    // 说话时点视图栏任意位置 = 继续下一句。捕获阶段就动手，免得同时把角色走了一格。
+    var viewRoot = document.querySelector('[data-region="视图栏"]');
+    if (viewRoot && !viewRoot.getAttribute('data-talk-bound')) {
+      viewRoot.setAttribute('data-talk-bound', '1');
+      viewRoot.addEventListener('click', function (event) {
+        if (!clickTalkBanner(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+      }, true);
+    }
     Array.prototype.forEach.call(el.sceneBody.querySelectorAll('.scene-cell'), function (cell) {
       var thingId = cell.getAttribute('data-thing');
       if (thingId) {
@@ -1670,75 +2121,7 @@
     step();
   }
 
-  /* ---------- 移动栏（文字栏下面正中间那块） ---------- */
-
-  function moveSection(state) {
-    // 六个方向常驻，颜色说明能不能走
-    var byDir = {};
-    (state.exits || []).forEach(function (e) { byDir[e.id] = e; });
-
-    function moveTitle(e) {
-      // 每 10 步才扣一次体力，没凑满的那几步写「不扣体力」
-      return e.ap + ' 点行动点' + (e.cost ? '，' + e.cost + ' 点体力' : '，不扣体力');
-    }
-
-    function dirBtn(id) {
-      var e = byDir[id];
-      if (!e) return '<span class="dir-empty"></span>';
-      var cls = e.state === 'open' ? 'dir-open' : (e.state === 'danger' ? 'dir-danger' : 'dir-unknown');
-      var sub, title;
-      if (e.tile === 'wall') {
-        // 场景里那一格是墙 / 障碍物
-        cls = 'dir-unknown';
-        sub = '走不通';
-        title = '那个方向走不过去';
-      } else if (e.tile === 'floor') {
-        sub = '空地';
-        title = '往' + e.name + '走一格（' + moveTitle(e) + '）';
-      } else if (e.tile === 'door' || e.tile === 'stairs') {
-        if (e.state === 'blocked') {
-          // 缺东西过不去（例如没带手电筒就下不了地下室）：画成走不通，悬停看原因
-          cls = 'dir-unknown';
-          sub = '进不去';
-          title = e.danger || '这里过不去';
-        } else {
-          sub = e.danger ? '危险' : (e.target || (e.tile === 'stairs' ? '楼梯' : '出口'));
-          title = (e.danger || (e.target ? '走过这格就通往 ' + e.target : '那边还没走过')) +
-            '（' + moveTitle(e) + '）';
-          if (e.danger) cls = 'dir-danger'; else cls = 'dir-open';
-        }
-      } else if (e.state === 'danger') {
-        sub = '危险';
-        title = e.danger || '那边有危险';
-      } else if (e.state === 'open') {
-        sub = e.target || '未探索';
-        title = (e.target ? '通往 ' + e.target : '还没走过那边') + '（' + moveTitle(e) + '）';
-      } else {
-        sub = '？';
-        title = '不知道那边能不能走，走走看（' + moveTitle(e) + '）';
-      }
-      return '<button type="button" class="dir ' + cls + '" data-cmd="走 ' + esc(e.name) +
-        '" title="' + esc(title) + '">' + icon(DIR_ICON[id] || 'map') +
-        '<span class="dir-name">' + esc(e.name) + '</span>' +
-        '<span class="dir-sub">' + esc(sub) + '</span></button>';
-    }
-
-    // 四个平面方向（上下楼改成点场景里的楼梯格，按钮不再占位）
-    return '<div class="dir-grid">' +
-      '<span class="dir-empty"></span>' + dirBtn('north') + '<span class="dir-empty"></span>' +
-      dirBtn('west') + '<span class="dir-center">' + esc(state.room ? state.room.name : '') + '</span>' +
-      dirBtn('east') +
-      '<span class="dir-empty"></span>' + dirBtn('south') + '<span class="dir-empty"></span>' +
-      '</div><p class="hint-small">走一格：绿＝能走，红＝危险，暗＝走不通；上下楼点场景里的楼梯格</p>';
-  }
-
   /* ---------- 右侧栏的几段 ---------- */
-
-  // 背包快捷栏：右侧只留 3 格（手动登记），完整背包点视图栏的「背包」页签
-  function bagSection(state) {
-    return '<div class="section"><h4>' + icon('bag') + '背包快捷栏</h4>' +
-      quickBar(state) + '</div>';
-  }
 
   // 存档 / 读档：两排按钮，先选动作再选槽位
   function saveSection(state) {
@@ -1750,7 +2133,6 @@
     return '<div class="section"><h4>' + icon('help') + '系统</h4><div class="btn-grid">' +
       btn('地图', '地图', 'map', 'small') +
       btn('角色', '角色卡', 'person', 'small') +
-      modalBtn('skills', '技能树', 'skills') +
       btn('帮助', '帮助', 'help', 'small') +
       fillBtn('姿态 ', '切换姿态', 'stance') +
       fillBtn('掷骰 ', '掷骰', 'dice') +
@@ -1838,13 +2220,13 @@
     if (data.type === 'quit') {
       stopHeartbeat();
       show('exit');
-      if (data.lines) appendLines(el.log, data.lines);
+      if (data.lines) appendLines(el.log, logLines(data.lines));
       if (el.exitText && data.lines && data.lines.length) el.exitText.textContent = data.lines[0];
       return;
     }
     if (data.type === 'play') {
       show('play');
-      appendLines(el.log, data.lines);
+      appendLines(el.log, logLines(data.lines));
       renderState(data.state);
       if (data.notice) showToast(data.notice);
       // 在输入框里打“退出”也算退出：把服务和这一局一起结束
@@ -2021,8 +2403,18 @@
       return;
     }
     if (act === 'pin') {
-      var at = pinnedIndex(item.id);
-      if (at >= 0) unpin(at); else pinAt(freeQuickSlot(), item.id, name);
+      // 已经登记过就取消，没登记过就放到当前这一页的空格
+      var at = slotIndexOf('item', item.id);
+      if (at >= 0) {
+        clearSlotReg(at);
+        showToast('把' + name + '从技能栏第 ' + (at % SLOT_PER_PAGE + 1) + ' 格取下。');
+      } else {
+        var cmd = (item.quick && item.quick.cmd) || ('查看 ' + name);
+        var target = freeSlotInPage();
+        registerSlot(target, 'item', item.id, name, cmd);
+        showToast('把' + name + '登记到技能栏第 ' + (target % SLOT_PER_PAGE + 1) + ' 格。');
+      }
+      itemMenuSid = null;
       if (lastState) renderBag(lastState);
       return;
     }
@@ -2088,12 +2480,31 @@
   /* ---------- 事件绑定 ---------- */
 
   document.addEventListener('click', function (event) {
-    // 快捷栏格子里的 ✕ 长在 [data-cmd] 按钮里面，要先拦下来
-    var quickClear = event.target.closest ? event.target.closest('[data-quick-clear]') : null;
-    if (quickClear) {
+    // 技能栏格子里的 ✕ 长在格子按钮里面，要先拦下来
+    var slotClear = event.target.closest ? event.target.closest('[data-slot-clear]') : null;
+    if (slotClear) {
       event.preventDefault();
       event.stopPropagation();
-      unpin(parseInt(quickClear.getAttribute('data-quick-clear'), 10));
+      clearSlotReg(parseInt(slotClear.getAttribute('data-slot-clear'), 10));
+      return;
+    }
+    // 技能栏翻页
+    var slotPageNode = event.target.closest ? event.target.closest('[data-slot-page]') : null;
+    if (slotPageNode) {
+      event.preventDefault();
+      var want = slotPageNode.getAttribute('data-slot-page');
+      if (want === 'prev') slotPageNo -= 1;
+      else if (want === 'next') slotPageNo += 1;
+      else slotPageNo = parseInt(want, 10) - 1;
+      slotPageNo = Math.max(0, Math.min(SLOT_PAGES - 1, slotPageNo));
+      renderSlotsPanel(lastState);
+      return;
+    }
+    // 技能栏里点已登记的技能：快捷释放（发「用 <技能>」）
+    var castNode = event.target.closest ? event.target.closest('[data-cast]') : null;
+    if (castNode && castNode.getAttribute('data-cast')) {
+      event.preventDefault();
+      sendCommand('用 ' + castNode.getAttribute('data-cast'));
       return;
     }
     var cmdNode = event.target.closest ? event.target.closest('[data-cmd]') : null;
@@ -2102,11 +2513,36 @@
       sendCommand(cmdNode.getAttribute('data-cmd'));
       return;
     }
-    // 视图栏的两个页签：场景 / 背包
+    // 视图栏的三个页签：场景 / 背包 / 技能树
     var tabNode = event.target.closest ? event.target.closest('[data-view-tab]') : null;
     if (tabNode) {
       event.preventDefault();
       setView(tabNode.getAttribute('data-view-tab'));
+      return;
+    }
+    // 技能树页签：翻页 / 只看已学会
+    var skillPageNode = event.target.closest ? event.target.closest('[data-skill-page]') : null;
+    if (skillPageNode) {
+      event.preventDefault();
+      skillPageNo += (skillPageNode.getAttribute('data-skill-page') === 'next') ? 1 : -1;
+      if (skillPageNo < 0) skillPageNo = 0;
+      refreshSkillPanel();
+      return;
+    }
+    if (event.target.closest && event.target.closest('[data-skill-only]')) {
+      event.preventDefault();
+      onlyLearned = !onlyLearned;
+      skillPageNo = 0;
+      refreshSkillPanel();
+      return;
+    }
+    // 技能树页签：点一个技能，下面展开详细描述
+    var skillSel = event.target.closest ? event.target.closest('[data-skill-sel]') : null;
+    if (skillSel) {
+      event.preventDefault();
+      var picked = skillSel.getAttribute('data-skill-sel');
+      skillSelId = (skillSelId === picked) ? null : picked;
+      refreshSkillPanel();
       return;
     }
     // 背包翻页
@@ -2144,13 +2580,6 @@
       event.preventDefault();
       el.cmdInput.value = fillNode.getAttribute('data-fill');
       el.cmdInput.focus();
-      return;
-    }
-    var modalNode = event.target.closest ? event.target.closest('[data-modal]') : null;
-    if (modalNode) {
-      event.preventDefault();
-      openModal('skills', '技能树');
-      renderModal(lastState);
       return;
     }
     var learnNode = event.target.closest ? event.target.closest('[data-learn]') : null;
@@ -2233,9 +2662,15 @@
     // 方向键在场景里走动（正在输入框里打字时不抢键）
     var tag = (event.target && event.target.tagName) || '';
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    // 技能栏格子：按 Delete / Backspace 取消登记
+    var cell = event.target && event.target.closest ? event.target.closest('[data-slot-cell]') : null;
+    if (cell && (event.key === 'Delete' || event.key === 'Backspace')) {
+      event.preventDefault();
+      clearSlotReg(parseInt(cell.getAttribute('data-slot-cell'), 10));
+      return;
+    }
     if (currentMode !== 'play' || busy) return;
-    if (viewMode === 'bag') return;   // 在背包页签里按方向键不该让角色乱走
-    var dir = { ArrowUp: '走 北', ArrowDown: '走 南', ArrowRight: '走 东', ArrowLeft: '走 西' }[event.key];
+    if (viewMode !== 'scene') return;   // 背包 / 技能树页签里按方向键不该让角色乱走    var dir = { ArrowUp: '走 北', ArrowDown: '走 南', ArrowRight: '走 东', ArrowLeft: '走 西' }[event.key];
     if (!dir) return;
     event.preventDefault();
     sendCommand(dir);

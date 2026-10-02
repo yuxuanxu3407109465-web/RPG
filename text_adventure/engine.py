@@ -42,6 +42,9 @@ OPPOSITE_DIRECTIONS = {
 GRID_STEPS = {
     "north": (0, -1), "south": (0, 1), "east": (1, 0), "west": (-1, 0),
 }
+# 一个 NPC 的台词已经全部说完时，cmd_continue 返回这一句；
+# 界面（webui.py）认这个字符串，把视图栏的对话框收起来。
+TALK_END = "（话说完了）"
 # 门里的那一格该往哪个方向找（先试第一个，不行再试后面的）
 INWARD_STEPS = {
     "north": ((0, 1), (1, 0), (-1, 0), (0, -1)),
@@ -249,6 +252,7 @@ class Game:
             (["地图", "map", "m"], self.cmd_map),
             (["角色", "状态", "status", "c"], self.cmd_status),
             (["技能", "skills", "k"], self.cmd_skills),
+            (["用", "use skill"], self.cmd_use_skill),
             (["学习", "learn"], self.cmd_learn),
             (["装备", "equip"], self.cmd_equip),
             (["卸下", "unequip"], self.cmd_unequip),
@@ -264,6 +268,7 @@ class Game:
             (["休息", "睡", "rest"], self.cmd_rest),
             (["等待", "结束回合", "wait"], self.cmd_wait),
             (["说话", "交谈", "对话", "talk"], self.cmd_talk),
+            (["继续", "下一句", "下一段", "continue"], self.cmd_continue),
             (["存档", "save"], self.cmd_save),
             (["读档", "load"], self.cmd_load),
             (["清空存档", "清空", "删除存档", "clear"], self.cmd_clear),
@@ -304,6 +309,8 @@ class Game:
         self.ground_positions = {}
         # 每个 NPC 已经说到第几句
         self.dialogue_index = {nid: 0 for nid in self.world.npcs}
+        # 正在和谁说话（对话框里显示的是哪个 NPC 的台词）；不在对话里就是 None
+        self.talk_npc = None
 
     def start_new(self, character):
         """用新创建的角色开始一局游戏，背景自带的物品放进背包。"""
@@ -1600,6 +1607,53 @@ class Game:
             return f"没有叫“{arg}”的技能。输入“技能 树名”查看某棵技能树里的技能。"
         return skills.learn(self.character, skill, self.skill_trees, self.options)
 
+    def use_skill_check(self, skill):
+        """能不能现在用这个主动技能：返回一句说明，能用就返回 None。
+
+        战斗回合流程还没接上，所以这里只把"数据上说得通"的部分先校验掉：
+        学过、是主动技能、手上的武器 / 持握方式对得上。冷却等接上流程再算。
+        """
+        if not self.character:
+            return "还没有创建角色。"
+        if skill["id"] not in self.character.learned_skills:
+            return f"你还没学会「{skill['name']}」，先去技能树里学（学习 {skill['name']}）。"
+        if skill.get("type") != "active":
+            return f"「{skill['name']}」是被动技能，不用主动释放。"
+        weapon_type = skill.get("weapon_type")
+        if weapon_type and weapon_type not in self._wielded_types():
+            return (f"「{skill['name']}」需要手持{self.world.weapon_types.get(weapon_type, weapon_type)}武器，"
+                    f"先装备一把。")
+        grip = skill.get("grip")
+        if grip and self.grip_style() != grip:
+            return f"「{skill['name']}」要在{stats.GRIPS[grip]}状态下用（现在是{self.grip_name()}）。"
+        cost = skills.ap_cost(skill)
+        if self.ap < cost:
+            return (f"「{skill['name']}」要 {cost} 点行动点，你现在只有 {self.ap} 点。\n"
+                    f"先结束回合（或者等）攒回来。")
+        return None
+
+    def cmd_use_skill(self, arg):
+        """用 <技能>：快捷释放一个主动技能（技能栏里的格子点一下就是发这句）。
+
+        「用」也能顺手用物品（「用 肉罐头」走 cmd_use）：先当技能找，找不到技能才当物品，
+        这样两种写法都不用记前缀。
+        """
+        if not self.character:
+            return "还没有创建角色。"
+        if not arg:
+            return "你想用哪个技能？例如：用 盾击"
+        skill = self.skill_trees.find_skill(arg)
+        if not skill:
+            return self.cmd_use(arg)
+        error = self.use_skill_check(skill)
+        if error:
+            return error
+        cost = skills.ap_cost(skill)
+        note = self.spend_ap(cost)
+        text = (f"你用出了「{skill['name']}」（花 {cost} 点行动点）。\n"
+                f"（战斗回合流程还没接上，这一下暂时只有动作，没有实际效果。）")
+        return text + ("\n" + note if note else "")
+
     # ---------- 装备与姿态 ----------
 
     def _weapon(self, item_id):
@@ -2285,8 +2339,29 @@ class Game:
             return (f"{npc['name']}在（第 {coord[0] + 1} 列，第 {coord[1] + 1} 行），"
                     f"你得先走到跟前再说话。")
         lines = npc["dialogue"]
-        index = self.dialogue_index[npc_id]
-        self.dialogue_index[npc_id] = min(index + 1, len(lines) - 1)
+        index = self.dialogue_index.get(npc_id, 0)
+        # 对话说完了再点一次「说话」：从最后一句重新听，不至于卡在那里没有反应
+        if index >= len(lines):
+            index = 0
+        self.dialogue_index[npc_id] = index + 1
+        self.talk_npc = npc_id  # 界面据此把这一句放进视图栏的对话框
+        return f"{npc['name']}：{lines[index]}"
+
+    def cmd_continue(self, arg):
+        """对话框里的「继续」：接着上一个 NPC 往下说一句（界面点视图栏就是发这句）。"""
+        npc_id = self.talk_npc
+        if not npc_id:
+            return "现在没有说话的对象。先用「说话 <人>」跟人说上一句。"
+        if npc_id not in (self._room().get("npcs") or []):
+            self.talk_npc = None
+            return "这里没有人可以说话了。"
+        npc = self.world.npcs[npc_id]
+        lines = npc["dialogue"]
+        index = self.dialogue_index.get(npc_id, 0)
+        if index >= len(lines):
+            self.talk_npc = None
+            return TALK_END  # 说完了：界面收到这句就把对话框收起来
+        self.dialogue_index[npc_id] = index + 1
         return f"{npc['name']}：{lines[index]}"
 
     def cmd_save(self, arg):
@@ -2396,6 +2471,7 @@ class Game:
         notes += self._load_equipment(state.get("equipment"))
         notes += self._load_worn(state.get("worn"))
         self.dialogue_index = state.get("dialogue_index", {})
+        self.talk_npc = None   # 读档不接上一次的说话对象
         self._load_notice = ("（存档已按当前版本适配：" + "、".join(notes) + "）\n") if notes else ""
         return self._load_notice + f"读档成功（{slot} 号槽）。\n\n" + self.describe_room()
 
@@ -2575,6 +2651,7 @@ class Game:
             "  地图 / m               查看地图\n"
             "  角色 / c               查看角色卡（属性、衍生数值）\n"
             "  技能 / 技能 <树名>        查看技能树，例如：技能 锐器\n"
+            "  用 <技能>               快捷释放一个主动技能，例如：用 盾击（技能栏里点格子就是这句）\n"
             "  学习 <技能>              花技能点解锁技能\n"
             "  装备 <物品> / 卸下 <物品>  拿起或收起武器，穿戴或取下护甲、饰品、披风、背包\n"
             "                          武器可以指定手：装备 撬棍 副手（网页版拖到哪个方框就是哪只手）\n"
@@ -2592,7 +2669,7 @@ class Game:
             "  等待 / wait             原地等一回合（战斗外 1 分钟，也算生命恢复的回合）\n"
             "  休息 <时长>             恢复体力并推进时间，例如：休息 30、休息 2小时（1~480 分钟）\n"
             "                          体力满了也能休息，只是时间照样过去\n"
-            "  说话 <人>               和 NPC 交谈（同样要先走到跟前）\n"
+            "  说话 <人>               和 NPC 交谈（同样要先走到跟前）；说完点视图栏横幅看下一句\n"
             "  存档 [槽位] / 读档 [槽位]  保存或读取进度（槽位 1~3，不写就用当前槽）\n"
             "  清空 <槽位>             删掉某个槽位的存档，例如：清空 2\n"
             "  退出 / quit            离开游戏"

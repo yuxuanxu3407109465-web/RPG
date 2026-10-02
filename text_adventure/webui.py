@@ -37,7 +37,7 @@ from character import CharacterCreator, CharacterOptions, Prompter, check_attrib
 from dice import Dice
 from engine import (
     DIRECTION_NAMES, DIRECTIONS, GRID_STEPS, REST_MINUTES_MAX, REST_MINUTES_MIN, SLOT_COUNT,
-    Game, World,
+    TALK_END, Game, World,
 )
 import skills as skill_rules
 from skills import SkillTrees, skill_details, tree_unlocked, unmet_requirements
@@ -93,6 +93,11 @@ REST_PRESETS = [(10, "10 分钟"), (30, "半小时"), (60, "1 小时"),
 
 MOVE_WORDS = ("走", "去", "go")
 
+# 说话的指令：对话框（视图栏横幅）只收这些指令的结果
+TALK_WORDS = ("说话", "交谈", "对话", "talk")
+# 接着上一句往下说：点视图栏横幅，前端发的就是「继续」
+TALK_CONTINUE = ("继续", "continue", "下一句", "下一段")
+
 # 这些指令执行完顺手在浮层里回一句（存档、读档、清空、休息、拆分、堆叠）
 NOTICE_COMMANDS = ("存档", "读档", "清空", "休息", "等待", "拆分", "堆叠",
                    "save", "load", "clear", "rest", "wait", "split", "stack")
@@ -106,6 +111,15 @@ def is_move(text):
     if text.lower() in DIRECTIONS:  # 直接输入“东”“n”“north”这种
         return True
     return text.startswith(MOVE_WORDS) or text.split()[0:1] == ["go"]
+
+
+def is_talk(text):
+    """这行指令是不是在说话 / 往下接话？用来决定要不要把台词放进对话框。"""
+    text = text.strip()
+    if not text:
+        return False
+    first = text.split()[0]
+    return text.startswith(TALK_WORDS) or first in TALK_CONTINUE
 
 
 def load_page():
@@ -599,6 +613,27 @@ class Session:
             return {"cmd": "装备 " + name, "label": "装备"}
         return {"cmd": "查看 " + name, "label": "查看"}
 
+    def active_skills(self):
+        """已经学会的主动技能（技能栏里能登记的只有这些）：给前端一份扁平列表。"""
+        c = self.game.character
+        trees = self.skill_trees
+        out = []
+        for skill in trees.skills:
+            if skill.get("type") != "active" or skill["id"] not in c.learned_skills:
+                continue
+            weapon = skill.get("weapon_type")
+            out.append({
+                "id": skill["id"],
+                "name": skill["name"],
+                "tree": trees.tree(skill["tree"])["name"],
+                "ap_cost": skill_rules.ap_cost(skill),
+                "cooldown": skill_rules.cooldown_text(skill),
+                "weapon": self.world.weapon_types.get(weapon, weapon) if weapon else "",
+                "grip": stats.GRIPS.get(skill.get("grip", ""), ""),
+                "description": skill["description"],
+            })
+        return out
+
     def skills_state(self):
         """技能树打包给前端：按分支分组，能学的给按钮，学过的和不合条件的不可点。"""
         c = self.game.character
@@ -651,6 +686,27 @@ class Session:
             slots.append(info if info else {"slot": n, "exists": False})
         return slots
 
+    def talk_banner(self):
+        """视图栏横幅（对话框）这一格：正在说话时给出说话人和刚说出口的那一句。
+
+        用 game.dialogue_index - 1 而不是当前索引：引擎是"说完就把索引往后挪"，
+        所以刚说的那一句在索引的前一格。索引为 0 表示"这个 NPC 还没跟我说过话"
+        （例如读档回来），这时没有台词可显示，横幅让位给平时的房间信息。
+        人换过房间就不接着说了，横幅跟着收起来。
+        """
+        game = self.game
+        npc_id = game.talk_npc
+        if not npc_id or npc_id not in (game._room().get("npcs") or []):
+            return None
+        index = game.dialogue_index.get(npc_id, 0) - 1
+        if index < 0:
+            return None
+        npc = self.world.npcs[npc_id]
+        lines = npc["dialogue"]
+        if index >= len(lines):
+            return None
+        return {"speaker": npc["name"], "text": lines[index]}
+
     def state(self):
         game = self.game
         snap = {
@@ -684,11 +740,15 @@ class Session:
                 "presets": [{"minutes": m, "label": label} for m, label in REST_PRESETS],
             },
             "skills": self.skills_state(),
+            # 学过的主动技能（技能栏登记用，是 skills 的紧凑版）
+            "active_skills": self.active_skills(),
             "room_items": [
                 {"id": i, "name": world.items[i]["name"]}
                 for i in game.room_items[game.current_room]
             ],
             "npcs": [{"id": n, "name": world.npcs[n]["name"]} for n in room.get("npcs", [])],
+            # 说话时视图栏顶部那条横幅显示台词；平时它是房间信息
+            "talk": self.talk_banner(),
             "inventory": inventory,
             "character": {
                 "name": c.name,
@@ -867,6 +927,8 @@ class Session:
             self.game.running = True
             text = self.game.cmd_load(str(slot))
             ok = "读档成功" in text
+            if ok:
+                self.game.talk_npc = None   # 读档之后从“没有说话对象”重新开始
             self.started = self.game.character is not None
             # 读失败时别把正在玩的人踢回主菜单
             self.mode = "play" if (ok or was_playing) else "menu"
@@ -906,17 +968,28 @@ class Session:
             text = (text or "").strip()
             if not text:
                 return {"type": "play", "lines": [], "state": self.state()}
+            # 说话 / 继续：台词进文字栏，同时也在视图栏的横幅（对话框）里显示
+            talking = is_talk(text)
             lines = ["> " + text]
             output = self.game.handle(text)
             if output:
-                lines.append(output)
-            # 走不通、体力不够这类提示额外带一份，界面会用浮层弹出来
+                if talking and output == TALK_END:
+                    pass   # 说完的哨兵句不进文字栏，只用来收横幅
+                else:
+                    lines.append(output)
+            # 浮层提示：只管"没做成"的事（走不通、体力不够、话说完了）。
+            # 成功走一格 / 换地点不再弹横幅：走到哪儿看视图栏的场景图。
             notice = None
             if is_move(text) and not (output or "").startswith("【"):
-                notice = output or "那边走不过去。"
+                # 移动成功会带"移动至（…）"；不带就是走不通 / 体力不够这类失败
+                if "移动至" not in (output or ""):
+                    notice = output or "那边走不过去。"
             elif output and text.split()[0] in NOTICE_COMMANDS:
                 # 存档 / 读档 / 清空 / 休息 这类操作，浮层里也回一句，省得去日志里翻
                 notice = next((line for line in output.splitlines() if line.strip()), None)
+            if talking and output and (output == TALK_END or output.startswith("现在没有")
+                                       or output.startswith("这里没有")):
+                notice = output   # 接话接不下去 / 没人可说话：浮层提示一声
             return {
                 "type": "play",
                 "lines": lines,
