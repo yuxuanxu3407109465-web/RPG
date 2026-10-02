@@ -578,8 +578,17 @@ def disarm_difficulty(a):
 
 
 def sidestep_distance(a):
-    """撤步后撤的距离（格）= 4 + 敏捷 ÷ 4。"""
-    return 4 + a["agility"] // 4
+    """撤步后撤的距离（格）= 2 + 敏捷 ÷ 4。"""
+    return 2 + a["agility"] // 4
+
+
+def sweep_damage_percent(a):
+    """随势斩·横扫（进攻姿态）对每个目标造成的武器伤害 % = 75% + 25% ×（敏捷 ÷ 4）。
+    相对 100% 的差值算技能增伤，和力量、姿态等加算。"""
+    return 75 + 25 * (a["agility"] // 4)
+
+
+EFFECT_DURATION_TURNS = 25  # 原来“持续到战斗结束”的效果，统一改为持续 25 回合
 
 
 # ---------- 潜行 ----------
