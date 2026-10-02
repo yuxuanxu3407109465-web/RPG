@@ -25,13 +25,18 @@
   --w-move: clamp(300px, 24.5vw, 520px);   /* 移动栏宽度：1920 宽屏时约 470px */
   --h-bottom: clamp(240px, 38vh, 400px);   /* 下排（装备 / 移动 / 文字）的固定高度，文字栏在里面滚 */
 
-  /* 视图栏里一个格子的大小：按「视图栏真正能用的地方」算，宽高各算一遍取小值 ——
-       宽 = 中间列宽 − 面板边框与内边距 − 15 道格子缝（16 格）
+  /* 视图栏「场景」页签里并排的三块：左边地图 | 中间场景 | 右边时钟。
+     左右两块一样宽（都是 --w-map），所以中间的格子场景在整个视图栏里是正中的。 */
+  --w-map: clamp(146px, 10vw, 210px);      /* 地图那一列（＝右边时钟那一列）多宽 */
+  --h-map: clamp(170px, 34vh, 340px);      /* 地图那一列多高 */
+
+  /* 视图栏里一个格子的大小：按「中间那一列真正能用的地方」算，宽高各算一遍取小值 ——
+       宽 = 中间列宽 − 左右两列 − 两道缝 − 面板边框与内边距 − 15 道格子缝（16 格）
        高 = 视图栏高 − 房间栏 − 底部图例条 − 9 道格子缝（10 行）
-     改尺寸只要动这几个数，16×10 的地图在任何常见窗口下都正好铺满视图栏、又不出滚动条。 */
+     改尺寸只要动这几个数，16×10 的地图在任何常见窗口下都正好铺满中间那一列、又不出滚动条。 */
   --w-mid: calc(100vw - var(--w-left) - var(--w-right) - 56px);  /* 中间列宽度：减去左右 14px 外边距和两道 14px 缝 */
-  --h-scene: calc(100vh - var(--h-bottom) - 139px);              /* 视图栏里留给地图那块的高度：减去房间栏、图例条和内边距 */
-  --cell: clamp(14px, min(calc((var(--w-mid) - 48px) / 16), calc((var(--h-scene) - 18px) / 10)), 64px);
+  --h-scene: calc(100vh - var(--h-bottom) - 139px);  /* 中间那一列里留给格子那块的高度：减去房间栏、图例条和内边距 */
+  --cell: clamp(13px, min(calc((var(--w-mid) - var(--w-map) * 2 - 90px) / 16), calc((var(--h-scene) - 18px) / 10)), 64px);
 }
 
 * { box-sizing: border-box; }
@@ -318,6 +323,53 @@ body {
 
 /* ---------- 视图栏：格子场景 ---------- */
 
+/* ---------- 视图栏「场景」页签：地图 | 场景 | 时钟 三块并排（谁也不压谁） ---------- */
+
+/* 左右两块一样宽（--w-map），所以中间的格子场景在**整个视图栏里正中**。
+   地图以前是浮在场景上的绝对定位浮层，会盖住几十个能点的格子（窄窗口下最多 61 个）。
+   改成并排以后，场景那一列顶多变小一点 / 出现滚动条，绝不会有格子被压住点不到。 */
+.scene-panel {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;   /* 中间那列撑满高度；左右两列自己定高（见 .view-map / .scene-side 的 align-self） */
+  gap: 8px;               /* 三块之间的缝（左右一样，场景才是正中的） */
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 6px 10px 0;
+  overflow: hidden;
+}
+
+.scene-panel.hidden { display: none; }
+
+/* 切到背包 / 技能树页签时，地图和时钟跟着场景一起收起来（见 app.js 的 renderView） */
+.scene-panel.hidden .view-map,
+.view-map.hidden,
+.view-clock.hidden { display: none; }
+
+/* 中间那一列：只放格子场景（时钟在右边那一列里，不占这儿的地方，也不压格子） */
+.scene-col {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* 右边那一列：和地图一样宽（--w-map），里面只有右上角的时钟。
+   它也是排版里的实体，所以「场景正中」是靠它撑出来的，时钟本身压不到任何格子。 */
+.scene-side {
+  display: flex;
+  flex: 0 0 var(--w-map);
+  align-self: flex-start;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+/* 地图与时钟是场景面板里的两块，包含块是视图栏自己（不然绝对定位会跑到整个页面上去） */
+.view-panel { position: relative; }
+
 .view-panel .bar { padding: 8px 14px; }
 .view-panel .bar h2 { font-size: 16px; letter-spacing: 1px; }
 .view-panel .view-hint { margin-left: auto; font-size: 11.5px; color: var(--dim-2); }
@@ -336,8 +388,8 @@ body {
 }
 .view-tab:hover { border-color: var(--amber); color: var(--text); }
 .view-tab.active { border-color: var(--amber); background: #2a2318; color: var(--amber); }
-/* 场景：地图独占上方居中的一大块，颜色图例压在最下面一整条，
-   时钟浮在左上角（绝对定位，不占地图的地方）。 */
+/* 场景：格子铺满中间那一列，颜色图例压在最下面一整条。
+   格子大小见 :root 的 --cell（已经扣掉了左右两列）。 */
 .scene-wrap {
   position: relative;
   flex: 1;
@@ -468,6 +520,13 @@ body {
 .bag-cell.drop-ok { border-color: var(--green); background: rgba(70, 130, 90, .16); }
 .bag-cell.drop-no { border-color: #d9705f; }
 .bag-cell[draggable="true"] { cursor: grab; }
+
+/* 能拖的东西一律关掉文字选择：不然按住名字拖会变成「拖一段选中的文字」，
+   松手弹「松开鼠标以搜索文本」，拖不动格子 */
+.bag-cell, .skill-tile, .item-chip, .equip-slot {
+  user-select: none;
+  -webkit-user-select: none;
+}
 .bag-icon {
   display: flex;
   align-items: center;
@@ -702,6 +761,10 @@ body {
   text-align: center;
   overflow: hidden;
   cursor: pointer;
+  /* 格子是按钮、里面写着技能名：不关掉文字选择的话，
+     按住名字拖会变成「拖一段选中的文字」，松手弹「松开鼠标以搜索文本」 */
+  user-select: none;
+  -webkit-user-select: none;
 }
 .slot-cell.filled {
   border-style: solid;
@@ -1114,8 +1177,7 @@ button.choice .label { white-space: pre-line; flex: 1; }
 
 .cmdline input:focus { outline: none; border-color: var(--amber); }
 
-/* ---------- 计时器（原来挂在右侧栏顶上，现在挪进视图栏：
-     场景页签浮在画面左上角，背包页签放在顶部那一行的最右边，两个页签都看得见） ---------- */
+/* ---------- 计时器（视图栏右上角，固定不动，三个页签都看得见） ---------- */
 
 .clock-chip {
   display: flex;
@@ -1142,13 +1204,243 @@ button.choice .label { white-space: pre-line; flex: 1; }
   font-size: 11.5px;
 }
 
-/* 场景里那一份：浮在左上角，不占地图的面积 */
-.scene-clock {
-  position: absolute;
-  left: 10px;
-  top: 8px;
-  z-index: 3;
+/* 场景右上角的时钟（在右边那一列里，和左边地图同一条水平线、左右对称）。
+   这一列比较窄，所以胶囊里的字允许折行（时间一行、回合数一行），别把这一列撑破。 */
+.view-clock {
+  pointer-events: none;
+  min-width: 0;
 }
+
+.view-clock > .clock-chip {
+  pointer-events: auto;
+  max-width: 100%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* 场景本身不滚（地图可以直接拖），别让指针拖动把场景拉出滚动条 */
+.scene-panel .scene-wrap { overscroll-behavior: contain; }
+
+/* ---------- 视图栏左边一列：区域地图 ---------- */
+
+/* 一列，不是浮层：宽 --w-map、高 --h-map 都定死，换楼层 / 换建筑尺寸不变；
+   地图内容比可视窗口大就裁掉，靠拖动 / 滚轮看别处。 */
+.view-map {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 var(--w-map);
+  align-self: flex-start;   /* 不跟着面板拉高：高度就是 --h-map */
+  height: var(--h-map);
+  min-width: 0;
+  /* 方块的尺寸在 app.js 里按缩放比例算，这里只定外框和留白 */
+  padding: 5px 6px 6px;
+  border: 1px solid #333a46;
+  border-radius: 8px;
+  background: rgba(13, 16, 21, .86);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, .35);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.view-map.hidden { display: none; }
+
+.map-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  margin-bottom: 4px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+.map-head::before {
+  content: '地图';
+  color: var(--dim-2);
+  letter-spacing: 2px;
+  flex: 0 0 auto;
+}
+
+.map-area {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--amber);
+  letter-spacing: 0;
+}
+
+/* 缩放比例 + 复位按钮：地图缩放了才显示（默认大小不占地方） */
+.map-zoom { flex: 0 0 auto; margin-left: auto; color: var(--dim-2); letter-spacing: 0; }
+.map-act { display: none; }
+
+.map-zoomed .map-zoom { margin-left: auto; }
+
+.map-zoomed .map-act {
+  display: block;
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: #14171c;
+  color: var(--dim-2);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.map-zoomed .map-act:hover { border-color: var(--amber); color: var(--amber); }
+
+/* 地图的可视窗口：占满地图那一列剩下的地方（高度由 --h-map 决定），超出的部分裁掉，
+   用拖动 / 缩放看别处 */
+.map-viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;   /* 让指针拖动在触摸屏上也当拖动用（不要变成滚页面） */
+}
+
+.map-viewport.dragging { cursor: grabbing; }
+
+/* 方块按 world.json 的 map.x / map.y 绝对定位，整体用 transform 平移 */
+.map-body { position: absolute; left: 0; top: 0; }
+
+.map-link {
+  position: absolute;
+  z-index: 0;
+  background: #4d5665;
+}
+
+.map-cell { position: absolute; }
+
+.map-room {
+  position: relative;
+  box-sizing: border-box;
+  height: var(--map-room-h, 94px);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 3px;
+  padding: 5px 6px;
+  border: 1px solid #2a2f38;
+  border-radius: 5px;
+  background: #121519;
+  color: var(--dim-2);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.map-room.visited { border-color: #3d4553; color: var(--dim); }
+
+.map-room.current {
+  border-color: var(--amber);
+  background: #241d12;
+  box-shadow: inset 0 0 0 1px rgba(224, 163, 60, .3);
+}
+
+.map-room-name {
+  position: relative;
+  font-size: var(--map-name-size, 12px);
+  line-height: 1.3;
+  color: inherit;
+  /* 地点名不拆行（「一楼大堂」别断成「一楼大 / 堂」），长了就省略号 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.map-room.current .map-room-name { color: var(--amber); }
+
+/* 你在这儿：一个小菱形贴在名字前面（未探索的地点不显示） */
+.map-at {
+  position: absolute;
+  left: -2px;
+  top: -1px;
+  display: none;
+  font-size: 9px;
+  color: var(--amber);
+}
+
+.map-room.current .map-at { display: block; }
+
+/* 出口：直接写下一个场景的名字，一个一行贴在方块下沿 */
+.map-room-exits {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.map-exit {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  padding: 0 4px;
+  border: 1px solid #4d5665;
+  border-radius: 3px;
+  background: #1d222a;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--map-exit-size, 10px);
+  line-height: 1.6;
+  cursor: pointer;
+}
+
+.map-exit .exit-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-exit:hover:not(:disabled) { border-color: var(--amber); color: var(--amber); }
+.map-exit.blocked { border-color: #3a3f47; background: #16191e; color: var(--dim-2); cursor: not-allowed; }
+.map-exit.danger { border-color: #7a4a3a; color: #e0895f; }
+
+/* 楼层切换条：这一栋里每一层一条，点了把地图切过去看（不搬人）。
+   高度写死（两行胶囊的地方），所以一层楼和五层楼占的高度一样 —— 地图可视窗口大小才不会跟着变。 */
+.map-floors {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 3px;
+  flex: 0 0 44px;
+  height: 44px;
+  margin-top: 5px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+}
+
+.map-floors.hidden { display: none; }
+
+/* 只有一层 / 不是楼房时，这一条里留一句话，保持高度不变 */
+.map-floor-none { color: var(--dim-2); font-size: 10.5px; letter-spacing: 1px; }
+
+.map-floor {
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: #14171c;
+  color: var(--dim-2);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.map-floor.here { color: var(--dim); border-color: #3d4553; }
+.map-floor.on { border-color: var(--amber); background: #2a2318; color: var(--amber); }
+.map-floor:hover { border-color: var(--amber); color: var(--text); }
+
+/* 说话时地图让位：横幅铺开以后场景那一列会变矮，地图就先藏起来（留着地方不动，
+   免得场景格子跟着重新排一次）。它自己那一块的宽度还占着，所以场景不会跳。 */
+.view-map.talking { visibility: hidden; }
 
 /* ---------- 移动（四个方向） ---------- */
 
@@ -1569,8 +1861,11 @@ input[type="range"].rest-range::-moz-range-thumb {
 
 /* 窄屏：改成单列堆叠，四块（场景 / 背包 / 装备 / 文字）都要留住 */
 @media (max-width: 1080px) {
-  /* 单列时中间列不再是「窗口宽 − 左右栏」，格子大小直接按窗口宽算 */
-  :root { --cell: clamp(16px, min(4.6vw, 4.4vh), 42px); }
+  /* 单列时中间列不再是「窗口宽 − 左右栏」，格子大小直接按窗口宽算（照旧扣掉左边地图那一列） */
+  :root {
+    --w-map: clamp(140px, 20vw, 200px);
+    --cell: clamp(16px, min(calc((100vw - var(--w-map) * 2 - 130px) / 16), 4.4vh), 42px);
+  }
   .layout {
     grid-template-columns: 1fr;
     height: auto;

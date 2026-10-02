@@ -87,6 +87,12 @@ STATIC_FILES = {
 # 移动按钮永远显示这六个方向，能不能走由世界数据决定
 DIRECTIONS_ALL = ("north", "south", "east", "west", "up", "down")
 
+# 地图上出口的排列顺序：先平面四个方向，再上下楼
+EXIT_ORDER = ("north", "east", "south", "west", "up", "down")
+
+# 地图连线的反向（判断「两个房间挨着」时，反过来那一侧也要看）
+OPPOSITE = {"north": "south", "south": "north", "east": "west", "west": "east"}
+
 # 休息滑条上方的快捷档位（分钟，按钮文字）；滑条本身是 1 分钟 ~ 8 小时
 REST_PRESETS = [(10, "10 分钟"), (30, "半小时"), (60, "1 小时"),
                 (120, "2 小时"), (240, "4 小时"), (480, "8 小时")]
@@ -521,6 +527,111 @@ class Session:
             info["target"] = None
             info["danger"] = None
 
+    def map_state(self):
+        """视图栏左上角那张地图的数据：按 world.json 的 map.area 分层。
+
+        map_areas 里每一组是一栋建筑（或室外那一片），组里的每个 area 是一层楼；
+        一层的房间按 map 的 x / y 摆成方框（跟 map_view.py 的终端地图同一套坐标，
+        坐标可以是负的，所以另外给出整张地图的 min_x / min_y / w / h，界面按它定尺寸）。
+        房间之间的连线由这里算好（两个方向任一边通就算连着）；
+        出口用 exits_for() 那一份状态：方向 + 目的地名字（没去过的只报方向，不剧透名字）。
+        """
+        world, game = self.world, self.game
+        info = {}
+        for room_id, room in world.rooms.items():
+            pos = room.get("map")
+            if not pos:
+                continue
+            info[room_id] = {
+                "name": room["name"],
+                "area": pos["area"],
+                "x": pos["x"],
+                "y": pos["y"],
+                "visited": room_id in game.visited,
+            }
+
+        def target_of(exit_):
+            return exit_.get("to") if isinstance(exit_, dict) else exit_
+
+        def linked(a, b, direction):
+            """a 往 direction 走能到 b，或者 b 往反方向走能到 a。"""
+            if a is None or b is None:
+                return False
+            back = OPPOSITE.get(direction)
+            a_exit = world.rooms[a]["exits"].get(direction)
+            b_exit = world.rooms[b]["exits"].get(back) if back else None
+            return ((a_exit is not None and target_of(a_exit) == b)
+                    or (b_exit is not None and target_of(b_exit) == a))
+
+        # 出口只列「真正通向另一个地点」的那几个方向（房间之间换场景），
+        # 不含房间里左右挪一格的走位；没去过的目的地不写名字（留点探索的余地）。
+        exits = {}
+        for e in self.exits_for(world.rooms[game.current_room]):
+            if not e["target"]:
+                continue
+            exits[e["id"]] = {"name": e["target"], "blocked": e["state"] == "blocked"}
+
+        current_area = info.get(game.current_room, {}).get("area")
+
+        def area_payload(area):
+            """一层楼：这一层的房间 + 房间之间的连线。"""
+            grid = {}
+            for room_id, room in info.items():
+                if room["area"] == area:
+                    grid[(room["x"], room["y"])] = room_id
+            rooms, links = [], []
+            for (x, y), room_id in sorted(grid.items(), key=lambda kv: (kv[0][1], kv[0][0])):
+                room = info[room_id]
+                current = room_id == game.current_room
+                rooms.append({
+                    "id": room_id,
+                    "name": room["name"],
+                    "x": x,
+                    "y": y,
+                    "visited": room["visited"],
+                    "current": current,
+                    # 出口的 id 跟 state.exits 对齐，前端按同一个 id 找状态
+                    "exits": [dict(id=d, **exits[d]) for d in EXIT_ORDER if current and d in exits],
+                })
+                if linked(room_id, grid.get((x + 1, y)), "east"):
+                    links.append(("h", x, y))
+                if linked(room_id, grid.get((x, y + 1)), "south"):
+                    links.append(("v", x, y))
+            return {"name": area, "rooms": rooms, "links": links}
+
+        # 一层层写在一组里（室外 / 公寓楼 / 社区医院 / 派出所 / 消防站）。
+        # 也认老数据里那种平铺的名字列表（那就只有一组）。
+        groups = []
+        for entry in world.map_areas:
+            if isinstance(entry, dict):
+                names = list(entry.get("areas", []))
+                label = entry.get("name") or (names[0] if names else "")
+            else:
+                names = [entry]
+                label = entry
+            groups.append({"name": label, "areas": [area_payload(a) for a in names]})
+        if not groups:
+            groups = [{"name": "地图", "areas": []}]
+
+        # 尺寸按整张地图算（所有组、所有层）：人物在一栋楼里上下楼时地图大小不变
+        xs, ys = [], []
+        for group in groups:
+            for area in group["areas"]:
+                for room in area["rooms"]:
+                    xs.append(room["x"])
+                    ys.append(room["y"])
+        bounds = {"min_x": min(xs) if xs else 0, "min_y": min(ys) if ys else 0}
+        bounds["w"] = (max(xs) - bounds["min_x"] + 1) if xs else 0
+        bounds["h"] = (max(ys) - bounds["min_y"] + 1) if ys else 0
+
+        # 开局先看哪一组：人物在哪栋楼里就先看那栋楼
+        pick = 0
+        for index, group in enumerate(groups):
+            if any(area["name"] == current_area for area in group["areas"]):
+                pick = index
+                break
+        return {"current_area": current_area, "group": pick, "groups": groups, "bounds": bounds}
+
     def equip_slots(self):
         """装备栏：每个位置一个方框，给网页版拖动装备用。"""
         game = self.game
@@ -734,6 +845,8 @@ class Session:
             "time": {"day": game.day, "minutes": game.minutes, "text": game.clock_text()},
             "room": {"id": game.current_room, "name": room["name"]},
             "exits": self.exits_for(room),
+            # 视图栏左上角那张区域地图（分层：当前楼层 + 还有哪些楼层的切换条）
+            "map": self.map_state(),
             "rest": {
                 "min": REST_MINUTES_MIN,
                 "max": REST_MINUTES_MAX,

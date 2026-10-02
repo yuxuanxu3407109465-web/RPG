@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>封城第七天</title>
 <link rel="icon" href="/icons.svg">
-<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/style.css?v=map3">
 </head>
 <body>
 <!--SPRITE-->
@@ -46,10 +46,10 @@
 <!-- ========== 游戏中 ==========
      界面上下一共分六个区域，名字固定，改布局时按名字找（详见 ../界面区域.md）：
        左侧栏    = .side-left       最左边一列，角色卡（等级/生命/负重/属性/战斗/状态）
-       视图栏    = .main            中间一列上半，房间栏 + 场景 / 背包两个页签
-                                     「场景」= 格子场景（人物在这里走动，左上角浮着时钟，
-                                                颜色图例在视图栏最下面一整条）
+       视图栏    = .main            中间一列上半，房间栏 + 场景 / 背包 / 技能树三个页签
+                                     「场景」= .scene-panel（左边一列地图 + 右边一列场景，上面一行放时钟）
                                      「背包」= 背包面板（翻页、拖动装备、拆分、堆叠）
+                                     地图和时钟在场景面板里，切到别的页签会一起收起来
        移动栏    = .move-panel      中间一列下半正中间，四个方向（上下楼点场景里的楼梯格）
        快捷区域1 = #quick-zone-1    移动栏左边那块，装备栏（拖动装备 / 脱下）
        快捷区域2 = #quick-zone-2    移动栏右边那块，文字记录 + 指令输入（固定高度，内部滚动）
@@ -70,7 +70,9 @@
     <div class="play-col">
 
       <!-- 视图栏：格子场景，人物在这里走动；点上面的页签换成背包或技能树。
-           时钟不在这儿写死：三个页签各自渲染一份（app.js 的 clockChip） -->
+           场景这一页里并排两块（都占排版空间，不重叠）：
+             · 左边一列 = 区域地图（当前楼层 + 楼层切换条，app.js 的 renderMap）
+             · 右边一列 = 上面时钟（renderClock）、下面格子场景 -->
       <main class="main view-panel" data-region="视图栏">
         <header class="bar room-bar" id="room-bar">
           <h2 id="room-name">—</h2>
@@ -88,7 +90,40 @@
             <button type="button" class="view-tab" data-view-tab="skills">技能树</button>
           </div>
         </header>
-        <div class="scene-wrap" id="scene-body"></div>
+        <!-- 视图栏的「场景」页签 = 左边地图 + 中间场景 + 右边时钟，三块并排、各占一块地方（谁也不压谁）。
+             （地图原来是浮在场景上的绝对定位浮层，会盖住几十个能点的格子。）
+             左右两块一样宽（都是 --w-map），所以中间的格子场景在**整个视图栏里正中**，地图和时钟一左一右对称。
+             整块装在 #scene-panel 里，切到背包 / 技能树页签时连地图和时钟一起收起来，
+             不会盖在背包格子和技能树按钮上：
+               · 左边一列 = 区域地图（当前这层 + 楼层切换条，可以拖动平移、滚轮缩放）
+               · 中间     = 格子场景（颜色图例在里面最下面一条）
+               · 右边一列 = 时钟（时间 + 回合数） -->
+        <div class="scene-panel" id="scene-panel">
+          <!-- 左边：区域地图。当前楼层画成方块（当前房间高亮、出口直接写目的地名字），
+               上面一排是这一层和缩放比例，下面一条可以换楼层。整体由 app.js 的 renderMap 画。
+               它是一列、不是浮层：多宽多高由 style.css 的 --w-map / --h-map 定死，
+               所以换楼层、换建筑地图都不会变大变小 -->
+          <div class="view-map" id="view-map" data-region="地图">
+            <div class="map-head">
+              <span class="map-area" id="map-area">—</span>
+              <span class="map-zoom" id="map-zoom"></span>
+              <button type="button" class="map-act" id="map-reset" title="回到默认缩放、并把这个地方摆回正中间">复位</button>
+            </div>
+            <div class="map-viewport" id="map-viewport">
+              <div class="map-body" id="map-body"></div>
+            </div>
+            <div class="map-floors" id="map-floors"></div>
+          </div>
+          <!-- 中间：格子场景 -->
+          <div class="scene-col">
+            <div class="scene-wrap" id="scene-body"></div>
+          </div>
+          <!-- 右边：时钟（时间 + 回合数）。和左边地图同宽的一列，所以场景才是正中的；
+               时钟是这一列里的普通元素（不浮在场景上），压不到格子 -->
+          <div class="scene-side">
+            <div class="view-clock" id="view-clock"></div>
+          </div>
+        </div>
         <div class="bag-panel hidden" id="bag-panel"></div>
         <!-- 技能树页签：一页一屏、靠翻页看，不上下滚动；点一个技能才在下面展开详细描述 -->
         <div class="skill-panel hidden" id="skill-panel"></div>
@@ -177,6 +212,6 @@
   </div>
 </div>
 
-<script src="/app.js"></script>
+<script src="/app.js?v=map3"></script>
 </body>
 </html>

@@ -169,6 +169,8 @@ class World:
                 self.items[item_id] = item
         self.npcs = data["npcs"]
         self.map_areas = data.get("map_areas", [])
+        # 随机物资池：好几处地方可以共用一份「第一次进来扔什么」的清单（见 world.json 的 spawn_pools）
+        self.spawn_pools = data.get("spawn_pools", {})
         self.weapon_types = data.get("weapon_types", {})  # 武器类型 id -> 显示名
         self.armor_slots = data.get("armor_slots", {})  # 护甲部位 id -> 显示名
         # 其他装备位 id -> {name, kind}；同一 kind 可以有多个位置（饰品有两个）
@@ -177,14 +179,21 @@ class World:
         self.wear_slot_names.update({slot: info["name"] for slot, info in self.gear_slots.items()})
         gear_kinds = {info["kind"] for info in self.gear_slots.values()}
         for room_id, room in self.rooms.items():
-            # random_items：第一次进入这个地点时随机生成的地面物资（min ~ max 个）
-            for spec in room.get("random_items", []):
-                where = f"world.json 里的地点 {room_id}"
+            # random_items / random_pool：第一次进入这个地点时随机生成的地面物资（min ~ max 个）
+            specs = list(room.get("random_items", []))
+            where = f"world.json 里的地点 {room_id}"
+            for spec in room.get("random_pool", []):
+                pool = self.spawn_pools.get(spec.get("name"))
+                if pool is None:
+                    raise ValueError(f"{where}：random_pool 里的“{spec.get('name')}”不在 spawn_pools 里")
+                for one in pool:  # 池子按同一份 min / max 掷一次
+                    specs.append(dict(one, min=spec.get("min", 1), max=spec.get("max", 1)))
+            for spec in specs:
                 if spec.get("id") not in self.items:
-                    raise ValueError(f"{where}：random_items 里的物品 id 不在物品表里")
+                    raise ValueError(f"{where}：随机物资里的物品 id {spec.get('id')} 不在物品表里")
                 low, high = spec.get("min", 1), spec.get("max", 1)
                 if not 1 <= low <= high:
-                    raise ValueError(f"{where}：random_items 的个数要写 1 ≤ min ≤ max")
+                    raise ValueError(f"{where}：随机物资的个数要写 1 ≤ min ≤ max")
         for room_id, room in self.rooms.items():
             for item_id in room.get("items", []):
                 if item_id not in self.items:
@@ -884,12 +893,19 @@ class Game:
         return (self.day - stats.START_DAY) * stats.MINUTES_PER_DAY + self.minutes
 
     def roll_room_spawns(self, room_id):
-        """第一次走进某个地点时，按世界数据里的 random_items 掷一次随机物资。
+        """第一次走进某个地点时，按世界数据里的随机物资掷一次。
 
+        清单有两处来源（两份都会掷）：
+          · 这个地点自己的 random_items
+          · random_pool 指向的公共物资池（spawn_pools），min / max 写在这边，好几处地方能共用一份
         只在第一次进入时生成：之后再来（或者从存档读回来）都不会重新生成，
         免得反复进出刷物资。
         """
-        specs = self.world.rooms[room_id].get("random_items") or []
+        room = self.world.rooms[room_id]
+        specs = list(room.get("random_items") or [])
+        for spec in room.get("random_pool") or []:
+            for one in self.world.spawn_pools.get(spec.get("name"), []):
+                specs.append(dict(one, min=spec.get("min", 1), max=spec.get("max", 1)))
         for spec in specs:
             count = self.dice.rng.randint(int(spec.get("min", 1)), int(spec.get("max", 1)))
             self.room_items[room_id] += [spec["id"]] * count

@@ -29,6 +29,21 @@ def connected(world, a, b, direction):
     )
 
 
+def area_names(map_areas):
+    """map_areas 里一层层的地名。
+
+    现在写成一组一组的（室外 / 公寓楼 / 社区医院 / 派出所 / 消防站，见 world.json），
+    老数据里是平铺的名字列表，两种都认。
+    """
+    names = []
+    for entry in map_areas:
+        if isinstance(entry, dict):
+            names += list(entry.get("areas", []))
+        else:
+            names.append(entry)
+    return names
+
+
 def render_map(world, current, visited, room_items):
     use_color = sys.stdout.isatty()
 
@@ -62,7 +77,7 @@ def render_map(world, current, visited, room_items):
         "======== 地图 ========",
         "★ 你的位置   [ ] 已探索   ( ) 未探索   ↑↓ 有楼梯",
     ]
-    for area in world.map_areas:
+    for area in area_names(world.map_areas):
         grid = {}
         for rid, room in world.rooms.items():
             pos = room.get("map")

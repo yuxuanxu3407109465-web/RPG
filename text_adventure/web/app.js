@@ -6,7 +6,8 @@
      左侧栏 / 视图栏 / 技能栏 / 快捷区域1 / 快捷区域2 / 右侧栏
    本文件里 左侧栏 = #char-body，视图栏 = #scene-body + #bag-panel + #skill-panel
    （右上角三个页签：场景 / 背包 / 技能树，同一时刻只显示一个；
-    场景左上角浮着时钟，点格子上的物品 / 人物弹小菜单，颜色图例在视图栏最下面一条），
+    场景这一页并排三块：左边一列地图、中间格子场景、右边一列时钟（左右两列等宽，场景才是正中的），
+    点格子上的物品 / 人物弹小菜单，颜色图例在视图栏最下面一条），
    技能栏 = #skill-slots-body（10 页 × 9 格，拖入登记 / 点一下释放 / 拖出取消），
    快捷区域1 = #equip-body（装备栏，拖动装备），
    快捷区域2 = #log（文字记录）+ #cmd-form（指令输入），右侧栏 = #action-body。 */
@@ -40,6 +41,15 @@
     bagPanel: document.getElementById('bag-panel'),    // 视图栏（背包页签）
     skillPanel: document.getElementById('skill-panel'), // 视图栏（技能树页签）
     viewTabs: document.getElementById('view-tabs'),    // 视图栏右上角 场景 / 背包 / 技能树
+    viewMap: document.getElementById('view-map'),      // 场景左上角：区域地图（浮在场景上）
+    mapArea: document.getElementById('map-area'),      // 地图标题：当前这一层的名字
+    mapViewport: document.getElementById('map-viewport'),  // 地图的可视窗口（拖动平移、滚轮缩放）
+    mapBody: document.getElementById('map-body'),      // 地图本体：方块 + 连线
+    mapFloors: document.getElementById('map-floors'),  // 地图下面那条：切换楼层
+    mapZoom: document.getElementById('map-zoom'),      // 地图标题上的缩放比例
+    mapReset: document.getElementById('map-reset'),    // 地图标题上的「复位」
+    scenePanel: document.getElementById('scene-panel'),  // 场景面板（地图和时钟都装在这里面）
+    viewClock: document.getElementById('view-clock'),  // 场景右上角：时钟（固定）
     skillSlotsBody: document.getElementById('skill-slots-body'),  // 技能栏（10 页 × 9 格）
     slotPage: document.getElementById('slot-page'),               // 技能栏标题上的页码
     equipBody: document.getElementById('equip-body'),  // 快捷区域1（装备栏）
@@ -439,14 +449,17 @@
       extra = ' title="' + esc(entry.name + '：点一下' + (entry.cmd ? '使用' : '查看') +
         '；拖到别的格子＝交换，拖出技能栏＝取消登记') + '"';
     }
-    return '<button type="button" class="slot-cell filled ' +
+    // 注意：这里必须是 <div>，不能是 <button>——Chromium 里 button 起不了
+    // HTML5 拖动（dragstart 根本不触发），格子就永远拖不动。
+    // role / tabindex 保留键盘可达性，点击照旧走 document 上的事件委托。
+    return '<div class="slot-cell filled ' +
       (entry.kind === 'skill' ? 'slot-skill' : 'slot-item') + '" data-slot-cell="' + index +
       '" data-cast="' + (entry.kind === 'skill' ? esc(entry.name) : '') + '" data-cmd="' +
-      (entry.kind === 'item' ? esc(cmd) : '') + '" draggable="true" tabindex="0"' + extra + '>' +
+      (entry.kind === 'item' ? esc(cmd) : '') + '" draggable="true" tabindex="0" role="button"' + extra + '>' +
       '<span class="slot-index">' + inPage + '</span>' +
       '<span class="slot-name">' + esc(entry.name) + '</span>' +
       '<span class="slot-sub">' + esc(sub) + '</span>' +
-      '<span class="slot-x" data-slot-clear="' + index + '" title="取消登记">✕</span></button>';
+      '<span class="slot-x" data-slot-clear="' + index + '" title="取消登记">✕</span></div>';
   }
 
   function slotsPanel(state) {
@@ -473,18 +486,16 @@
   }
 
   // 格子之间拖动 = 交换；拖到技能栏外面松手 = 取消登记
-  function slotDraggedOut(event) {
-    if (!dragSlot || !el.skillSlotsBody) return;
-    var box = el.skillSlotsBody.getBoundingClientRect();
-    var out = event.clientX < box.left || event.clientX > box.right ||
-              event.clientY < box.top || event.clientY > box.bottom;
-    if (out) clearSlotReg(dragSlot);
-  }
-
+  // 「拖到哪儿」由 drop 说了算（dragHandled），不靠松手时的坐标判断：
+  // 坐标判断会把「拖到空格子上」「落在格子缝隙里」误当成「拖到外面」，
+  // 于是登记被当成取消，格子就挪不动了。
   function bindSlotsDrag() {
     if (!el.skillSlotsBody) return;
     Array.prototype.forEach.call(el.skillSlotsBody.querySelectorAll('.slot-cell'), function (cell) {
       var index = parseInt(cell.getAttribute('data-slot-cell'), 10);
+      // 这里绝对不要加 mousedown + preventDefault 来「顺手」挡文字选择：
+      // 实测它会连 HTML5 拖动一起掐掉（dragstart 根本不触发，格子就拖不动了）。
+      // 文字选择交给 CSS 的 user-select: none。
       cell.addEventListener('dragover', function (event) {
         if (!dragSlot && !dragItem) return;
         event.preventDefault();
@@ -498,6 +509,7 @@
       cell.addEventListener('drop', function (event) {
         event.preventDefault();
         event.stopPropagation();
+        dragHandled = true;   // 被格子接住了：dragend 不许再当成「取消登记」
         cell.classList.remove('drop-ok', 'drop-no');
         if (dragSlot !== null) {
           swapSlots(dragSlot, index);   // 格子之间：交换
@@ -516,22 +528,28 @@
       if (!cell.getAttribute('draggable')) return;
       cell.addEventListener('dragstart', function (event) {
         dragSlot = index;
+        dragHandled = false;
         cell.classList.add('dragging');
         if (event.dataTransfer) {
           event.dataTransfer.effectAllowed = 'move';
-          event.dataTransfer.setData('text/plain', String(index));
+          // 故意不给 text/plain：给了浏览器会当成「拖着一段选中的文字」，
+          // 松手时弹「松开鼠标以搜索文本」。内部拖动靠 dragSlot / dragItem 就够。
+          try { event.dataTransfer.setData('text/plain', ''); } catch (err) { /* 有的浏览器不给设，无所谓 */ }
         }
       });
-      cell.addEventListener('dragend', function (event) {
+      cell.addEventListener('dragend', function () {
         cell.classList.remove('dragging');
         tagDropOut(false);
-        slotDraggedOut(event || {});
+        // 落在别处（没被任何格子 / 技能栏接住）= 取消登记
+        if (dragSlot !== null && !dragHandled) clearSlotReg(dragSlot);
         dragSlot = null;
         dragItem = null;
+        dragHandled = false;
         clearDropHints();
       });
     });
-    // 往技能栏任意位置拖（包括格子之间的空隙），松手就是登记过去
+    // 往技能栏任意位置拖（包括格子之间的空隙）：有空位就登记过去，已经有东西的格子
+    // 自己会先接住（stopPropagation），轮不到这里
     if (!el.skillSlotsBody.getAttribute('data-slot-bound')) {
       el.skillSlotsBody.setAttribute('data-slot-bound', '1');
       el.skillSlotsBody.addEventListener('dragover', function (event) {
@@ -541,8 +559,9 @@
       });
       el.skillSlotsBody.addEventListener('drop', function (event) {
         event.preventDefault();
+        dragHandled = true;   // 落在技能栏里面（哪怕是缝隙）：不算取消登记
         tagDropOut(false);
-        if (dragSlot !== null) { dragSlot = null; return; }   // 落在空隙上：什么也不做
+        if (dragSlot !== null) { dragSlot = null; return; }   // 空格子之间落在缝隙上：什么也不做
         if (!dragItem) return;
         registerSlot(freeSlotInPage(), dragItem.kind, dragItem.id, dragItem.name, dragItem.cmd);
         dragItem = null;
@@ -749,7 +768,8 @@
         tile.classList.add('dragging');
         if (event.dataTransfer) {
           event.dataTransfer.effectAllowed = 'move';
-          event.dataTransfer.setData('text/plain', dragItem.name);
+          // 不给 text/plain：给了浏览器会当成「拖着一段选中的文字」，松手弹「搜索文本」
+          try { event.dataTransfer.setData('text/plain', ''); } catch (err) { /* 无所谓 */ }
         }
       });
       el.skillPanel.addEventListener('dragend', function (event) {
@@ -1175,11 +1195,13 @@
 
   /* ---------- 游戏界面：渲染状态 ---------- */
 
-  // 时钟：视图栏里两个页签各渲染一份（场景页浮在左上角，背包页放在顶部那一行）
-  function clockChip(state) {
-    if (!state || !state.time) return '';
+  // 时钟：固定在视图栏右上角（不跟页签走），时间 + 回合数
+  function renderClock(state) {
+    if (!el.viewClock) return;
+    if (!state || !state.time) { el.viewClock.innerHTML = ''; return; }
     var turns = (typeof state.turns === 'number') ? '第 ' + state.turns + ' 回合' : '';
-    return '<div class="clock-chip" title="' + esc(state.time.text + (turns ? ' · ' + turns : '')) + '">' +
+    el.viewClock.innerHTML =
+      '<div class="clock-chip" title="' + esc(state.time.text + (turns ? ' · ' + turns : '')) + '">' +
       icon('clock') + '<span class="clock-text">' + esc(state.time.text) + '</span>' +
       (turns ? '<span class="clock-turns">' + esc(turns) + '</span>' : '') + '</div>';
   }
@@ -1221,6 +1243,8 @@
       el.talkText.textContent = '';
     }
     if (el.roomBar) el.roomBar.classList.toggle('talking', !!talk);
+    // 说话时把左上角的地图收起来（横幅铺开成一大块，浮在上面的地图会压住台词）
+    if (el.viewMap) el.viewMap.classList.toggle('talking', !!talk);
   }
 
   // 点视图栏任意位置：对话框还开着就往下接一句。
@@ -1236,6 +1260,8 @@
       while (node && node !== document.body) {
         if (node.id === 'view-tabs' || node.id === 'cmd-form') return false;
         if (node.id === 'skill-panel' || node.id === 'bag-panel') return false;
+        // 地图和时钟浮在场景上：点它们是在看地图 / 切楼层，不算「继续」
+        if (node.id === 'view-map' || node.id === 'view-clock') return false;
         node = node.parentNode;
       }
     }
@@ -1441,6 +1467,7 @@
   // 拖动中的东西：{from, id, name} —— from 是 'bag'（背包里的某一堆，带 sid）或装备位 id
   var dragItem = null;
   var dragSlot = null;   // 技能栏里正在拖的那一格（格子之间拖动＝交换，拖出去＝取消登记）
+  var dragHandled = false;   // 这一次拖动有没有被某个格子 / 技能栏接住（没接住才是取消登记）
 
   function chip(name, detail, cls) {
     return '<span class="item-chip ' + (cls || '') + '" title="' + esc(name + (detail ? '（' + detail + '）' : '')) + '">' +
@@ -1481,7 +1508,8 @@
           chipNode.classList.add('dragging');
           if (event.dataTransfer) {
             event.dataTransfer.effectAllowed = 'move';
-            event.dataTransfer.setData('text/plain', dragItem.id);
+            // 同上：不给 text/plain，免得变成「拖文字」
+            try { event.dataTransfer.setData('text/plain', ''); } catch (err) { /* 无所谓 */ }
           }
         });
         chipNode.addEventListener('dragend', function () {
@@ -1636,7 +1664,12 @@
     var skilling = viewMode === 'skills';
     if (el.bagPanel) el.bagPanel.classList.toggle('hidden', !bagging);
     if (el.skillPanel) el.skillPanel.classList.toggle('hidden', !skilling);
+    if (el.scenePanel) el.scenePanel.classList.toggle('hidden', !scene);
     if (el.sceneBody) el.sceneBody.classList.toggle('hidden', !scene);
+    // 地图和时钟装在场景面板里：切到背包 / 技能树时整个场景面板都收起来，
+    // 背包格子和技能树按钮前面就没有东西挡着了
+    if (el.viewMap) el.viewMap.classList.toggle('hidden', !scene);
+    if (el.viewClock) el.viewClock.classList.toggle('hidden', !scene);
     if (el.viewTabs) {
       Array.prototype.forEach.call(el.viewTabs.querySelectorAll('.view-tab'), function (tab) {
         tab.classList.toggle('active', tab.getAttribute('data-view-tab') === viewMode);
@@ -1645,6 +1678,267 @@
     if (bagging) renderBag(state);
     else if (skilling) renderSkillPanel(state);
     else renderScene(state);
+    renderMap(state);    // 地图是场景面板里单独的一块，场景重建不影响它，所以放在最后单独画
+    renderClock(state);
+  }
+
+  /* ---------- 视图栏左边一列：区域地图（可以拖动平移、滚轮缩放） ---------- */
+
+  // 一个方块多大（CSS 里的字号、方块高度都按这个比例缩放）
+  // 名字和出口胶囊都写在方块里，所以方块要够高够宽
+  var MAP_CELL = 78;
+  var MAP_CELL_H = 94;
+  var MAP_GAP = 14;
+  var MAP_PAD = 5;
+
+  // 地图那一列多宽多高由 style.css 的 --w-map / --h-map 定死（换楼层 / 换建筑都不变），
+  // 这里只读它量出来的可视窗口大小，不再自己按比例算
+
+  var MAP_SCALE_STEP = 1.12;
+  // 地图那一列只有 150~210px 宽，最小缩放要够小，整片室外（5 格宽）才装得下
+  var MAP_SCALE_MIN = 0.28;
+  var MAP_SCALE_MAX = 1.8;
+
+  var mapScale = 1;         // 缩放比例（1 = 方块原大小）
+  var mapPan = { x: 0, y: 0 };   // 地图相对窗口左上角平移了多少像素
+  var mapSpan = { w: 0, h: 0 };  // 整张地图多大（不随楼层变）
+  var mapBounds = { min_x: 0, min_y: 0, w: 1, h: 1 };  // 地图的格子范围（后端算好）
+  var mapViewportSize = { w: 0, h: 0 };                // 可视窗口的像素大小
+  var mapGroupWanted = null;     // 手动看哪一栋（点楼层条时按那层所在的建筑定）
+  var mapPlayersArea = null;     // 上一次人物所在的楼层（换了就把地图跟回去）
+  var mapAreaWanted = null;      // 手动看哪一层（点楼层条时记下来）
+  var mapFollowKey = null;       // 上一次自动跟到哪个房间（人物一换房间就把地图挪过去）
+  var mapCenterRoom = null;      // 下一次重画要把哪间房摆到窗口中间（重画完清掉）
+
+  // 下次重画时把某间房摆到窗口中间；room 为空就只把它所属的那一栋切过去
+  function lookAtRoom(groupName, room) {
+    mapGroupWanted = groupName || null;
+    mapCenterRoom = room || null;
+    if (lastState) renderMap(lastState);
+  }
+
+  function mapScaleOf() { return mapScale; }
+  function mapStep() { return (MAP_CELL + MAP_GAP) * mapScale; }
+  function mapStepY() { return (MAP_CELL_H + MAP_GAP) * mapScale; }
+
+  // 整张地图的像素尺寸：按所有建筑、所有的层里的最大范围算，所以换楼层尺寸不变
+  function mapContentSize() {
+    return {
+      w: (MAP_PAD * 2 + mapSpan.w * MAP_CELL + (mapSpan.w - 1) * MAP_GAP) * mapScale,
+      h: (MAP_PAD * 2 + mapSpan.h * MAP_CELL_H + (mapSpan.h - 1) * MAP_GAP) * mapScale
+    };
+  }
+
+  // 方向 → 方块上那个小箭头
+  var MAP_ARROW = { north: '↑', south: '↓', east: '→', west: '←', up: '↑', down: '↓' };
+
+  // 一个地点（方框）：名字 + 出口。出口直接写下一个场景的名字，不用「门」这种符号。
+  function mapRoomBlock(room) {
+    var cls = 'map-room';
+    if (room.visited) cls += ' visited';
+    if (room.current) cls += ' current';
+    var html = '<span class="map-room-name">' + esc(room.name) + '</span>';
+    var exits = room.exits || [];
+    if (exits.length) {
+      html += '<span class="map-room-exits">';
+      exits.forEach(function (e) {
+        var state = e.blocked ? 'blocked' : 'open';
+        var arrow = MAP_ARROW[e.id] || '·';
+        html += '<button type="button" class="map-exit ' + state + '"' +
+          (e.blocked ? ' disabled' : '') + ' data-map-go="' + esc(e.id) + '"' +
+          ' title="' + esc(e.name + (e.blocked ? '：现在过不去' : '：点一下走过去')) + '">' +
+          arrow + '<span class="exit-name">' + esc(e.name) + '</span></button>';
+      });
+      html += '</span>';
+    }
+    return '<div class="' + cls + '"><span class="map-at" title="你现在在这儿">◆</span>' + html + '</div>';
+  }
+
+  // 房间之间通不通：横的看东西，竖的看南北；连线在两格之间的空隙里
+  function mapLine(grid, kind, x, y) {
+    var ax = x, ay = y, bx = x, by = y;
+    if (kind === 'h') bx = x + 1; else by = y + 1;
+    if (!grid[ax + ',' + ay] || !grid[bx + ',' + by]) return '';
+    var left, top, w, h;
+    if (kind === 'h') {
+      left = mapStep() * (x + 0.5);
+      top = mapStepY() * (y + 0.5) + mapStepY() * 0.19;
+      w = mapStep() * 0.1;
+      h = 2;
+    } else {
+      left = mapStep() * (x + 0.5) + mapStep() * 0.19;
+      top = mapStepY() * (y + 0.5);
+      w = 2;
+      h = mapStepY() * 0.1;
+    }
+    return '<span class="map-link ' + kind + '" style="left:' + left.toFixed(1) + 'px;top:' +
+      top.toFixed(1) + 'px;width:' + w + 'px;height:' + h + 'px"></span>';
+  }
+
+  // 可视窗口的大小：CSS 定死的（--w-map / --h-map），这里只量一下给夹取用
+  function sizeMapViewport() {
+    if (!el.mapViewport) return;
+    var box = el.mapViewport.getBoundingClientRect();
+    var w = Math.round(box.width), h = Math.round(box.height);
+    // 页签不在「场景」上时整块是 display:none，量出来是 0：那就留着上次的大小，别把平移夹坏
+    if (w > 0 && h > 0) mapViewportSize = { w: w, h: h };
+  }
+
+  // 平移：地图比窗口小就居中，不然夹住不让它拖出窗口
+  function clampMapPan() {
+    var vp = mapViewportSize;
+    var size = mapContentSize();
+    var x = size.w <= vp.w ? (vp.w - size.w) / 2 : Math.min(0, Math.max(vp.w - size.w, mapPan.x));
+    var y = size.h <= vp.h ? (vp.h - size.h) / 2 : Math.min(0, Math.max(vp.h - size.h, mapPan.y));
+    mapPan.x = Math.round(x);
+    mapPan.y = Math.round(y);
+  }
+
+  // 把地图挪到某一格（一间房）正中间，并夹回可视范围里
+  function centerMapOn(room) {
+    var vp = mapViewportSize;
+    mapPan.x = vp.w / 2 - mapStep() * ((room.x - mapBounds.min_x) + 0.5);
+    mapPan.y = vp.h / 2 - mapStepY() * ((room.y - mapBounds.min_y) + 0.5);
+    clampMapPan();
+  }
+
+  // 地图重画：地图挂在场景面板上，不跟着页签、也不跟着场景重建，所以自己重画自己
+  function renderMap(state) {
+    if (!el.viewMap || !el.mapBody || !el.mapViewport) return;
+    var map = state && state.map;
+    if (!map || !map.groups || !map.groups.length) {
+      el.viewMap.classList.add('hidden');
+      return;
+    }
+    el.viewMap.classList.remove('hidden');
+    mapBounds = map.bounds || { min_x: 0, min_y: 0, w: 1, h: 1 };
+    mapSpan = { w: Math.max(1, mapBounds.w || 1), h: Math.max(1, mapBounds.h || 1) };
+
+    // 人物换了一栋楼，就把地图跟过去（手动看别栋的让位给当前这栋）。
+    // 注意：这里比的是「上一次人物所在的楼层」，不能跟当前显示的那一层混着用，
+    // 否则每次重画都会把手动选的那层清掉（点楼层条就永远切不过去）。
+    if (map.current_area !== mapPlayersArea) {
+      mapPlayersArea = map.current_area;
+      mapGroupWanted = null;
+      mapAreaWanted = null;
+    }
+    var group = null;
+    if (mapGroupWanted) {
+      for (var i = 0; i < map.groups.length; i++) {
+        if (map.groups[i].name === mapGroupWanted) { group = map.groups[i]; break; }
+      }
+    }
+    if (!group) group = map.groups[map.group] || map.groups[0];
+    var areas = group.areas || [];
+    // 先看手动选的那一层（点楼层条换的），没有就跟人物当前那一层，再不行就这栋楼的第一层
+    var area = null;
+    var wanted = [mapAreaWanted, map.current_area];
+    for (var n = 0; n < wanted.length && !area; n++) {
+      if (!wanted[n]) continue;
+      for (var i = 0; i < areas.length; i++) {
+        if (areas[i].name === wanted[n]) { area = areas[i]; break; }
+      }
+    }
+    if (!area) {
+      for (var i = 0; i < areas.length; i++) {
+        if (areas[i].rooms && areas[i].rooms.length) { area = areas[i]; break; }
+      }
+    }
+    if (!area) area = areas[0];
+    if (!area) { el.viewMap.classList.add('hidden'); return; }
+
+    // 标题这一行窄，完整层名放进 title，鼠标停一下能看全
+    if (el.mapArea) {
+      el.mapArea.textContent = area.name;
+      el.mapArea.title = area.name;
+    }
+
+    // 人物换了房间（换楼也算）：待会儿把窗口挪到他那间房上，一眼就看得出自己在哪儿
+    var here = null;
+    (area.rooms || []).forEach(function (r) { if (r.current) here = r; });
+    var key = map.current_area + '/' + (here ? here.id : '');
+    if (here && key !== mapFollowKey) {
+      mapFollowKey = key;
+      mapCenterRoom = here;
+    }
+
+    var scale = mapScaleOf();
+    var grid = {};
+    (area.rooms || []).forEach(function (r) { grid[r.x + ',' + r.y] = r; });
+
+    var html = '';
+    (area.links || []).forEach(function (l) { html += mapLine(grid, l[0], l[1], l[2]); });
+    (area.rooms || []).forEach(function (r) {
+      var left = mapStep() * ((r.x - mapBounds.min_x) + 0.5) - (MAP_CELL * scale) / 2;
+      var top = mapStepY() * ((r.y - mapBounds.min_y) + 0.5) - (MAP_CELL_H * scale) / 2;
+      html += '<div class="map-cell" style="left:' + left.toFixed(1) + 'px;top:' + top.toFixed(1) +
+        'px;width:' + (MAP_CELL * scale) + 'px">' + mapRoomBlock(r) + '</div>';
+    });
+
+    var size = mapContentSize();
+    el.mapBody.style.width = size.w + 'px';
+    el.mapBody.style.height = size.h + 'px';
+    el.mapBody.innerHTML = html;
+    el.mapBody.style.setProperty('--map-room-h', (MAP_CELL_H * scale).toFixed(1) + 'px');
+    el.mapBody.style.setProperty('--map-name-size', Math.max(9, 12 * scale).toFixed(1) + 'px');
+    el.mapBody.style.setProperty('--map-exit-size', Math.max(8, 10 * scale).toFixed(1) + 'px');
+
+    sizeMapViewport();
+    if (mapCenterRoom) { centerMapOn(mapCenterRoom); mapCenterRoom = null; }
+    clampMapPan();
+    el.mapBody.style.transform = 'translate(' + mapPan.x + 'px,' + mapPan.y + 'px)';
+    el.viewMap.classList.toggle('map-zoomed', Math.abs(scale - 1) > 0.01);
+    if (el.mapZoom) el.mapZoom.textContent = Math.round(scale * 100) + '%';
+
+    // 楼层切换条：这一栋里每一层一条，点了就把地图切过去看（不影响人物站在哪儿）。
+    // 这一条的高度是写死的（只有一层也留着地方），这样换楼层 / 换建筑时地图可视窗口大小不变。
+    // 地图那一列窄，所以按钮上只写楼层（「4F」「B1」）—— 建筑名已经写在上面一行了
+    if (el.mapFloors) {
+      var floors = '';
+      areas.forEach(function (a) {
+        var here = false;
+        (a.rooms || []).forEach(function (r) { if (r.current) here = true; });
+        var on = (a.name === area.name);
+        // 地图那一列窄，按钮上只写楼层（「4F」「B1」「街道一带」这种没有空格的照旧）——
+        // 建筑名已经写在地图上面那一行了；完整层名还在 data-map-area 和 title 里
+        var label = a.name;
+        var parts = label.split(/[\s\u3000]+/);
+        if (parts.length > 1 && parts[parts.length - 1]) label = parts[parts.length - 1];
+        floors += '<button type="button" class="map-floor' + (on ? ' on' : '') + (here ? ' here' : '') +
+          '" data-map-area="' + esc(a.name) + '" title="' +
+          esc(a.name + (here ? '（你在这层）' : '') + '：点一下看这层的地图') + '">' +
+          esc(label) + '</button>';
+      });
+      if (areas.length < 2) floors += '<span class="map-floor-none">只有这一层</span>';
+      el.mapFloors.innerHTML = floors;
+    }
+  }
+
+  // 换一层楼：只重画地图，并把新看的那层摆到窗口中间（点楼层条不影响人物站在哪儿）
+  function setMapArea(name) {
+    if (!lastState || !lastState.map) return;
+    var found = null;
+    (lastState.map.groups || []).forEach(function (g) {
+      (g.areas || []).forEach(function (a) {
+        if (a.name !== name || found) return;
+        var here = null;
+        (a.rooms || []).forEach(function (r) { if (r.current) here = r; });
+        found = { group: g.name, room: here || (a.rooms || [])[0] || null, area: a.name };
+      });
+    });
+    if (!found) return;
+    mapAreaWanted = found.area;
+    lookAtRoom(found.group, found.room);
+  }
+
+  // 复位：缩放回 100%，并把地图摆回人物所在的那间房（按钮上的提示就是这么写的）。
+  // 光清 mapCenterRoom 不够 —— 那样只是把平移留着不动，人物那间房有可能已经被拖到窗口外了，
+  // 所以连 mapFollowKey 一起清掉，让下一次重画重新跟一次人物。
+  function resetMapView() {
+    mapScale = 1;
+    mapCenterRoom = null;
+    mapFollowKey = null;
+    if (lastState) renderMap(lastState);
   }
 
   /* ---------- 视图栏的背包面板：一格一堆，翻页 / 点菜单 / 拖动 ---------- */
@@ -1675,7 +1969,7 @@
     return '<div class="bag-top"><span>背包：' + esc(carry.slots || 0) + ' 件 · 占 ' +
       inv.length + ' 格</span>' + loadTag(carry.label) +
       '<span class="bag-weight">负重 ' + esc(carry.weight) + ' / ' + esc(carry.capacity) +
-      ' kg</span>' + clockChip(state) + '</div>';
+      ' kg</span></div>';
   }
 
   // 一格 = 一堆东西：小方块里写名字，右上角是数量，点一下才出菜单
@@ -1815,7 +2109,8 @@
         cell.classList.add('dragging');
         if (event.dataTransfer) {
           event.dataTransfer.effectAllowed = 'move';
-          event.dataTransfer.setData('text/plain', item.name);
+          // 同上：不给 text/plain，免得变成「拖文字」
+          try { event.dataTransfer.setData('text/plain', ''); } catch (err) { /* 无所谓 */ }
         }
       });
       cell.addEventListener('dragend', function () {
@@ -1954,9 +2249,9 @@
       }
     }
     html += '</div>';
-    // 地图在上、颜色图例压在最下面一整条、时钟浮在左上角
-    el.sceneBody.innerHTML =
-      '<div class="scene-clock">' + clockChip(state) + '</div>' + html + sceneLegend() + thingMenu(state);
+    // 地图与时钟不在这儿：它们是视图栏上的浮层（renderMap / renderClock），
+    // 场景重画不会把它们一起清掉。这里只画场景本体 + 颜色图例 + 点东西的菜单
+    el.sceneBody.innerHTML = html + sceneLegend() + thingMenu(state);
     bindScene();
     placeThingMenu();
   }
@@ -2026,6 +2321,91 @@
     }
     menu.style.left = left + 'px';
     menu.style.top = top + 'px';
+  }
+
+  // 地图上的交互：
+  //   · 拖动 = 平移视角（鼠标按住地图往哪边拖，地图就往哪边走）
+  //   · 滚轮 = 缩放（以鼠标指着的那一点为中心，最多 42% ~ 180%）
+  //   · 点出口 = 往那个方向走；点楼层切换条 = 换一层看；点「复位」= 回 100% 并居中
+  function bindMap() {
+    if (!el.viewMap || el.viewMap.getAttribute('data-map-bound')) return;
+    el.viewMap.setAttribute('data-map-bound', '1');
+
+    el.viewMap.addEventListener('click', function (event) {
+      var node = event.target;
+      while (node && node !== el.viewMap) {
+        if (node.getAttribute) {
+          var go = node.getAttribute('data-map-go');
+          if (go) {
+            if (!node.disabled) sendCommand('走 ' + sceneDirName(go));
+            return;
+          }
+          var area = node.getAttribute('data-map-area');
+          if (area) { setMapArea(area); return; }
+        }
+        node = node.parentNode;
+      }
+    });
+
+    // 拖动平移（指针事件：鼠标 / 触摸 / 触控笔都走这一套）
+    if (el.mapViewport) {
+      var drag = null;
+      var moved = false;
+      // 注意：这里不能用 setPointerCapture —— 捕获以后 pointerup 会被重定向到窗口本身，
+      // 浏览器就把紧随其后的 click 派发到窗口（而不是被点的那个出口胶囊），
+      // 于是「点地图上的出口走过去」永远没反应。改成拖动期间在 window 上收事件。
+      var onDragMove = function (event) {
+        if (!drag || event.pointerId !== drag.id) return;
+        var x = event.clientX - drag.dx, y = event.clientY - drag.dy;
+        if (Math.abs(x - mapPan.x) > 2 || Math.abs(y - mapPan.y) > 2) moved = true;
+        mapPan.x = x;
+        mapPan.y = y;
+        clampMapPan();
+        el.mapBody.style.transform = 'translate(' + mapPan.x + 'px,' + mapPan.y + 'px)';
+      };
+      var endDrag = function (event) {
+        if (!drag || (event && event.pointerId !== drag.id)) return;
+        drag = null;
+        el.mapViewport.classList.remove('dragging');
+        window.removeEventListener('pointermove', onDragMove);
+        window.removeEventListener('pointerup', endDrag);
+        window.removeEventListener('pointercancel', endDrag);
+      };
+      el.mapViewport.addEventListener('pointerdown', function (event) {
+        if (event.button !== 0) return;
+        drag = { dx: event.clientX - mapPan.x, dy: event.clientY - mapPan.y, id: event.pointerId };
+        moved = false;
+        el.mapViewport.classList.add('dragging');
+        window.addEventListener('pointermove', onDragMove);
+        window.addEventListener('pointerup', endDrag);
+        window.addEventListener('pointercancel', endDrag);
+      });
+      // 拖过就别把这一次当成点击（避免手一抖走出去一格）
+      el.mapViewport.addEventListener('click', function (event) {
+        if (!moved) return;
+        moved = false;
+        event.preventDefault();
+        event.stopPropagation();
+      }, true);
+
+      // 滚轮缩放：以鼠标指着的那一点为中心
+      el.mapViewport.addEventListener('wheel', function (event) {
+        var next = mapScale * (event.deltaY < 0 ? MAP_SCALE_STEP : 1 / MAP_SCALE_STEP);
+        next = Math.max(MAP_SCALE_MIN, Math.min(MAP_SCALE_MAX, next));
+        if (Math.abs(next - mapScale) < 0.001) return;
+        event.preventDefault();
+        var rect = el.mapViewport.getBoundingClientRect();
+        var px = event.clientX - rect.left;
+        var py = event.clientY - rect.top;
+        var ratio = next / mapScale;
+        mapScale = next;
+        mapPan.x = px - (px - mapPan.x) * ratio;
+        mapPan.y = py - (py - mapPan.y) * ratio;
+        if (lastState) renderMap(lastState);
+      }, { passive: false });
+    }
+
+    if (el.mapReset) el.mapReset.addEventListener('click', resetMapView);
   }
 
   function bindScene() {
@@ -2705,6 +3085,11 @@
   }
 
   /* ---------- 启动 ---------- */
+
+  bindMap();   // 地图的点击就绑一次，之后重画地图不影响（用事件委托）
+  bindScene(); // 说话横幅的「点视图栏继续」也在这儿绑一次
+  // 窗口大小变了：地图的可视窗口是按场景大小算的，跟着重算一遍（拖动的偏移会被夹回范围里）
+  window.addEventListener('resize', function () { if (lastState) renderMap(lastState); });
 
   function applyBoot(state) {
     if (!state) { show('menu'); return; }
