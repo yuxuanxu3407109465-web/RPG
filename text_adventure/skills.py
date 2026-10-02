@@ -215,7 +215,7 @@ def _format_skill(character, skill, tree, trees, options, weapon_types):
     kind = "【主动】" if skill.get("type") == "active" else ""
     weapon = f"（需要手持{weapon_types[skill['weapon_type']]}武器）" if skill.get("weapon_type") else ""
     if tree.get("unarmed_only"):
-        weapon += "（两只手都不能拿武器）"
+        weapon += "（主手不能拿武器）"
     if skill.get("grip"):
         weapon += f"（需要{stats.GRIPS[skill['grip']]}）"
     if ap_cost(skill):
