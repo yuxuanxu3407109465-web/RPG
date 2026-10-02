@@ -611,6 +611,31 @@ def sweep_damage_percent(a):
     return 75 + 25 * (a["agility"] // 4)
 
 
+# ---------- 钝器 / 武术技能 ----------
+HOME_RUN_STILL_DAMAGE_PERCENT = 60  # 全垒打：本回合没移动过，伤害 +60%（技能增伤，加算）
+FLYING_KICK_SPLASH_PERCENT = 50  # 飞踢：被踢飞的目标撞到的人受 50% 伤害（乘算）
+
+
+def crush_armor_ignore(a):
+    """粉碎无视的护甲 = 4 + 体质 ÷ 2。"""
+    return 4 + a["constitution"] // 2
+
+
+def flying_kick_range(a, kick_master=False):
+    """飞踢能用的最远距离（格）= 2 + 敏捷 ÷ 4；有“踢腿的武道家”时 3 + 敏捷 ÷ 4。"""
+    return (3 if kick_master else 2) + a["agility"] // 4
+
+
+def flying_kick_difficulty(a):
+    """飞踢命中后，目标体质检定的难度 =（攻击者 体质 + 力量）× 1.5（和盾击同一个公式）。"""
+    return shield_bash_difficulty(a)
+
+
+def knockback_distance(a):
+    """飞踢把目标踢飞几格 = 2 + 攻击者体质 ÷ 4。"""
+    return 2 + a["constitution"] // 4
+
+
 EFFECT_DURATION_TURNS = 25  # 原来“持续到战斗结束”的效果，统一改为持续 25 回合
 
 

@@ -301,6 +301,7 @@ class Game:
         self.worn = {slot: None for slot in self.world.wear_slot_names}  # 护甲、饰品、披风、背包
         self.stance = None  # 当前姿态 id
         self.turns = 0
+        self.moved_this_turn = False  # 这一回合走过路没有（全垒打：没移动过伤害 +60%）
         self.ap = 0  # 当前行动点（不分战斗内外，每回合 = 1 分钟开始时获得，见 spend_ap / _pass_turn）
         self.indoor_steps = 0  # 室内已经走了几步（凑满 10 步扣一次体力）
         self.need_minutes = {"food": 0, "water": 0}  # 距离下一次食物 / 水源 −1 已经过了多少分钟
@@ -806,6 +807,7 @@ class Game:
         口渴之类，调用方另起一行接在正文后面。
         """
         base = self._move_base_cost(overweight)  # 要在步数加一之前算
+        self.moved_this_turn = True
         self.indoor_steps = (self.indoor_steps + 1) % stats.INDOOR_STEPS_PER_COST
         if not self.character:
             return "", ""
@@ -1159,6 +1161,7 @@ class Game:
         """回合结束：过 1 分钟（饿 / 渴、回血、掉血都在这里），然后获得新回合的行动点。
         被震慑的话，新的这一回合照样获得行动点，但不能行动，直接跳过（再过 1 分钟）。"""
         self.turns += 1
+        self.moved_this_turn = False
         self.advance_time(1)
         self._regenerate()
         if not self.character:
@@ -1714,6 +1717,20 @@ class Game:
 
     def _weapon(self, item_id):
         return self.world.items[item_id].get("weapon") if item_id else None
+
+    # 删掉的旧技能（占位技能）当初花了几点：读档时退回去
+    REMOVED_SKILL_COSTS = {"blunt_1": 1, "blunt_2": 2, "martial_1": 1, "martial_2": 2}
+
+    def _load_skills(self):
+        """存档里学过、但现在技能树里已经没有的技能：去掉，并退还技能点。"""
+        c = self.character
+        gone = [s for s in c.learned_skills if not self.skill_trees.find_skill(s)]
+        if not gone:
+            return []
+        refund = sum(self.REMOVED_SKILL_COSTS.get(s, 1) for s in gone)
+        c.learned_skills = [s for s in c.learned_skills if s not in gone]
+        c.skill_points += refund
+        return [f"{len(gone)} 个已删除的旧技能退还了 {refund} 点技能点"]
 
     def _wielded_types(self):
         types = set()
@@ -2546,6 +2563,7 @@ class Game:
             self.next_stack_id = saved_sid
         notes += self._load_equipment(state.get("equipment"))
         notes += self._load_worn(state.get("worn"))
+        notes += self._load_skills()
         self.dialogue_index = state.get("dialogue_index", {})
         self.talk_npc = None   # 读档不接上一次的说话对象
         self._load_notice = ("（存档已按当前版本适配：" + "、".join(notes) + "）\n") if notes else ""

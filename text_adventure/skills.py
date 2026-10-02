@@ -235,6 +235,11 @@ SKILL_VALUES = {
                                f"造成 {stats.psionic_bolt_damage(c.level)} 点火焰伤害"),
     "bleed": lambda c, o: (f"按你现在的属性：流血最多叠 {stats.bleed_max_stacks(c.attributes)} 层，"
                            f"每层每回合 {o.perk_effect(c.perks, 'bleed_damage') or stats.BLEED_DAMAGE} 点"),
+    "home_run": lambda c, o: f"这一回合没移动过：伤害 +{stats.HOME_RUN_STILL_DAMAGE_PERCENT}%",
+    "crush": lambda c, o: f"按你现在的属性：无视 {stats.crush_armor_ignore(c.attributes)} 点护甲",
+    "flying_kick": lambda c, o: (f"按你现在的属性：距离 {stats.flying_kick_range(c.attributes, bool(o.perk_effect(c.perks, 'unarmed_attack')))} 格以内，"
+                                 f"体质检定难度 {stats.flying_kick_difficulty(c.attributes)}，"
+                                 f"踢飞 {stats.knockback_distance(c.attributes)} 格"),
     "shield_bash": lambda c, o: f"按你现在的属性：体质检定难度 {stats.shield_bash_difficulty(c.attributes)}",
     "long_slash": lambda c, o: (f"按你现在的属性：横扫每个目标 {stats.sweep_damage_percent(c.attributes)}% 武器伤害，"
                              f"撤步后撤 {stats.sidestep_distance(c.attributes)} 格，"

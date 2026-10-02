@@ -20,7 +20,17 @@
       "id": "blunt",
       "name": "钝器",
       "attribute": "strength",
-      "description": "棍棒、撬棍、锤子等沉重的近战武器。"
+      "description": "棍棒、撬棍、锤子等沉重的近战武器。横扫流：大开大合，把一群敌人砸倒在地；破甲流：砸穿护甲，把人震晕。",
+      "branches": [
+        {
+          "id": "sweep",
+          "name": "横扫流"
+        },
+        {
+          "id": "crush",
+          "name": "破甲流"
+        }
+      ]
     },
     {
       "id": "firearms",
@@ -32,7 +42,17 @@
       "id": "martial",
       "name": "武术",
       "attribute": "constitution",
-      "description": "徒手格斗与身体锻炼。"
+      "description": "徒手格斗与身体锻炼。腿法流：用腿突进、把敌人踢飞；缠斗流：尚未设计。",
+      "branches": [
+        {
+          "id": "kick",
+          "name": "腿法流"
+        },
+        {
+          "id": "grapple",
+          "name": "缠斗流"
+        }
+      ]
     },
     {
       "id": "stealth",
@@ -191,23 +211,41 @@
       "attack": true
     },
     {
-      "id": "blunt_1",
+      "id": "blunt_home_run",
       "tree": "blunt",
-      "name": "钝器入门",
+      "branch": "sweep",
+      "name": "全垒打",
+      "type": "active",
       "cost": 1,
-      "description": "（占位）"
+      "weapon_type": "blunt",
+      "cooldown": 1,
+      "attack": true,
+      "value": "home_run",
+      "description": "抡圆了砸出去：对近战范围内的所有敌对目标发起一次攻击，并尝试让它们倒地（倒地的判定方式待定）。如果这一回合你还没有移动过，伤害 +60%（技能增伤，和力量等加算）。"
     },
     {
-      "id": "blunt_2",
+      "id": "blunt_crush",
       "tree": "blunt",
-      "name": "钝器进阶",
-      "cost": 2,
-      "requires": [
-        "blunt_1"
-      ],
-      "attribute_min": 6,
-      "level_min": 3,
-      "description": "（占位）"
+      "branch": "crush",
+      "name": "粉碎",
+      "type": "active",
+      "cost": 1,
+      "weapon_type": "blunt",
+      "attack": true,
+      "value": "crush",
+      "description": "对目标发起一次攻击，无视 4 +（体质 ÷ 2）点护甲。如果这一击把目标的护甲全部打穿（无视的点数不少于目标的护甲），还会尝试让目标眩晕（眩晕的判定方式待定）。"
+    },
+    {
+      "id": "martial_flying_kick",
+      "tree": "martial",
+      "branch": "kick",
+      "name": "飞踢",
+      "type": "active",
+      "cost": 1,
+      "cooldown": 1,
+      "attack": true,
+      "value": "flying_kick",
+      "description": "对 2 +（敏捷 ÷ 4）格以内（有“踢腿的武道家”时 3 +（敏捷 ÷ 4）格）的目标使用：突进到它跟前发起一次攻击。被命中的目标进行体质检定（d20 + 体质 × 1.5），难度 =（你的体质 + 力量）× 1.5，失败则被踢飞 2 +（你的体质 ÷ 4）格并倒地；踢飞路线上的其他目标受到这一击 50% 的伤害（乘算），并同样进行体质检定，失败也会倒地。"
     },
     {
       "id": "firearms_1",
@@ -223,25 +261,6 @@
       "cost": 2,
       "requires": [
         "firearms_1"
-      ],
-      "attribute_min": 6,
-      "level_min": 3,
-      "description": "（占位）"
-    },
-    {
-      "id": "martial_1",
-      "tree": "martial",
-      "name": "武术入门",
-      "cost": 1,
-      "description": "（占位）"
-    },
-    {
-      "id": "martial_2",
-      "tree": "martial",
-      "name": "武术进阶",
-      "cost": 2,
-      "requires": [
-        "martial_1"
       ],
       "attribute_min": 6,
       "level_min": 3,
