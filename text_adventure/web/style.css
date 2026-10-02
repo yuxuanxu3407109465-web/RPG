@@ -35,7 +35,7 @@
        高 = 视图栏高 − 房间栏 − 底部图例条 − 9 道格子缝（10 行）
      改尺寸只要动这几个数，16×10 的地图在任何常见窗口下都正好铺满中间那一列、又不出滚动条。 */
   --w-mid: calc(100vw - var(--w-left) - var(--w-right) - 56px);  /* 中间列宽度：减去左右 14px 外边距和两道 14px 缝 */
-  --h-scene: calc(100vh - var(--h-bottom) - 139px);  /* 中间那一列里留给格子那块的高度：减去房间栏、图例条和内边距 */
+  --h-scene: calc(100vh - var(--h-bottom) - 142px);  /* 中间那一列里留给格子那块的高度：减去房间栏、图例条和内边距 */
   --cell: clamp(13px, min(calc((var(--w-mid) - var(--w-map) * 2 - 90px) / 16), calc((var(--h-scene) - 18px) / 10)), 64px);
 }
 
@@ -389,7 +389,11 @@ body {
 .view-tab:hover { border-color: var(--amber); color: var(--text); }
 .view-tab.active { border-color: var(--amber); background: #2a2318; color: var(--amber); }
 /* 场景：格子铺满中间那一列，颜色图例压在最下面一整条。
-   格子大小见 :root 的 --cell（已经扣掉了左右两列）。 */
+   格子大小见 :root 的 --cell（已经扣掉了左右两列）。
+   竖着不许滚：格子高度就是按这一块的高度算出来的（--h-scene），一出现上下滚动条
+   就等于格子算大了一点点 —— 那 2px 已经在 --h-scene 里扣掉了，这里再兜一层，
+   宁可让图例条少吃两像素，也不让视图栏多出一条上下滑动条。
+   窄窗口里格子会比自己那一列宽（--cell 有 13px 下限），所以横着仍然可以滚。 */
 .scene-wrap {
   position: relative;
   flex: 1;
@@ -398,7 +402,8 @@ body {
   flex-direction: column;
   gap: 6px;
   padding: 8px 10px 0;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 .scene-grid {
   display: grid;
@@ -443,7 +448,8 @@ body {
 .scene-cell .tile-chip.chip-stairs { border-color: #6f8fb5; }
 .scene-cell .tile-chip.chip-npc { border-color: #b58a4a; }
 .scene-cell .tile-chip.chip-player { border-color: var(--amber); box-shadow: 0 0 0 1px var(--amber) inset; }
-/* 颜色图例：视图栏最下面一整条（原来跟地图并排，把地图挤到右边去了） */
+/* 颜色图例：视图栏最下面一整条（原来跟地图并排，把地图挤到右边去了）。
+   横向滚动条不画出来：一画就多占 15px，把上面的格子挤出一条上下滚动条（图例本身还是能滑的）。 */
 .scene-legend {
   flex: 0 0 auto;
   display: flex;
@@ -457,7 +463,9 @@ body {
   background: #14171c;
   overflow-x: auto;
   white-space: nowrap;
+  scrollbar-width: none;
 }
+.scene-legend::-webkit-scrollbar { width: 0; height: 0; }
 .scene-legend .lg { display: flex; align-items: center; gap: 4px; }
 .scene-legend .swatch { width: 11px; height: 11px; border-radius: 3px; border: 1px solid #39404d; }
 
@@ -1858,6 +1866,13 @@ input[type="range"].rest-range::-moz-range-thumb {
 .exit-box .hint { color: var(--dim-2); }
 
 .slot-saved-at { color: var(--dim-2); font-size: 12px; }
+
+/* 窗口不那么宽时，图例条里最后那句说明放不下：把它收起来（颜色图例照旧一条不少），
+   这样图例条永远只有一行，也不会再有横向滚动条。
+   （这条要写在 .scene-legend .lg 后面才盖得住它，别挪到图例那一段里去） */
+@media (max-width: 1520px) {
+  .scene-legend .lg-note { display: none; }
+}
 
 /* 窄屏：改成单列堆叠，四块（场景 / 背包 / 装备 / 文字）都要留住 */
 @media (max-width: 1080px) {

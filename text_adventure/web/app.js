@@ -2263,7 +2263,7 @@
       '<span class="lg"><span class="swatch" style="background:#23242b"></span>障碍物</span>' +
       '<span class="lg"><span class="swatch" style="background:#10141a"></span>地板</span>' +
       '<span class="lg"><span class="swatch" style="background:#2a2418"></span>门 / 楼梯</span>' +
-      '<span class="lg">黑底白字方块 = 人物与物品（点一下出菜单）</span></div>';
+      '<span class="lg lg-note">黑底白字方块 = 人物与物品（点一下出菜单）</span></div>';
   }
 
   // 场景里的某件东西（按 id 找，拿走了就找不到）
@@ -2448,24 +2448,40 @@
     });
   }
 
-  // 在场景里找一条路（4 向，墙和障碍物不能走）
+  // 在场景里找一条路（4 向，墙和障碍物不能走）。
+  // 门 / 楼梯（'+' '<' '>'）是「跨地图的交互点」：踩上去就换场景。自动寻路只能把它当**终点**，
+  // 绝不从它上面穿过去 —— 否则点远处一格时人会半路拐进另一张地图，
+  // 要找的人 / 东西（走过去再拿 / 说话）也就永远走不到了。
   function scenePath(from, to, sc) {
     var dirs = [[0, -1, '北'], [0, 1, '南'], [1, 0, '东'], [-1, 0, '西']];
     var key = function (p) { return p[0] + ',' + p[1]; };
+    var charAt = function (p) {
+      if (p[0] < 0 || p[1] < 0 || p[1] >= sc.height || p[0] >= sc.width) return '#';
+      return (sc.tiles[p[1]] || '').charAt(p[0]);
+    };
     var blocked = function (p) {
-      if (p[0] < 0 || p[1] < 0 || p[1] >= sc.height || p[0] >= sc.width) return true;
-      var ch = (sc.tiles[p[1]] || '').charAt(p[0]);
+      var ch = charAt(p);
       return ch === '#' || ch === '~';
     };
+    // 门 / 楼梯那几格（sc.doors 是引擎给的权威位置，字符判断兜底）
+    var doorKeys = {};
+    Object.keys(sc.doors || {}).forEach(function (dir) { doorKeys[sc.doors[dir].join(',')] = true; });
+    var isDoor = function (p) {
+      var ch = charAt(p);
+      return ch === '+' || ch === '<' || ch === '>' || !!doorKeys[key(p)];
+    };
+    var isTo = function (p) { return p[0] === to[0] && p[1] === to[1]; };
     if (blocked(to)) return null;
     var seen = {}, prev = {}, queue = [from];
     seen[key(from)] = true;
     while (queue.length) {
       var cur = queue.shift();
-      if (cur[0] === to[0] && cur[1] === to[1]) break;
+      if (isTo(cur)) break;
+      if (isDoor(cur)) continue;   // 站在门上就会换场景，这里不再往外扩
       for (var i = 0; i < dirs.length; i++) {
         var nxt = [cur[0] + dirs[i][0], cur[1] + dirs[i][1]];
         if (blocked(nxt) || seen[key(nxt)]) continue;
+        if (isDoor(nxt) && !isTo(nxt)) continue;   // 门只能当终点，不能路过
         seen[key(nxt)] = true;
         prev[key(nxt)] = [cur, dirs[i][2]];
         queue.push(nxt);
