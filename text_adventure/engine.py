@@ -1674,20 +1674,23 @@ class Game:
         """
         if not self.character:
             return "还没有创建角色。"
+        name = skills.skill_name(skill, self.character, self.options)
         if skill["id"] not in self.character.learned_skills:
-            return f"你还没学会「{skill['name']}」，先去技能树里学（学习 {skill['name']}）。"
+            return f"你还没学会「{name}」，先去技能树里学（学习 {name}）。"
         if skill.get("type") != "active":
-            return f"「{skill['name']}」是被动技能，不用主动释放。"
+            return f"「{name}」是被动技能，不用主动释放。"
         weapon_type = skill.get("weapon_type")
         if weapon_type and weapon_type not in self._wielded_types():
-            return (f"「{skill['name']}」需要手持{self.world.weapon_types.get(weapon_type, weapon_type)}武器，"
+            return (f"「{name}」需要手持{self.world.weapon_types.get(weapon_type, weapon_type)}武器，"
                     f"先装备一把。")
+        if self.skill_trees.tree(skill["tree"]).get("unarmed_only") and not self.main_hand_free_of_weapons():
+            return f"「{name}」是武术，主手不能拿武器（先把主手的武器收起来）。"
         grip = skill.get("grip")
         if grip and self.grip_style() != grip:
-            return f"「{skill['name']}」要在{stats.GRIPS[grip]}状态下用（现在是{self.grip_name()}）。"
+            return f"「{name}」要在{stats.GRIPS[grip]}状态下用（现在是{self.grip_name()}）。"
         cost = skills.ap_cost(skill)
         if self.ap < cost:
-            return (f"「{skill['name']}」要 {cost} 点行动点，你现在只有 {self.ap} 点。\n"
+            return (f"「{name}」要 {cost} 点行动点，你现在只有 {self.ap} 点。\n"
                     f"先结束回合（或者等）攒回来。")
         return None
 
