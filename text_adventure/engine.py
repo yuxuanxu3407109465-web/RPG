@@ -302,6 +302,7 @@ class Game:
         self.stance = None  # 当前姿态 id
         self.turns = 0
         self.moved_this_turn = False  # 这一回合走过路没有（全垒打：没移动过伤害 +60%）
+        self.step_credit = Fraction(0)  # 灵动步伐多付的半格行动点（回合结束清零）
         self.ap = 0  # 当前行动点（不分战斗内外，每回合 = 1 分钟开始时获得，见 spend_ap / _pass_turn）
         self.indoor_steps = 0  # 室内已经走了几步（凑满 10 步扣一次体力）
         self.need_minutes = {"food": 0, "water": 0}  # 距离下一次食物 / 水源 −1 已经过了多少分钟
@@ -818,7 +819,7 @@ class Game:
         note = self.spend_stamina(cost)
         # 时间不再按步算：走一格花行动点（超重 2 点），回合结束才过 1 分钟。
         # 这一步花了多少体力、多少行动点直接写进正文。控制台版和网页版共用这段。
-        ap_cost = (stats.OVERWEIGHT_MOVE_AP_COST if overweight else stats.MOVE_AP_COST)
+        ap_cost = self._step_ap_cost(overweight)
         ap_text = self.spend_ap(ap_cost)
         extra = "，超重翻倍" if overweight else ""
         return f"体力消耗 {cost}，行动点 −{ap_cost}{extra}{ap_text}", note
@@ -1151,6 +1152,23 @@ class Game:
     # 回合结束的三种情况：玩家“等待”；行动点花到 0；指令要的行动点不够——先用剩下的行动点
     # 做掉一部分（例如走路先走几格；一个动作就算“做了一半”），结束回合，下回合补上剩下的。
 
+    def nimble(self):
+        """灵动步伐（被动）生效没有：学会了、并且两只手空着（武术技能的通用条件）。"""
+        return (self.character and "martial_nimble_steps" in self.character.learned_skills and self.hands_empty())
+
+    def _step_ap_cost(self, overweight):
+        """这一格要扣几点行动点。灵动步伐：每格消耗减半——先付整数，多付的半格存着下一格用，回合结束清零。"""
+        base = stats.OVERWEIGHT_MOVE_AP_COST if overweight else stats.MOVE_AP_COST
+        if not self.nimble():
+            return base
+        need = Fraction(base, stats.NIMBLE_STEPS_PER_AP)
+        if self.step_credit >= need:
+            self.step_credit -= need
+            return 0
+        cost = math.ceil(need - self.step_credit)
+        self.step_credit += cost - need
+        return cost
+
     def ap_gain(self):
         return stats.ap_per_turn(self.character.attributes, self.armor_ap_penalty())
 
@@ -1162,6 +1180,7 @@ class Game:
         被震慑的话，新的这一回合照样获得行动点，但不能行动，直接跳过（再过 1 分钟）。"""
         self.turns += 1
         self.moved_this_turn = False
+        self.step_credit = Fraction(0)
         self.advance_time(1)
         self._regenerate()
         if not self.character:
@@ -1622,6 +1641,7 @@ class Game:
             multiplier = stats.damage_multiplier(w["damage_modifiers"])
             return (f"伤害 {w['damage']}" + (f" ×{float(multiplier):g}" if multiplier != 1 else "")
                     + f"，暴击 {w['crit_range']}" + (f"，射程 {w['range']}" if w.get("range") else "")
+                    + (f"，无视护甲 {w['armor_ignore']}" if w.get("armor_ignore") else "")
                     + (f"，标签：{'、'.join(w['tag_names'])}" if w.get("tag_names") else ""))
 
         weapons = "\n".join(
@@ -1683,8 +1703,8 @@ class Game:
         if weapon_type and weapon_type not in self._wielded_types():
             return (f"「{name}」需要手持{self.world.weapon_types.get(weapon_type, weapon_type)}武器，"
                     f"先装备一把。")
-        if self.skill_trees.tree(skill["tree"]).get("unarmed_only") and not self.main_hand_free_of_weapons():
-            return f"「{name}」是武术，主手不能拿武器（先把主手的武器收起来）。"
+        if self.skill_trees.tree(skill["tree"]).get("unarmed_only") and not self.hands_empty():
+            return f"「{name}」是武术，两只手都不能拿东西（先把手上的东西收起来）。"
         grip = skill.get("grip")
         if grip and self.grip_style() != grip:
             return f"「{name}」要在{stats.GRIPS[grip]}状态下用（现在是{self.grip_name()}）。"
@@ -1735,11 +1755,20 @@ class Game:
         c.skill_points += refund
         return [f"{len(gone)} 个已删除的旧技能退还了 {refund} 点技能点"]
 
-    def main_hand_free_of_weapons(self):
-        """主手没拿武器：武术技能的使用条件（副手拿什么都行）。盾牌不是武器；
-        手电筒、撬棍这类代用武器算武器；双手武器占着主手，所以不满足。"""
-        main = self.equipment.get("main_hand")
-        return not (main and self._weapon(main))
+    def hands_empty(self):
+        """两只手都没拿任何东西（武器、盾牌都不行）：武术技能、武道姿态的使用条件。"""
+        return not any(self.equipment.values())
+
+    def stance_usable(self, stance):
+        """姿态的武器要求满足没有：徒手姿态要两手空空，其余要手里有对应类型的武器。"""
+        if stance["weapon_type"] == stats.UNARMED:
+            return self.hands_empty()
+        return stance["weapon_type"] in self._wielded_types()
+
+    def _stance_requirement(self, stance):
+        if stance["weapon_type"] == stats.UNARMED:
+            return "两只手都空着"
+        return f"手持{self.world.weapon_types[stance['weapon_type']]}武器"
 
     def _wielded_types(self):
         types = set()
@@ -1842,10 +1871,9 @@ class Game:
     def _check_stance(self):
         """换下武器后，如果不再满足当前姿态的武器要求，就自动解除姿态。"""
         stance = self._current_stance()
-        if stance and stance["weapon_type"] not in self._wielded_types():
+        if stance and not self.stance_usable(stance):
             self.stance = None
-            weapon = self.world.weapon_types[stance["weapon_type"]]
-            return f"\n你手里没有{weapon}武器了，{stance['name']}姿态解除。"
+            return f"\n不再满足{stance['name']}姿态的条件（{self._stance_requirement(stance)}），姿态解除。"
         return ""
 
     def _hold_type(self, item_id):
@@ -2016,9 +2044,8 @@ class Game:
         stance = stances.find_stance(arg, self.character, self.skill_trees)
         if not stance:
             return f"你不会“{arg}”这个姿态。输入“姿态”查看可用的姿态。"
-        if stance["weapon_type"] not in self._wielded_types():
-            weapon = self.world.weapon_types[stance["weapon_type"]]
-            return f"需要手持{weapon}武器才能使用{stance['name']}姿态。"
+        if not self.stance_usable(stance):
+            return f"需要{self._stance_requirement(stance)}才能使用{stance['name']}姿态。"
         self.stance = stance["id"]
         bonuses = stances.stance_bonuses(self.character, stance, self.skill_trees)
         return f"你切换到{stance['name']}姿态：{stances.format_bonuses(bonuses)}。"
@@ -2043,6 +2070,13 @@ class Game:
     def bleed_damage(self):
         """自己造成的流血每层每回合伤害（残忍：4 → 6）。"""
         return self.options.perk_effect(self.character.perks, "bleed_damage") or stats.BLEED_DAMAGE
+
+    def stance_armor_ignore(self, weapon_type):
+        """姿态给这类攻击的无视护甲（猛虎下山：徒手攻击无视 4 + 力量 ÷ 4）。"""
+        stance = self._current_stance()
+        if not stance or stance["weapon_type"] != weapon_type:
+            return 0
+        return stances.stance_bonuses(self.character, stance, self.skill_trees).get("armor_ignore", 0)
 
     def dodge(self):
         """闪避（含姿态加成）。"""
@@ -2143,7 +2177,7 @@ class Game:
                 "stance_bonus": total - base - quality - heavy - (stats.LAST_STAND_BONUS if self.last_stand() else 0),
                 "tags": tags,
                 "tag_names": [stats.WEAPON_TAGS[x][0] for x in tags],
-                "armor_ignore": stats.TAG_ARMOR_IGNORE if "armor_piercing" in tags else 0,
+                "armor_ignore": (stats.TAG_ARMOR_IGNORE if "armor_piercing" in tags else 0) + self.stance_armor_ignore(weapon_type),
                 "crit_bonus": stats.crit_damage_bonus(tags),
                 "quality_bonus": quality,
                 "damage": stats.weapon_damage(self.world.items[item_id]) if item_id else self._unarmed_attack()["damage"],

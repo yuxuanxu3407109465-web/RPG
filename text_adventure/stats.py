@@ -629,6 +629,14 @@ HOME_RUN_STILL_DAMAGE_PERCENT = 60  # 全垒打：本回合没移动过，伤害
 FLYING_KICK_SPLASH_PERCENT = 50  # 飞踢：被踢飞的目标撞到的人受 50% 伤害（乘算）
 
 
+def flurry_hits(a):
+    """疾风连击的攻击次数 = 1 + 敏捷 ÷ 4（不封顶）。"""
+    return 1 + a["agility"] // 4
+
+
+NIMBLE_STEPS_PER_AP = 2  # 灵动步伐：1 点行动点走 2 格（超重时每格的消耗同样减半）
+
+
 def crush_armor_ignore(a):
     """粉碎无视的护甲 = 4 + 体质 ÷ 2。"""
     return 4 + a["constitution"] // 2

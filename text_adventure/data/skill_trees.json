@@ -42,7 +42,7 @@
       "id": "martial",
       "name": "武术",
       "attribute": "constitution",
-      "description": "徒手格斗与身体锻炼。强攻流派：硬碰硬，一招把人打飞、打倒；游走流派：尚未设计。出招用手还是用腿只看有没有“踢腿的武道家”：没有是掌法，有就是腿法。",
+      "description": "徒手格斗与身体锻炼（所有武术技能都要两只手空着）。强攻流派：硬碰硬，一招把人打飞、打倒；游走流派：脚步灵活、出手快。出招用手还是用腿只看有没有“踢腿的武道家”。",
       "branches": [
         {
           "id": "strike",
@@ -247,6 +247,32 @@
       "attack": true,
       "value": "flying_kick",
       "description": "对 2 +（敏捷 ÷ 4）格以内（有“踢腿的武道家”时 3 +（敏捷 ÷ 4）格）的目标使用：突进到它跟前出招（没有“踢腿的武道家”是一记掌击，有就是飞踢）。被命中的目标进行倒地检定（d20 + 体质 × 1.5），难度 =（你的力量 + 体质）× 1.5，失败则被击飞 2 +（你的体质 ÷ 4）格并倒地；击飞路线上的其他目标受到这一击 50% 的伤害（乘算），并同样进行倒地检定，失败也会倒地。"
+    },
+    {
+      "id": "martial_stance",
+      "tree": "martial",
+      "name": "武道姿态",
+      "cost": 1,
+      "description": "两只手都空着时，可以在猛虎下山、灵蛇两种姿态之间切换，同时只能开启一个，切换不占用行动。"
+    },
+    {
+      "id": "martial_flurry",
+      "tree": "martial",
+      "branch": "roam",
+      "name": "疾风连击",
+      "type": "active",
+      "cost": 1,
+      "attack": true,
+      "value": "flurry",
+      "description": "连续发起 1 +（敏捷 ÷ 4）次攻击。"
+    },
+    {
+      "id": "martial_nimble_steps",
+      "tree": "martial",
+      "branch": "roam",
+      "name": "灵动步伐",
+      "cost": 1,
+      "description": "两只手都空着时，脚步轻快：1 点行动点可以移动 2 格（超重时每格的消耗同样减半）。"
     },
     {
       "id": "firearms_1",
@@ -621,6 +647,34 @@
         {
           "stat": "accuracy",
           "base": 3
+        }
+      ]
+    },
+    {
+      "id": "martial_tiger",
+      "name": "猛虎下山",
+      "skill": "martial_stance",
+      "weapon_type": "unarmed",
+      "description": "势大力沉，拳脚直透护甲。",
+      "modifiers": [
+        {
+          "stat": "armor_ignore",
+          "base": 4,
+          "attribute": "strength",
+          "divisor": 4
+        }
+      ]
+    },
+    {
+      "id": "martial_snake",
+      "name": "灵蛇",
+      "skill": "martial_stance",
+      "weapon_type": "unarmed",
+      "description": "身形游走，被围得越紧越难打中。",
+      "modifiers": [
+        {
+          "stat": "dodge_per_adjacent_enemy",
+          "base": 1
         }
       ]
     }
