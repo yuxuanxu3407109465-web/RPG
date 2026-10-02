@@ -45,7 +45,7 @@ BAG_AP_COST = 1  # 背包里其余会实际改变物品的操作（例如放下 
 # 一堆同种物品最多摞多少个。只有物品数据里带 stack 词条的才摞得起来，
 # 别的物品一格一件、也不能拆分（见 engine.py 的背包部分）。
 STACK_MAX = 5
-UNARMED_DAMAGE = "1d2"  # 徒手伤害骰
+UNARMED_DAMAGE = "1d4"  # 徒手伤害骰
 
 # 护甲：每件护甲穿在一个部位，所有部位的护甲值相加，受到的伤害按总值固定减免
 ARMOR_CLASSES = {
@@ -193,9 +193,22 @@ def shield_bash_damage(shield):
     return SHIELD_BASH_DAMAGE + (f"{bonus:+d}" if bonus else "")
 
 
-def shield_bash_difficulty(a):
-    """盾击命中后，目标体质检定（d20 + 体质 × 1.5）的难度 =（攻击者 力量 + 体质）× 1.5，向下取整。"""
+# 负面状态的判定：同名状态不管来源（盾击、粉碎、飞踢、全垒打、震倒……）都用同一套。
+# 倒地、眩晕：目标体质检定（d20 + 体质 × 1.5），难度 =（施加者 力量 + 体质）× 1.5，失败就获得该状态。
+STATUS_CHECKS = {
+    "knocked_down": ("倒地", "constitution"),
+    "stunned": ("眩晕", "constitution"),
+}
+
+
+def status_difficulty(a):
+    """倒地 / 眩晕检定的难度 =（施加者 力量 + 体质）× 1.5，向下取整。"""
     return (a["strength"] + a["constitution"]) * 3 // 2
+
+
+def shield_bash_difficulty(a):
+    """盾击的眩晕检定难度（和所有眩晕一样，见 status_difficulty）。"""
+    return status_difficulty(a)
 
 
 # 眩晕：下回合最后一个行动。同一回合里第二次被眩晕 → 升级为震慑：跳过下一个回合。
@@ -627,8 +640,8 @@ def flying_kick_range(a, kick_master=False):
 
 
 def flying_kick_difficulty(a):
-    """飞踢命中后，目标体质检定的难度 =（攻击者 体质 + 力量）× 1.5（和盾击同一个公式）。"""
-    return shield_bash_difficulty(a)
+    """飞踢的倒地检定难度（和所有倒地一样，见 status_difficulty）。"""
+    return status_difficulty(a)
 
 
 def knockback_distance(a):

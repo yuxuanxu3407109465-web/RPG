@@ -1732,6 +1732,10 @@ class Game:
         c.skill_points += refund
         return [f"{len(gone)} 个已删除的旧技能退还了 {refund} 点技能点"]
 
+    def hands_free_of_weapons(self):
+        """两只手都没拿武器：武术技能的使用条件。盾牌不是武器，不影响；手电筒、撬棍这类代用武器算武器。"""
+        return not any(self._weapon(i) for i in self.equipment.values() if i)
+
     def _wielded_types(self):
         types = set()
         for i in self.equipment.values():

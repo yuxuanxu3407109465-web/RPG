@@ -214,6 +214,8 @@ def _format_skill(character, skill, tree, trees, options, weapon_types):
         status = "[可学习]" if not unmet else "[需要 " + "、".join(unmet) + "]"
     kind = "【主动】" if skill.get("type") == "active" else ""
     weapon = f"（需要手持{weapon_types[skill['weapon_type']]}武器）" if skill.get("weapon_type") else ""
+    if tree.get("unarmed_only"):
+        weapon += "（两只手都不能拿武器）"
     if skill.get("grip"):
         weapon += f"（需要{stats.GRIPS[skill['grip']]}）"
     if ap_cost(skill):
@@ -235,8 +237,10 @@ SKILL_VALUES = {
                                f"造成 {stats.psionic_bolt_damage(c.level)} 点火焰伤害"),
     "bleed": lambda c, o: (f"按你现在的属性：流血最多叠 {stats.bleed_max_stacks(c.attributes)} 层，"
                            f"每层每回合 {o.perk_effect(c.perks, 'bleed_damage') or stats.BLEED_DAMAGE} 点"),
-    "home_run": lambda c, o: f"这一回合没移动过：伤害 +{stats.HOME_RUN_STILL_DAMAGE_PERCENT}%",
-    "crush": lambda c, o: f"按你现在的属性：无视 {stats.crush_armor_ignore(c.attributes)} 点护甲",
+    "home_run": lambda c, o: (f"按你现在的属性：倒地检定难度 {stats.status_difficulty(c.attributes)}；"
+                              f"这一回合没移动过：伤害 +{stats.HOME_RUN_STILL_DAMAGE_PERCENT}%"),
+    "crush": lambda c, o: (f"按你现在的属性：无视 {stats.crush_armor_ignore(c.attributes)} 点护甲，"
+                           f"眩晕检定难度 {stats.status_difficulty(c.attributes)}"),
     "flying_kick": lambda c, o: (f"按你现在的属性：距离 {stats.flying_kick_range(c.attributes, bool(o.perk_effect(c.perks, 'unarmed_attack')))} 格以内，"
                                  f"体质检定难度 {stats.flying_kick_difficulty(c.attributes)}，"
                                  f"踢飞 {stats.knockback_distance(c.attributes)} 格"),
