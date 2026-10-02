@@ -10,7 +10,7 @@
   limbs    每条胳膊 / 腿独立按 missing_arm / missing_leg（%）判定是否缺失
 断了胳膊拿不了武器：两条都在才能用双手武器，只剩一条只能用单手武器，都没了只能撕咬
 （模板的 armless_attack；撕咬是劣质武器，poor: true，精准只按属性 × 1 算）。
-武器、护甲直接引用 world.json 里的物品，伤害、暴击范围、护甲值都跟玩家用的一样。
+武器、护甲直接引用物品表（data/items.csv）里的物品，伤害、暴击范围、护甲值都跟玩家用的一样。
 """
 
 import json
@@ -109,10 +109,10 @@ class EnemyBook:
             where = f"enemies.json 里的随机装备表 {loadout_id}"
             for entry in table.get("weapons", []):
                 if entry["item"] and "weapon" not in items.get(entry["item"], {}):
-                    raise ValueError(f"{where}：{entry['item']} 不是 world.json 里的武器")
+                    raise ValueError(f"{where}：{entry['item']} 不是物品表里的武器")
             for entry in table.get("armor", []):
                 if "armor" not in items.get(entry["item"], {}):
-                    raise ValueError(f"{where}：{entry['item']} 不是 world.json 里的护甲")
+                    raise ValueError(f"{where}：{entry['item']} 不是物品表里的护甲")
 
     def find(self, name):
         """按名字、别名或 id 找模板，找不到返回 None。"""

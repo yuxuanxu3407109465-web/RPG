@@ -54,7 +54,11 @@ def death_menu(game, ask):
 
 
 def main():
-    world = World(BASE_DIR / "data" / "world.json")
+    try:
+        world = World(BASE_DIR / "data" / "world.json")
+    except ValueError as e:  # 物品表（data/items.csv）等写错了：说清楚哪里错，不往下跑
+        print("游戏数据有错，没法启动：\n" + str(e))
+        return
     options = CharacterOptions(BASE_DIR / "data" / "character_options.json")
     skill_trees = SkillTrees(BASE_DIR / "data" / "skill_trees.json")
     dice = Dice()

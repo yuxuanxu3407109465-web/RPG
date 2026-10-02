@@ -1212,6 +1212,12 @@ def main():
     parser.add_argument("--force", action="store_true",
                         help="就算已经有在跑的服务，也另起一个（端口会往后找）")
     args = parser.parse_args()
+    # 先把数据读一遍：物品表（data/items.csv）等写错了就在这里说清楚，不起服务
+    try:
+        World(BASE_DIR / "data" / "world.json")
+    except ValueError as e:
+        print("游戏数据有错，没法启动：\n" + str(e))
+        return 1
 
     ports = list(range(args.port, args.port + 10))
     session = LazySession()

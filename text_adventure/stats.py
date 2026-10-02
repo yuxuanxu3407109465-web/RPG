@@ -73,7 +73,7 @@ MELEE_WEAPON_TYPES = {"long_blade", "short_blade", "blunt", UNARMED}
 
 CRIT_DAMAGE_BONUS = 50  # 暴击额外伤害（%），在其他修正之后结算；“要害”标签的武器是 80
 
-# 武器标签：一件武器的具体特性由它带的标签决定（world.json 里武器的 "tags"）
+# 武器标签：一件武器的具体特性由它带的标签决定（物品表的“武器标签”列）
 WEAPON_TAGS = {
     "reach": ("长柄", "攻击范围 1 → 2 格"),
     "armor_piercing": ("破甲", "无视 2 点护甲"),
@@ -129,7 +129,7 @@ def modifier_text(modifiers):
 
 def crit_damage_bonus(tags):
     return DEADLY_CRIT_DAMAGE_BONUS if "deadly" in tags else CRIT_DAMAGE_BONUS
-# 各类武器的默认暴击范围；单件武器可以在 world.json 里用 crit_range 覆盖
+# 各类武器的默认暴击范围；单件武器可以在物品表的“暴击范围”列覆盖
 # （例如弯刀、反曲刀这类宽暴击范围的锐器写 "18-20"，基础伤害相应降到 1d6）
 CRIT_RANGES = {
     "long_blade": "19-20",

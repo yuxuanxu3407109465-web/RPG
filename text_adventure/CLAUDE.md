@@ -8,6 +8,7 @@
 - **必须兼容 Python 3.9**：macOS 自带的 `/usr/bin/python3` 是 3.9.6。不要用 3.10+ 的写法（`X | None` 类型标注、`match` 语句等），改完用 `/usr/bin/python3 main.py` 测试。
 - 不引入第三方库，只用标准库。
 - **内容放数据，规则放代码**：地点、物品、NPC、背景、技能、姿态都写在 `data/*.json`；公式集中在 `stats.py`。
+- **物品全部在表格 `data/items.csv`**（2026-10 起，world.json 里不再有 `"items"`）：一行一件，中文列名、中文取值，Excel / WPS / Numbers 直接改，不用碰代码。读表、转换、检查在 `item_table.py`（`engine.World` 启动时读，转成和以前一样的物品字典，引擎其余部分不变）；写错了启动时列出“第几行哪一列”并拒绝启动（`main.py` / `webui.main` 先读一遍数据）。填写说明在 **`物品表说明.md`**。新增物品字段：`item_table.COLUMNS` 加列、`_row_to_item` 和 `to_rows` 两边都处理、说明里补一行。文档里其余提到“world.json 里物品的 xx 字段”的地方，现在对应表格里的列。
 - 玩家看到的文字全部用中文；中文指令允许不加空格（如 `拿手电筒`），英文别名要用空格隔开。
 - 存档（`saves/`）不进 Git。改存档格式时要兼容旧存档（参考 `Game.cmd_load` 和 `Character.from_dict` 的做法）。
 - 技能数据在启动时会做引用检查（`SkillTrees._validate`），新增引用类字段时一并加检查。

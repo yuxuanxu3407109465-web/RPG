@@ -85,6 +85,8 @@ python3 main.py
 | `webui.py` | 网页版入口：本地 HTTP 服务，把角色创建的问答搬到网页上 |
 | `启动网页版.bat` | Windows 下双击启动网页版 |
 | `启动网页版.command` | macOS 下双击启动网页版 |
+| `data/items.csv` | **物品表**：所有物品，用 Excel / WPS / Numbers 直接改（说明见 `物品表说明.md`） |
+| `item_table.py` | 读物品表、检查错误 |
 | `make_icon.py` | 生成图标 `icon.ico`：纯标准库手写 PNG/ICO 编码，改完配色形状重新运行即可 |
 | `icon.ico` | 游戏图标（桌面快捷方式用的就是它），`icon_preview.png` 是预览图 |
 | `web/` | 网页界面：`index.html`、`style.css`、`app.js`、`icons.svg`（手写 SVG 图标精灵） |

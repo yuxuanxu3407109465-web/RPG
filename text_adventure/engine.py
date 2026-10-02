@@ -11,6 +11,7 @@ from fractions import Fraction
 from pathlib import Path
 
 import dice as dice_rules
+import item_table
 import items
 import skills
 import stances
@@ -158,7 +159,14 @@ class World:
         self.intro = data["intro"]
         self.start_room = data["start_room"]
         self.rooms = data["rooms"]
-        self.items = data["items"]
+        self.items = dict(data.get("items", {}))
+        # 物品主要写在 data/items.csv（表格，不用改代码就能加 / 改物品，见 item_table.py 和 物品表说明.md）
+        table = self.data_dir / "items.csv"
+        if table.exists():
+            for item_id, item in item_table.load(table, data).items():
+                if item_id in self.items:
+                    raise ValueError(f"物品 {item_id} 在 world.json 和 items.csv 里都有，只能留一份")
+                self.items[item_id] = item
         self.npcs = data["npcs"]
         self.map_areas = data.get("map_areas", [])
         self.weapon_types = data.get("weapon_types", {})  # 武器类型 id -> 显示名
@@ -177,18 +185,22 @@ class World:
                 low, high = spec.get("min", 1), spec.get("max", 1)
                 if not 1 <= low <= high:
                     raise ValueError(f"{where}：random_items 的个数要写 1 ≤ min ≤ max")
+        for room_id, room in self.rooms.items():
+            for item_id in room.get("items", []):
+                if item_id not in self.items:
+                    raise ValueError(f"world.json 里的地点 {room_id} 放了物品 {item_id}，但物品表里没有这个 ID")
         for item_id, item in self.items.items():
             weapon = item.get("weapon")
             if weapon and weapon.get("improvised") and weapon.get("damage") not in stats.DAMAGE_TIERS:
-                raise ValueError(f"world.json 里的代用武器 {item_id}：伤害要是 {'、'.join(stats.DAMAGE_TIERS)} 中的一档"
+                raise ValueError(f"物品表里的代用武器 {item_id}：伤害要是 {'、'.join(stats.DAMAGE_TIERS)} 中的一档"
                                  "（会自动降一档）")
             if weapon and not dice_rules.DICE_PATTERN.match(weapon.get("damage", "")):
-                raise ValueError(f"world.json 里的武器 {item_id}：伤害骰要写成 1d8、2d6 这样的格式")
+                raise ValueError(f"物品表里的武器 {item_id}：伤害骰要写成 1d8、2d6 这样的格式")
             if weapon and not dice_rules.CRIT_RANGE_PATTERN.match(weapon.get("crit_range", "20")):
-                raise ValueError(f"world.json 里的武器 {item_id}：暴击范围要写成 19-20 或 20 这样的格式")
+                raise ValueError(f"物品表里的武器 {item_id}：暴击范围要写成 19-20 或 20 这样的格式")
             armor = item.get("armor")
             if armor:
-                where = f"world.json 里的护甲 {item_id}"
+                where = f"物品表里的护甲 {item_id}"
                 if armor.get("slot") not in self.armor_slots:
                     raise ValueError(f"{where}：部位要是 {'、'.join(self.armor_slots)} 之一")
                 if armor.get("class") not in stats.ARMOR_CLASSES:
@@ -198,14 +210,14 @@ class World:
                     raise ValueError(f"{where}：{name}的基础护甲值要在 {low}~{high} 之间")
             for tag in (weapon or {}).get("tags", []):
                 if tag not in stats.WEAPON_TAGS:
-                    raise ValueError(f"world.json 里的武器 {item_id}：标签要是 {'、'.join(stats.WEAPON_TAGS)} 之一")
+                    raise ValueError(f"物品表里的武器 {item_id}：标签要是 {'、'.join(stats.WEAPON_TAGS)} 之一")
             if item.get("hold") and item["hold"] not in stats.HOLD_TYPES:
-                raise ValueError(f"world.json 里的物品 {item_id}：手持类别要是 {'、'.join(stats.HOLD_TYPES)} 之一")
+                raise ValueError(f"物品表里的物品 {item_id}：手持类别要是 {'、'.join(stats.HOLD_TYPES)} 之一")
             if item.get("quality", "normal") not in stats.QUALITIES:
-                raise ValueError(f"world.json 里的物品 {item_id}：等阶要是 {'、'.join(stats.QUALITIES)} 之一")
+                raise ValueError(f"物品表里的物品 {item_id}：等阶要是 {'、'.join(stats.QUALITIES)} 之一")
             gear = item.get("gear")
             if gear:
-                where = f"world.json 里的装备 {item_id}"
+                where = f"物品表里的装备 {item_id}"
                 if gear.get("slot") not in gear_kinds:
                     raise ValueError(f"{where}：装备位要是 {'、'.join(sorted(gear_kinds))} 之一")
                 if not 0 <= gear.get("weight_reduction", 0) <= 100:
