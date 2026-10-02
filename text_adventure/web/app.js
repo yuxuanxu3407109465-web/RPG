@@ -1306,8 +1306,10 @@
 
     var html = '';
     html += '<p class="char-name">' + esc(c.name) + '</p>';
-    html += '<p class="char-meta">' + esc(c.gender) + ' · ' + esc(c.age) + ' 岁 · ' +
-      esc(c.height) + ' cm · ' + esc(c.background) + '</p>';
+    // 年龄 / 身高自由填写：纯数字才加“岁”“cm”
+    var isNum = function (v) { return /^\d+$/.test(String(v)); };
+    html += '<p class="char-meta">' + esc(c.gender) + ' · ' + esc(c.age) + (isNum(c.age) ? ' 岁' : '') + ' · ' +
+      esc(c.height) + (isNum(c.height) ? ' cm' : '') + ' · ' + esc(c.background) + '</p>';
 
     // 等级和技能点放在生命值 / 体力条上面
     html += '<div class="kv"><span class="k">等级</span><span class="v">' + esc(c.level) +
@@ -1407,7 +1409,7 @@
       var mates = '';
       c.companions.forEach(function (p) {
         mates += '<div class="kv"><span class="k">' + esc(p.relationship || '同伴') + '</span><span class="v">' +
-          esc(p.name) + '（' + esc(p.age) + ' 岁）</span></div>';
+          esc(p.name) + '（' + esc(p.age) + (/^\d+$/.test(String(p.age)) ? ' 岁' : '') + '）</span></div>';
       });
       html += section('companions', '同伴', 'talk', mates);
     }

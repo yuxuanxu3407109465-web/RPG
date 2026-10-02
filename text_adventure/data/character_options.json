@@ -1,18 +1,6 @@
 {
   "limits": {
-    "name_max_length": 12,
-    "age": [
-      16,
-      80
-    ],
-    "height": [
-      130,
-      220
-    ],
-    "companion_age": [
-      16,
-      80
-    ]
+    "name_max_length": 12
   },
   "genders": [
     "男",

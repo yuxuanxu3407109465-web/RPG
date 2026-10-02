@@ -13,22 +13,37 @@ import stats
 class Companion:
     name: str
     gender: str
-    age: int
+    age: object  # 自由填写：数字或文字
     relationship: str
     appearance: str
     # 自定义同伴可以像玩家一样完整创建；预设同伴和旧存档里这些是空的
-    height: Optional[int] = None
+    height: object = None  # 自由填写：数字或文字
     background: Optional[str] = None  # 背景 id（灵能者这类 player_only 的背景不开放）
     attributes: Optional[Dict[str, int]] = None
     perks: List[str] = field(default_factory=list)  # 孤独之路、受欢迎这类 player_only 的 perk 不开放
+
+
+def _free_number(text):
+    """自由填写的年龄 / 身高：纯数字存成整数，别的原样存文字。"""
+    return int(text) if text.isdigit() else text
+
+
+def age_text(age):
+    """显示年龄：数字加“岁”，文字原样（例如“三十出头”）。"""
+    return f"{age} 岁" if str(age).isdigit() else str(age)
+
+
+def height_text(height):
+    """显示身高：数字加“cm”，文字原样。"""
+    return f"{height} cm" if str(height).isdigit() else str(height)
 
 
 @dataclass
 class Character:
     name: str
     gender: str
-    age: int
-    height: int
+    age: object  # 自由填写：数字或文字
+    height: object  # 自由填写：数字或文字
     appearance: str
     background: str  # 背景 id，对应 character_options.json 里的 backgrounds
     attributes: Dict[str, int]  # 属性 id -> 数值（1~10）
@@ -158,7 +173,7 @@ def format_sheet(character, options, items, carried_weight=None, tree_names=None
     stamina_now = character.stamina or stamina_cap
     lines = [
         "======== 角色卡 ========",
-        f"{character.name} · {character.gender} · {character.age} 岁 · {character.height} cm",
+        f"{character.name} · {character.gender} · {age_text(character.age)} · {height_text(character.height)}",
         f"等级 {character.level}（经验 {character.xp}/{stats.xp_to_next_level(character.level, options)}）"
         f"    生命值 {character.hp or hp_max}/{hp_max}    体力 {stamina_now}/{stamina_cap}"
         f"    食物 {character.food}/{stats.NEED_MAX}    水源 {character.water}/{stats.NEED_MAX}"
@@ -179,8 +194,8 @@ def format_sheet(character, options, items, carried_weight=None, tree_names=None
     if character.companions:
         lines.append(f"同伴（上限 {limit}）：")
         for c in character.companions:
-            lines.append(f"  {c.name}（{c.relationship}） · {c.gender} · {c.age} 岁"
-                         + (f" · {c.height} cm" if c.height else "") + f"：{c.appearance}")
+            lines.append(f"  {c.name}（{c.relationship}） · {c.gender} · {age_text(c.age)}"
+                         + (f" · {height_text(c.height)}" if c.height else "") + f"：{c.appearance}")
             if c.background:
                 lines.append(f"    背景：{options.background(c.background)['name']}"
                              + ("    Perk：" + "、".join(options.perk(p)["name"] for p in c.perks) if c.perks else ""))
@@ -341,10 +356,9 @@ class CharacterCreator:
         self.ask.print("\n======== 创建角色 ========")
         name = self.ask.text("名字：", max_length=limits["name_max_length"])
         gender = self._gender()
-        age = self.ask.number(f"年龄（{limits['age'][0]}~{limits['age'][1]}）：", *limits["age"])
-        height = self.ask.number(
-            f"身高 cm（{limits['height'][0]}~{limits['height'][1]}）：", *limits["height"]
-        )
+        # 年龄、身高不设限制，想填什么填什么（纯数字会显示成“30 岁”“175 cm”）
+        age = _free_number(self.ask.text("年龄：", max_length=12))
+        height = _free_number(self.ask.text("身高（cm）：", max_length=12))
         self.ask.print("\n【样貌】自由描述你的外貌，比如发型、穿着、特征（直接回车跳过）")
         appearance = self.ask.text("样貌：", max_length=100, default="没什么特别的，扔进人群里就找不到。")
         background = self._background()
@@ -453,14 +467,8 @@ class CharacterCreator:
         self.ask.print("\n======== 自定义同伴 ========")
         name = self.ask.text("同伴的名字：", max_length=limits["name_max_length"])
         gender = self._gender()
-        age = self.ask.number(
-            f"同伴的年龄（{limits['companion_age'][0]}~{limits['companion_age'][1]}）：",
-            *limits["companion_age"],
-        )
-        height = self.ask.number(
-            f"同伴的身高 cm（{limits['height'][0]}~{limits['height'][1]}）：",
-            *limits["height"],
-        )
+        age = _free_number(self.ask.text("同伴的年龄：", max_length=12))
+        height = _free_number(self.ask.text("同伴的身高（cm）：", max_length=12))
         relationship = self.ask.text("TA 和你是什么关系（例如：妹妹、同事、邻居）：", max_length=12)
         self.ask.print("\n【同伴样貌】自由描述同伴的外貌（直接回车跳过）")
         appearance = self.ask.text("样貌：", max_length=100, default="没什么特别的。")
