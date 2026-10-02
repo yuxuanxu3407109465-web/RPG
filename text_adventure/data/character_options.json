@@ -12,6 +12,10 @@
     "companion_age": [
       1,
       100
+    ],
+    "companion_height": [
+      20,
+      220
     ]
   },
   "genders": [
@@ -102,7 +106,8 @@
       "starting_items": [],
       "unlocks_trees": [
         "psionics"
-      ]
+      ],
+      "player_only": true
     }
   ],
   "companions": [
@@ -134,7 +139,8 @@
       },
       "conflicts": [
         "popular"
-      ]
+      ],
+      "player_only": true
     },
     {
       "id": "precocious",
@@ -199,7 +205,8 @@
       "effects": {
         "companion_limit_bonus": 1,
         "extra_starting_companions": 1
-      }
+      },
+      "player_only": true
     },
     {
       "id": "last_stand",

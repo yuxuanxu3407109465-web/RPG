@@ -4,7 +4,7 @@ import json
 from dataclasses import asdict, dataclass, field
 from fractions import Fraction
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import stats
 
@@ -16,6 +16,11 @@ class Companion:
     age: int
     relationship: str
     appearance: str
+    # 自定义同伴可以像玩家一样完整创建；预设同伴和旧存档里这些是空的
+    height: Optional[int] = None
+    background: Optional[str] = None  # 背景 id（灵能者这类 player_only 的背景不开放）
+    attributes: Optional[Dict[str, int]] = None
+    perks: List[str] = field(default_factory=list)  # 孤独之路、受欢迎这类 player_only 的 perk 不开放
 
 
 @dataclass
@@ -174,7 +179,13 @@ def format_sheet(character, options, items, carried_weight=None, tree_names=None
     if character.companions:
         lines.append(f"同伴（上限 {limit}）：")
         for c in character.companions:
-            lines.append(f"  {c.name}（{c.relationship}） · {c.gender} · {c.age} 岁：{c.appearance}")
+            lines.append(f"  {c.name}（{c.relationship}） · {c.gender} · {c.age} 岁"
+                         + (f" · {c.height} cm" if c.height else "") + f"：{c.appearance}")
+            if c.background:
+                lines.append(f"    背景：{options.background(c.background)['name']}"
+                             + ("    Perk：" + "、".join(options.perk(p)["name"] for p in c.perks) if c.perks else ""))
+            if c.attributes:
+                lines.append("    属性：" + "  ".join(f"{attr['name']} {c.attributes[attr['id']]}" for attr in options.attributes))
     else:
         lines.append(f"同伴（上限 {limit}）：无，独自行动")
 
@@ -361,10 +372,15 @@ class CharacterCreator:
             return self.ask.text("请输入性别：", max_length=8)
         return self.options.genders[index]
 
-    def _background(self):
-        self.ask.print("\n【背景故事】末日之前，你是做什么的？")
+    def _background(self, for_companion=False):
+        """选背景。给同伴选时，标了 player_only 的背景（灵能者）不出现。"""
+        if for_companion:
+            self.ask.print("\n【同伴的背景故事】末日之前，TA 是做什么的？")
+        else:
+            self.ask.print("\n【背景故事】末日之前，你是做什么的？")
+        backgrounds = [bg for bg in self.options.backgrounds if not (for_companion and bg.get("player_only"))]
         labels = []
-        for bg in self.options.backgrounds:
+        for bg in backgrounds:
             perks = []
             starting = [self.items[i]["name"] for i in bg.get("starting_items", [])]
             if starting:
@@ -373,9 +389,9 @@ class CharacterCreator:
             extra = f"（{'；'.join(perks)}）" if perks else ""
             labels.append(f"{bg['name']}{extra}\n     {bg['description']}")
         index = self.ask.choice("选择编号：", labels)
-        return self.options.backgrounds[index]["id"]
+        return backgrounds[index]["id"]
 
-    def _perks(self):
+    def _perks(self, for_companion=False):
         """选 perk：可以反复点选 / 取消，perk 点不能变成负数；有的 perk 会给额外的 perk 点。"""
         if not self.options.perks:
             return []
@@ -385,7 +401,9 @@ class CharacterCreator:
             "cost": self.options.perk_cost(p),
             "perk_points": (p.get("effects") or {}).get("perk_points", 0),
             "conflicts": p.get("conflicts", []),
-        } for p in self.options.perks]
+        } for p in self.options.perks if not (for_companion and p.get("player_only"))]
+        if for_companion:
+            self.ask.print("\n【同伴的 Perk】")
         return self.ask.perks(entries, base, self._check_perks)
 
     def _check_perks(self, selection):
@@ -439,7 +457,17 @@ class CharacterCreator:
             f"同伴的年龄（{limits['companion_age'][0]}~{limits['companion_age'][1]}）：",
             *limits["companion_age"],
         )
+        height = self.ask.number(
+            f"同伴的身高 cm（{limits['companion_height'][0]}~{limits['companion_height'][1]}）：",
+            *limits["companion_height"],
+        )
         relationship = self.ask.text("TA 和你是什么关系（例如：妹妹、同事、你养的猫）：", max_length=12)
         self.ask.print("\n【同伴样貌】自由描述同伴的外貌（直接回车跳过）")
         appearance = self.ask.text("样貌：", max_length=100, default="没什么特别的。")
-        return Companion(name, gender, age, relationship, appearance)
+        # 和玩家一样选背景、perk、分配属性；灵能者背景、孤独之路、受欢迎（player_only）不开放
+        background = self._background(for_companion=True)
+        perks = self._perks(for_companion=True)
+        self.ask.print("\n【同伴的属性】")
+        attributes = self._attributes(self.options.perk_effect(perks, "attribute_points"))
+        return Companion(name, gender, age, relationship, appearance,
+                         height=height, background=background, attributes=attributes, perks=perks)
