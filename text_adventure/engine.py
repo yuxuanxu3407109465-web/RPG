@@ -1157,17 +1157,16 @@ class Game:
 
     def _pass_turn(self):
         """回合结束：过 1 分钟（饿 / 渴、回血、掉血都在这里），然后获得新回合的行动点。
-        被震慑的话，新的这一回合直接跳过（不获得行动点，再过 1 分钟）。"""
+        被震慑的话，新的这一回合照样获得行动点，但不能行动，直接跳过（再过 1 分钟）。"""
         self.turns += 1
         self.advance_time(1)
         self._regenerate()
         if not self.character:
             return
-        if self._tick_stun():
-            self.pending_notes.append("（你被震慑了，跳过了这一回合）")
-            self._pass_turn()
-            return
         self.ap = min(self.ap_cap(), self.ap + self.ap_gain())
+        if self._tick_stun():
+            self.pending_notes.append("（你被震慑了，跳过了这一回合，行动点照样攒下）")
+            self._pass_turn()
 
     # ---------- 眩晕 / 震慑（玩家）----------
     # 眩晕：下回合最后一个行动（等战斗流程接上）；同一回合第二次被眩晕 → 震慑：跳过下一个回合。
@@ -1204,7 +1203,7 @@ class Game:
         for n in range(times):
             level = self.stun_player()
             lines.append(f"第 {n + 1} 次：你【{stats.STUN_CONDITIONS[level]}】——{stats.STUN_EFFECTS[level]}")
-        lines.append("（测试：结束回合后就能看到效果；震慑会让下一回合直接跳过、拿不到行动点）")
+        lines.append("（测试：结束回合后就能看到效果；震慑会让下一回合直接跳过，但行动点照拿）")
         return "\n".join(lines)
 
     def spend_ap(self, cost):
