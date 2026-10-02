@@ -112,8 +112,7 @@ class SkillTrees:
         return next((t for t in self.trees if name in (t["name"], t["id"])), None)
 
     def find_skill(self, name):
-        """按名字、id 找技能；武术技能的腿法名（kick_name）也认。"""
-        return next((s for s in self.skills if name in (s["name"], s["id"], s.get("kick_name"))), None)
+        return next((s for s in self.skills if name in (s["name"], s["id"])), None)
 
     def stance(self, stance_id):
         return next(s for s in self.stances if s["id"] == stance_id)
@@ -148,15 +147,8 @@ def uses_kicks(character, options):
     return bool(character and options.perk_effect(character.perks, "unarmed_attack"))
 
 
-def skill_name(skill, character, options):
-    """技能显示的名字：武术技能有 kick_name 的，带“踢腿的武道家”时用腿法名（推山掌 → 追风腿）。"""
-    if skill.get("kick_name") and uses_kicks(character, options):
-        return skill["kick_name"]
-    return skill["name"]
-
-
 def learn(character, skill, trees, options):
-    name = skill_name(skill, character, options)
+    name = skill["name"]
     if skill["id"] in character.learned_skills:
         return f"你已经学会{name}了。"
     tree = trees.tree(skill["tree"])
@@ -236,7 +228,7 @@ def _format_skill(character, skill, tree, trees, options, weapon_types):
         weapon += f"（消耗 {ap_cost(skill)} 行动点）"
     if cooldown_text(skill):
         weapon += f"（{cooldown_text(skill)}）"
-    lines = [f"  {kind}{skill_name(skill, character, options)}  {skill.get('cost', 1)} 点  {status}", f"    {skill['description']}{weapon}"]
+    lines = [f"  {kind}{skill['name']}  {skill.get('cost', 1)} 点  {status}", f"    {skill['description']}{weapon}"]
     lines += [f"    {line}" for line in skill_details(character, skill, trees, options)]
     return "\n".join(lines)
 

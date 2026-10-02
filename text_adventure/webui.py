@@ -624,7 +624,7 @@ class Session:
             weapon = skill.get("weapon_type")
             out.append({
                 "id": skill["id"],
-                "name": skill_rules.skill_name(skill, c, self.options),
+                "name": skill["name"],
                 "tree": trees.tree(skill["tree"])["name"],
                 "ap_cost": skill_rules.ap_cost(skill),
                 "cooldown": skill_rules.cooldown_text(skill),
@@ -650,7 +650,7 @@ class Session:
                 weapon = skill.get("weapon_type")
                 skills.append({
                     "id": skill["id"],
-                    "name": skill_rules.skill_name(skill, c, self.options),
+                    "name": skill["name"],
                     "branch": skill.get("branch", ""),
                     "cost": skill.get("cost", 1),
                     "description": skill["description"],

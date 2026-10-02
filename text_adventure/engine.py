@@ -1674,7 +1674,7 @@ class Game:
         """
         if not self.character:
             return "还没有创建角色。"
-        name = skills.skill_name(skill, self.character, self.options)
+        name = skill["name"]
         if skill["id"] not in self.character.learned_skills:
             return f"你还没学会「{name}」，先去技能树里学（学习 {name}）。"
         if skill.get("type") != "active":
