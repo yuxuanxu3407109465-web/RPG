@@ -10,12 +10,8 @@
       220
     ],
     "companion_age": [
-      1,
-      100
-    ],
-    "companion_height": [
-      20,
-      220
+      16,
+      80
     ]
   },
   "genders": [
@@ -117,13 +113,6 @@
       "age": 24,
       "relationship": "合租室友",
       "appearance": "短发，戴一副黑框眼镜，总穿着宽大的连帽卫衣。"
-    },
-    {
-      "name": "大黄",
-      "gender": "公",
-      "age": 3,
-      "relationship": "你养的狗",
-      "appearance": "一只黄色的中华田园犬，耳朵一只立着一只耷拉着。"
     }
   ],
   "perks": [

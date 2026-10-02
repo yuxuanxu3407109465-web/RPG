@@ -458,10 +458,10 @@ class CharacterCreator:
             *limits["companion_age"],
         )
         height = self.ask.number(
-            f"同伴的身高 cm（{limits['companion_height'][0]}~{limits['companion_height'][1]}）：",
-            *limits["companion_height"],
+            f"同伴的身高 cm（{limits['height'][0]}~{limits['height'][1]}）：",
+            *limits["height"],
         )
-        relationship = self.ask.text("TA 和你是什么关系（例如：妹妹、同事、你养的猫）：", max_length=12)
+        relationship = self.ask.text("TA 和你是什么关系（例如：妹妹、同事、邻居）：", max_length=12)
         self.ask.print("\n【同伴样貌】自由描述同伴的外貌（直接回车跳过）")
         appearance = self.ask.text("样貌：", max_length=100, default="没什么特别的。")
         # 和玩家一样选背景、perk、分配属性；灵能者背景、孤独之路、受欢迎（player_only）不开放
