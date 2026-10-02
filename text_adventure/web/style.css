@@ -1606,3 +1606,14 @@ input[type="range"].rest-range::-moz-range-thumb {
 
 .ap-track { background: #221c2c; border-color: #33293f; }
 .ap-fill { background: linear-gradient(90deg, #6a4bb0, #9b7ae0); }   /* 行动点：紫色 */
+
+/* 技能栏格子大小恒定：内容区撑满面板，3×3 的行列都平分，格子大小只由面板决定、不看里面写了什么
+   （以前内容区高度跟着内容走，登记了技能的格子多一行字，那一行就被撑高）。 */
+.move-panel .skill-slots-body { flex: 1 1 0; min-height: 0; overflow: hidden; }
+.skill-slots-body .slot-grid {
+  flex: 1 1 0;
+  min-height: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+}
+.skill-slots-body .slot-cell { min-width: 0; min-height: 0; box-sizing: border-box; margin: 0; }

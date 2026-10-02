@@ -424,7 +424,7 @@
     if (!entry) {
       return '<span class="slot-cell slot-empty-cell" data-slot-cell="' + index + '" tabindex="0" title="第 ' +
         (index + 1) + ' 格：把背包里的物品或技能树里已学会的主动技能拖进来登记">' +
-        '<span class="slot-index">' + inPage + '</span><span class="slot-sub">空</span></span>';
+        '<span class="slot-index">' + inPage + '</span><span class="slot-name">&nbsp;</span><span class="slot-sub">空</span></span>';
     }
     var cmd = entry.kind === 'skill' ? ('用 ' + entry.name) : (entry.cmd || ('查看 ' + entry.name));
     var sub = entry.kind === 'skill' ? '技能' : '物品';
