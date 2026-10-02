@@ -253,7 +253,7 @@
       "tree": "martial",
       "name": "武道姿态",
       "cost": 1,
-      "description": "两只手都空着时，可以在猛虎下山、灵蛇两种姿态之间切换，同时只能开启一个，切换不占用行动。"
+      "description": "两只手都空着时，可以在猛虎下山、灵蛇出洞两种姿态之间切换，同时只能开启一个，切换不占用行动。"
     },
     {
       "id": "martial_flurry",
@@ -667,7 +667,7 @@
     },
     {
       "id": "martial_snake",
-      "name": "灵蛇",
+      "name": "灵蛇出洞",
       "skill": "martial_stance",
       "weapon_type": "unarmed",
       "description": "身形游走，被围得越紧越难打中。",
