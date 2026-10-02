@@ -177,12 +177,34 @@ def hold_slots(item):
 GRIPS = {"unarmed": "徒手", "one_hand": "单手", "dual_wield": "双持", "two_hand": "双手", "shield": "持盾"}
 
 BLOCKS_PER_TURN = 1  # 持盾时每回合默认能格挡几次
-SHIELD_BASH_DAMAGE = "1d4"  # 盾击伤害（近战，吃力量修正）
+SHIELD_BASH_DAMAGE = "1d4"  # 盾击伤害（近战，吃力量修正；盾牌等阶 ± 伤害）
+SHIELD_BASH_ACCURACY_ATTRIBUTE = "constitution"  # 盾击命中看哪项属性（暂定体质，和格挡一致）
+
+
+def shield_bash_accuracy(a, shield):
+    """盾击精准 = 体质 × 1.5（向下取整）+ 盾牌等阶加成（精良 +1、传说 +2、破旧 −1）。"""
+    return check_modifier(a, SHIELD_BASH_ACCURACY_ATTRIBUTE) + quality_bonus(shield)
+
+
+def shield_bash_damage(shield):
+    """盾击伤害骰：1d4 + 盾牌等阶加成（精良 1d4+1）。"""
+    bonus = quality_bonus(shield)
+    return SHIELD_BASH_DAMAGE + (f"{bonus:+d}" if bonus else "")
 
 
 def shield_bash_difficulty(a):
-    """盾击时目标体质检定的难度 = 攻击者 体质 × 1.5（向下取整）+ 力量（和格挡修正同一个公式）。"""
-    return block_modifier(a)
+    """盾击命中后，目标体质检定（d20 + 体质 × 1.5）的难度 =（攻击者 力量 + 体质）× 1.5，向下取整。"""
+    return (a["strength"] + a["constitution"]) * 3 // 2
+
+
+# 眩晕：下回合最后一个行动。同一回合里第二次被眩晕 → 升级为震慑：跳过下一个回合。
+STUN_CONDITIONS = {"stunned": "眩晕", "dazed": "震慑"}
+STUN_EFFECTS = {"stunned": "下回合最后一个行动", "dazed": "跳过一个回合"}
+
+
+def stun_level(times_this_turn):
+    """这一回合里第几次被眩晕（从 1 数）→ 得到的状态：第 1 次眩晕，第 2 次起升级为震慑。"""
+    return "dazed" if times_this_turn >= 2 else "stunned"
 
 
 def block_modifier(a):

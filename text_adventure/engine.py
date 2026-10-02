@@ -2268,23 +2268,43 @@ class Game:
         enemy = self._parse_enemy(arg) if arg else None
         if not enemy:
             return "用法：试盾击 敌人 等阶，例如：试盾击 壮尸 精英"
+        # 末尾写个数字 = 同一回合里连着盾击几次（演示眩晕升级为震慑），例如：试盾击 壮尸 2
+        times = 1
+        parts = arg.split()
+        if parts and parts[-1].isdigit():
+            times = max(1, min(5, int(parts[-1])))
         a = self.character.attributes
-        weapon = {"name": "盾击", "damage": stats.SHIELD_BASH_DAMAGE,
+        shield = self.world.items[next(i for i in self.equipment.values() if self._shield(i))]
+        accuracy = stats.shield_bash_accuracy(a, shield)
+        weapon = {"name": "盾击", "damage": stats.shield_bash_damage(shield),
                   "damage_modifiers": self.damage_modifiers(stats.UNARMED)}  # 近战：力量、力竭
-        text, damage = self._roll_damage(weapon, enemy.armor)
-        enemy.hp = max(0, enemy.hp - damage)
         difficulty = stats.shield_bash_difficulty(a)
-        modifier = stats.check_modifier(enemy.attributes, "constitution")
-        check = self.dice.check(modifier, difficulty, "体质修正")
-        verdict = "撑住了" if check.success else "被撞晕了，下回合最后一个行动"
-        return "\n".join([
-            f"你用盾牌猛击{enemy.name}（护甲 {enemy.armor}）：",
-            text,
-            f"{enemy.name} 生命 {enemy.max_hp} → {enemy.hp}/{enemy.max_hp}",
-            f"体质检定（难度 {difficulty} = 你的体质 {a['constitution']} × 1.5 + 力量 {a['strength']}）：",
-            check.text + f" → {enemy.name}{verdict}",
-            f"（测试：真正使用时消耗 3 行动点，冷却 1 回合）",
-        ])
+        quality = stats.quality_bonus(shield)
+        lines = [f"你用{shield['name']}猛击{enemy.name}（闪避 {enemy.dodge()}、护甲 {enemy.armor}），"
+                 f"精准 {accuracy}（体质 × 1.5" + (f"，含盾牌等阶 {quality:+d}" if quality else "") + "）："]
+        for n in range(times):
+            if times > 1:
+                lines.append(f"—— 第 {n + 1} 次 ——")
+            result = self.dice.attack(accuracy, enemy.dodge(), "20")
+            lines.append(result.text)
+            if not result.hit:
+                continue
+            text, damage = self._roll_damage(weapon, enemy.armor, result.crit)
+            enemy.hp = max(0, enemy.hp - damage)
+            lines += [text, f"{enemy.name} 生命 → {enemy.hp}/{enemy.max_hp}"]
+            modifier = stats.check_modifier(enemy.attributes, "constitution")
+            check = self.dice.check(modifier, difficulty, "体质修正")
+            lines.append(f"体质检定（难度 {difficulty} =（你的力量 {a['strength']} + 体质 {a['constitution']}）× 1.5）：")
+            if check.success:
+                lines.append(check.text + f" → {enemy.name}撑住了")
+                continue
+            state = enemy.apply_stun(self.turns)
+            upgraded = state == "dazed" and enemy.stun_count >= 2
+            lines.append(check.text + f" → {enemy.name}" + (
+                "这一回合第二次被撞晕，眩晕升级为【震慑】：跳过下一个回合" if upgraded
+                else f"【{stats.STUN_CONDITIONS[state]}】：{stats.STUN_EFFECTS[state]}"))
+        lines.append("（测试：不花行动点；真正使用时消耗 6 行动点，冷却到本回合结束）")
+        return "\n".join(lines)
 
     def cmd_initiative_test(self, arg):
         """试先攻：你和一个敌人各掷一次先攻检定，看谁先动。"""
@@ -2676,7 +2696,7 @@ class Game:
             "  敌人 <名字> <等阶>         随机生成一个敌人看看资料，例如：敌人 疾尸 精英\n"
             "  试受击 <敌人> <等阶>       让敌人打你一次，看闪避 / 格挡 / 护甲（不扣血），例如：试受击 壮尸\n"
             "                          末尾加“劣势”模拟敌人处于劣势，例如：试受击 疾尸 精英 劣势\n"
-            "  试盾击 <敌人> <等阶>       持盾时对敌人试一次盾击，例如：试盾击 壮尸 精英\n"
+            "  试盾击 <敌人> <等阶> [次数] 持盾时对敌人试盾击，例如：试盾击 壮尸 精英；末尾写 2 演示同回合眩晕升级为震慑\n"
             "  试先攻 <敌人> <等阶>       和敌人各掷一次先攻检定，例如：试先攻 疾尸\n"
             "  等待 / wait             原地等一回合（战斗外 1 分钟，也算生命恢复的回合）\n"
             "  休息 <时长>             恢复体力并推进时间，例如：休息 30、休息 2小时（1~480 分钟）\n"

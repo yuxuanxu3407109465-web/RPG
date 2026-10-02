@@ -41,6 +41,18 @@ class Enemy:
     base_attributes: dict = field(default_factory=dict)  # 原始属性（不超过 10）
     buffs: dict = field(default_factory=dict)  # {属性 id: [(来源, 数值), ...]}
     mutations: list = field(default_factory=list)  # 变异 id（僵尸独有的强化）
+    stun_turn: int = -1  # 最近一次被眩晕是在第几回合
+    stun_count: int = 0  # 那一回合里被眩晕了几次（同一回合第 2 次升级为震慑）
+    stun: str = None  # 当前的眩晕类状态：stunned（眩晕）/ dazed（震慑）/ None
+
+    def apply_stun(self, turn):
+        """被眩晕一次：同一回合里第 2 次起升级为震慑。返回现在的状态 id。"""
+        self.stun_count = self.stun_count + 1 if self.stun_turn == turn else 1
+        self.stun_turn = turn
+        level = stats.stun_level(self.stun_count)
+        if self.stun != "dazed":  # 已经是震慑就不会降回眩晕
+            self.stun = level
+        return self.stun
 
     @property
     def tier_name(self):
