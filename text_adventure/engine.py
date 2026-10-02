@@ -275,6 +275,7 @@ class Game:
             (["敌人", "enemy"], self.cmd_enemy),
             (["试受击", "defend test"], self.cmd_defend_test),
             (["试盾击", "bash test"], self.cmd_bash_test),
+            (["试眩晕", "stun test"], self.cmd_stun_test),
             (["试先攻", "initiative test"], self.cmd_initiative_test),
             (["使用", "吃", "喝", "use"], self.cmd_use),
             (["休息", "睡", "rest"], self.cmd_rest),
@@ -1155,12 +1156,56 @@ class Game:
         return stats.ap_cap(self.character.attributes, self.armor_ap_penalty())
 
     def _pass_turn(self):
-        """回合结束：过 1 分钟（饿 / 渴、回血、掉血都在这里），然后获得新回合的行动点。"""
+        """回合结束：过 1 分钟（饿 / 渴、回血、掉血都在这里），然后获得新回合的行动点。
+        被震慑的话，新的这一回合直接跳过（不获得行动点，再过 1 分钟）。"""
         self.turns += 1
         self.advance_time(1)
         self._regenerate()
-        if self.character:
-            self.ap = min(self.ap_cap(), self.ap + self.ap_gain())
+        if not self.character:
+            return
+        if self._tick_stun():
+            self.pending_notes.append("（你被震慑了，跳过了这一回合）")
+            self._pass_turn()
+            return
+        self.ap = min(self.ap_cap(), self.ap + self.ap_gain())
+
+    # ---------- 眩晕 / 震慑（玩家）----------
+    # 眩晕：下回合最后一个行动（等战斗流程接上）；同一回合第二次被眩晕 → 震慑：跳过下一个回合。
+
+    def stun_player(self):
+        """玩家被眩晕一次，返回现在的状态 id（stunned / dazed）。"""
+        c = self.character
+        cur = next((x for x in c.conditions if x.get("id") in stats.STUN_CONDITIONS), None)
+        count = cur.get("count", 1) + 1 if cur and cur.get("turn") == self.turns else 1
+        level = "dazed" if cur and cur["id"] == "dazed" else stats.stun_level(count)
+        c.conditions = [x for x in c.conditions if x is not cur]
+        c.conditions.append({"id": level, "name": stats.STUN_CONDITIONS[level],
+                             "effect": stats.STUN_EFFECTS[level], "turn": self.turns, "count": count})
+        return level
+
+    def _tick_stun(self):
+        """新回合开始时结算眩晕类状态：震慑 → 这一回合跳过（返回 True）并解除；
+        眩晕 → 撑过被眩晕后的那一整个回合才解除。"""
+        c = self.character
+        for x in list(c.conditions):
+            if x.get("id") == "dazed" and self.turns > x["turn"]:
+                c.conditions.remove(x)
+                return True
+            if x.get("id") == "stunned" and self.turns > x["turn"] + 1:
+                c.conditions.remove(x)
+        return False
+
+    def cmd_stun_test(self, arg):
+        """试眩晕 [次数]：这一回合里让自己被眩晕几次（演示眩晕 → 震慑），不花行动点。"""
+        if not self.character:
+            return "还没有创建角色。"
+        times = max(1, min(5, int(arg))) if arg.isdigit() else 1
+        lines = []
+        for n in range(times):
+            level = self.stun_player()
+            lines.append(f"第 {n + 1} 次：你【{stats.STUN_CONDITIONS[level]}】——{stats.STUN_EFFECTS[level]}")
+        lines.append("（测试：结束回合后就能看到效果；震慑会让下一回合直接跳过、拿不到行动点）")
+        return "\n".join(lines)
 
     def spend_ap(self, cost):
         """花行动点。不够就先把剩下的花掉、结束回合、下回合接着付；花到 0 也结束回合。

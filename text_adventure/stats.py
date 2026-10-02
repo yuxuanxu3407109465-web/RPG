@@ -178,7 +178,8 @@ GRIPS = {"unarmed": "徒手", "one_hand": "单手", "dual_wield": "双持", "two
 
 BLOCKS_PER_TURN = 1  # 持盾时每回合默认能格挡几次
 SHIELD_BASH_DAMAGE = "1d4"  # 盾击伤害（近战，吃力量修正；盾牌等阶 ± 伤害）
-SHIELD_BASH_ACCURACY_ATTRIBUTE = "constitution"  # 盾击命中看哪项属性（暂定体质，和格挡一致）
+SHIELD_BASH_ACCURACY_ATTRIBUTE = "constitution"  # 盾击命中看体质
+GET_UP_AP_COST = 9  # 倒地后爬起来要花的行动点（会引发借机攻击）
 
 
 def shield_bash_accuracy(a, shield):
