@@ -168,17 +168,26 @@ class CombatMixin:
         return broke
 
     def _roll_initiative(self):
-        """遭遇开始：你和这个场景里的每个敌人各掷一次先攻（和你同分的敌人重掷）。"""
+        """遭遇开始：你和这个场景里的每个敌人各掷一次先攻。
+        和你同分的敌人：你们俩重掷，直到分出先后——重掷的数只决定它和你谁先，
+        你和其他敌人比较时仍然用第一次掷的结果。"""
         advantage = self.options.perk_effect(self.character.perks, "initiative_advantage")
-        self.player_init, _ = self.dice.initiative(stats.initiative(self.character.attributes), advantage)
+        mine = stats.initiative(self.character.attributes)
+        self.player_init, _ = self.dice.initiative(mine, advantage)
         parts = [f"你 {self.player_init}"]
         for e in self.alive_enemies():
-            while True:
-                roll, _ = self.dice.initiative(e.initiative())
-                if roll != self.player_init:
-                    break
-            e.init_roll = roll
-            parts.append(f"{e.label} {roll}")
+            e.init_roll, _ = self.dice.initiative(e.initiative())
+            e.init_tiebreak = 0
+            text = f"{e.label} {e.init_roll}"
+            if e.init_roll == self.player_init:
+                while True:
+                    me, _ = self.dice.initiative(mine, advantage)
+                    it, _ = self.dice.initiative(e.initiative())
+                    if me != it:
+                        break
+                e.init_tiebreak = 1 if it > me else -1
+                text += f"（和你同分，重掷 你 {me} : {it}，{'它' if it > me else '你'}先）"
+            parts.append(text)
         self.pending_notes.append("先攻：" + "、".join(parts) + "（比你高的每回合先于你行动）")
 
     # ---------- 回合顺序 ----------
@@ -188,11 +197,12 @@ class CombatMixin:
                    for x in self.character.conditions)
 
     def _player_order_key(self):
-        return (0 if self._player_stunned_now() else 1, self.player_init or 0)
+        return (0 if self._player_stunned_now() else 1, self.player_init or 0, 0)
 
     def _enemy_order_key(self, e):
+        """排序用：(没眩晕, 第一次的先攻, 和你同分时的重掷结果)。敌人之间只看前两项。"""
         stunned = e.stun == "stunned" and e.stun_turn < self.turns
-        return (0 if stunned else 1, e.init_roll if e.init_roll is not None else -1)
+        return (0 if stunned else 1, e.init_roll if e.init_roll is not None else -1, e.init_tiebreak)
 
     def _enemy_phase(self, before_player):
         """让这一轮还没行动的敌人行动。before_player=True 只动排在玩家前面的。"""

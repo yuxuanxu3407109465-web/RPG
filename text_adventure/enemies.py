@@ -51,6 +51,7 @@ class Enemy:
     ap: int = 0  # 当前行动点
     aware: bool = False  # 发现玩家没有（没发现就站着不动；没发现你时你打它算偷袭）
     init_roll: int = None  # 这一次遭遇的先攻检定结果；None = 还没掷（排在玩家后面）
+    init_tiebreak: int = 0  # 和玩家先攻同分时双方重掷的结果：+1 它先、−1 你先（重掷的数只用来分它和你的先后）
     acted: bool = False  # 这一轮行动过没有
     dots: list = field(default_factory=list)  # 持续伤害：[{"kind", "damage", "turns"}]，最老的在前
     knocked_down: bool = False  # 倒地：闪避 −6，要花 9 行动点爬起来
