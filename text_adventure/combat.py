@@ -35,7 +35,7 @@ class CombatMixin:
         self.next_enemy_uid = 1
         self.player_dots = []  # 玩家身上的持续伤害（流血、灼烧、强酸腐蚀）
         self.player_init = None  # 这一次遭遇里玩家的先攻；None = 现在没有遭遇
-        self.enemies_seen = False  # 上一次检查时视野里有没有敌人（从无到有才打断行动）
+        self.seen_enemy_ids = []  # 上一次检查时视野里有哪些敌人（uid），用来判断“新进入视野”
         self.interrupted = False  # 这一步被“发现敌人”打断了（网页版据此停下自动寻路）
         self.blocks_left = 0  # 这一轮还能格挡几次
 
@@ -153,16 +153,24 @@ class CombatMixin:
                 e.aware = True
                 self.pending_notes.append(f"{e.label}发现了你！")
         visible = self.visible_enemies()
+        new = [e for e in visible if e.uid not in self.seen_enemy_ids]
+        first = bool(visible) and not self.seen_enemy_ids  # 首个敌人进入视野 = 进入战斗
         broke = False
-        if visible and not self.enemies_seen:
+        if first:
+            self._roll_initiative()
+        elif new and self.player_init is not None:
+            for e in new:  # 遭遇中途新看见的敌人：这时候才掷它的先攻
+                if e.init_roll is None:
+                    self.pending_notes.append("先攻：" + self._roll_enemy_initiative(e))
+        # 默认只在首个敌人进入视野时打断；设置里打开“每个敌人”后，每有敌人新进入视野都打断
+        if first or (new and self.settings.get("interrupt_every_enemy")):
             broke = True
             self.interrupted = True
             here = self.player_pos()
             spotted = "、".join(f"{e.label}（第 {e.pos[0] + 1} 列，第 {e.pos[1] + 1} 行，{distance(e.pos, here)} 格外）"
-                                for e in visible)
+                                for e in (visible if first else new))
             self.pending_notes.append(f"⚠ 视野里出现了敌人：{spotted}。当前行动被打断。")
-            self._roll_initiative()
-        self.enemies_seen = bool(visible)
+        self.seen_enemy_ids = [e.uid for e in visible]
         if not visible and not any(e.aware for e in self.alive_enemies()):
             self.player_init = None  # 这一次遭遇结束了，下次遇到重新掷先攻
         return broke
@@ -174,21 +182,24 @@ class CombatMixin:
         advantage = self.options.perk_effect(self.character.perks, "initiative_advantage")
         mine = stats.initiative(self.character.attributes)
         self.player_init, _ = self.dice.initiative(mine, advantage)
-        parts = [f"你 {self.player_init}"]
-        for e in self.alive_enemies():
-            e.init_roll, _ = self.dice.initiative(e.initiative())
-            e.init_tiebreak = 0
-            text = f"{e.label} {e.init_roll}"
-            if e.init_roll == self.player_init:
-                while True:
-                    me, _ = self.dice.initiative(mine, advantage)
-                    it, _ = self.dice.initiative(e.initiative())
-                    if me != it:
-                        break
-                e.init_tiebreak = 1 if it > me else -1
-                text += f"（和你同分，重掷 你 {me} : {it}，{'它' if it > me else '你'}先）"
-            parts.append(text)
+        parts = [f"你 {self.player_init}"] + [self._roll_enemy_initiative(e) for e in self.alive_enemies()]
         self.pending_notes.append("先攻：" + "、".join(parts) + "（比你高的每回合先于你行动）")
+
+    def _roll_enemy_initiative(self, e):
+        """给一个敌人掷先攻（和你同分就双方重掷，只决定你俩的先后），返回说明文字。"""
+        advantage = self.options.perk_effect(self.character.perks, "initiative_advantage")
+        e.init_roll, _ = self.dice.initiative(e.initiative())
+        e.init_tiebreak = 0
+        text = f"{e.label} {e.init_roll}"
+        if e.init_roll == self.player_init:
+            while True:
+                me, _ = self.dice.initiative(stats.initiative(self.character.attributes), advantage)
+                it, _ = self.dice.initiative(e.initiative())
+                if me != it:
+                    break
+            e.init_tiebreak = 1 if it > me else -1
+            text += f"（和你同分，重掷 你 {me} : {it}，{'它' if it > me else '你'}先）"
+        return text
 
     # ---------- 回合顺序 ----------
 

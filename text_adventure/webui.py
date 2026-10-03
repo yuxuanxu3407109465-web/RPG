@@ -898,6 +898,7 @@ class Session:
             },
             "ap": {"value": game.ap, "gain": game.ap_gain(), "max": game.ap_cap(), "turn": game.turns},
             "enemies": game.enemy_state(),   # 看得见的敌人
+            "settings": dict(game.settings),
             "needs": {"food": c.food, "water": c.water, "max": stats.NEED_MAX,
                       "food_stage": game.need_stage("food"), "water_stage": game.need_stage("water")},
             "conditions": game.conditions(),

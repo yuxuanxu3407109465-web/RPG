@@ -1458,7 +1458,7 @@
     el.actionBody.innerHTML =
       (state.rest ? restSection(state) : '') +
       saveSection(state) +
-      systemSection();
+      systemSection(state);
     bindActionControls();
   }
 
@@ -2546,8 +2546,12 @@
       savePad(state) + '</div>';
   }
 
-  function systemSection() {
+  function systemSection(state) {
+    // 遇敌中断：点一下在“首个敌人 / 每个敌人”之间切换（规则在引擎的“设置”指令里）
+    var every = !!(state && state.settings && state.settings.interrupt_every_enemy);
     return '<div class="section"><h4>' + icon('help') + '系统</h4><div class="btn-grid">' +
+      '<button type="button" class="btn small" data-cmd="设置 遇敌中断" title="首个敌人：只在视野里出现第一个敌人（进入战斗）时打断行动；每个敌人：每有敌人新进入视野都打断">' +
+      icon('stance') + '<span>遇敌中断：' + (every ? '每个敌人' : '首个敌人') + '</span></button>' +
       btn('地图', '地图', 'map', 'small') +
       btn('角色', '角色卡', 'person', 'small') +
       btn('帮助', '帮助', 'help', 'small') +

@@ -264,6 +264,7 @@ class Game(CombatMixin):
         migrate_old_save(self.save_dir)
         self.character = None
         self.running = True
+        self.settings = self._load_settings()  # 个人偏好（不跟存档走），见 cmd_settings
         self.reset()
         # (别名列表, 处理函数)，别名越长越优先匹配
         self.commands = [
@@ -301,6 +302,7 @@ class Game(CombatMixin):
             (["存档", "save"], self.cmd_save),
             (["读档", "load"], self.cmd_load),
             (["清空存档", "清空", "删除存档", "clear"], self.cmd_clear),
+            (["设置", "settings"], self.cmd_settings),
             (["帮助", "help", "h", "?"], self.cmd_help),
             (["退出", "quit", "q"], self.cmd_quit),
         ]
@@ -898,7 +900,7 @@ class Game(CombatMixin):
         entry = self.entry_tile(exit_, direction)
         if entry:
             self.set_pos(entry)
-        self.enemies_seen = False  # 换了场景：新场景里的敌人都算“刚出现”
+        self.seen_enemy_ids = []  # 换了场景：新场景里的敌人都算“刚出现”
         cost_note, notes = self._pay_move(overweight, cost)
         self.check_enemies()
         text = self.describe_room()
@@ -2592,7 +2594,7 @@ class Game(CombatMixin):
             "next_enemy_uid": self.next_enemy_uid,
             "player_dots": self.player_dots,
             "player_init": self.player_init,
-            "enemies_seen": self.enemies_seen,
+            "seen_enemy_ids": self.seen_enemy_ids,
             "blocks_left": self.blocks_left,
             "ap": self.ap,
             "indoor_steps": self.indoor_steps,
@@ -2663,7 +2665,7 @@ class Game(CombatMixin):
         self.next_enemy_uid = state.get("next_enemy_uid", 1)
         self.player_dots = state.get("player_dots", [])
         self.player_init = state.get("player_init")
-        self.enemies_seen = state.get("enemies_seen", False)
+        self.seen_enemy_ids = state.get("seen_enemy_ids", [])
         self.blocks_left = state.get("blocks_left", 0)
         # 老存档没有行动点：给满一回合的量
         self.ap = min(state.get("ap", self.ap_gain()), self.ap_cap()) if self.character else 0
@@ -2857,6 +2859,49 @@ class Game(CombatMixin):
             notes.append(f"已取下 {dropped} 件失效的穿戴装备")
         return notes
 
+    # ---------- 设置（个人偏好，存在 saves/settings.json，不跟存档走）----------
+
+    SETTINGS = {
+        "interrupt_every_enemy": ("遇敌中断", {False: "首个敌人", True: "每个敌人"},
+                                  "首个敌人：只在视野里出现第一个敌人（进入战斗）时打断行动；"
+                                  "每个敌人：每有敌人新进入视野都打断"),
+    }
+
+    def _load_settings(self):
+        settings = {key: False for key in self.SETTINGS}
+        try:
+            saved = json.loads((self.save_dir / "settings.json").read_text(encoding="utf-8"))
+            settings.update({k: bool(v) for k, v in saved.items() if k in settings})
+        except (OSError, ValueError):
+            pass
+        return settings
+
+    def cmd_settings(self, arg):
+        """设置：不写参数列出当前设置；“设置 遇敌中断 每个敌人”改一项（只写名字就来回切换）。"""
+        parts = (arg or "").split()
+        if not parts:
+            lines = ["当前设置："]
+            for key, (name, values, note) in self.SETTINGS.items():
+                lines.append(f"  {name}：{values[self.settings[key]]}（{note}）")
+            lines.append("改设置：设置 遇敌中断 每个敌人 / 首个敌人（只写“设置 遇敌中断”就来回切换）")
+            return "\n".join(lines)
+        key = next((k for k, (name, _, _) in self.SETTINGS.items() if parts[0] in (k, name)), None)
+        if not key:
+            return f"没有“{parts[0]}”这个设置。输入“设置”看看有哪些。"
+        name, values, _ = self.SETTINGS[key]
+        if len(parts) > 1:
+            choice = next((v for v, label in values.items() if parts[1] in (label, label[:2])), None)
+            if choice is None:
+                return f"{name}可以设成：{'、'.join(values.values())}。"
+        else:
+            choice = not self.settings[key]
+        self.settings[key] = choice
+        try:
+            write_json_file(self.save_dir / "settings.json", self.settings)
+        except OSError:
+            return f"{name}：{values[choice]}（这次有效，但设置文件没能保存）"
+        return f"{name}：{values[choice]}。"
+
     def cmd_help(self, arg):
         return (
             "可用指令：\n"
@@ -2893,6 +2938,7 @@ class Game(CombatMixin):
             "  试先攻 <敌人> <等阶>       和敌人各掷一次先攻检定，例如：试先攻 疾尸\n"
             "  攻击 <敌人> [副手]         打一个够得着的敌人（6 行动点），例如：攻击 行尸A；不写目标就打最近的\n"
             "  试刷怪 <敌人> [等级] [等阶] 在当前场景随机放一只敌人（测试用），例如：试刷怪 行尸 2\n"
+            "  设置 [名字] [值]          查看 / 修改设置，例如：设置 遇敌中断 每个敌人\n"
             "  等待 / wait             原地等一回合（战斗外 1 分钟，也算生命恢复的回合）\n"
             "  休息 <时长>             恢复体力并推进时间，例如：休息 30、休息 2小时（1~480 分钟）\n"
             "                          体力满了也能休息，只是时间照样过去\n"
