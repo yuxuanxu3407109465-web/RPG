@@ -1956,3 +1956,59 @@ input[type="range"].rest-range::-moz-range-thumb {
 .map-exit[data-map-go="up"] { right: -4px; top: -6px; }
 .map-exit[data-map-go="down"] { right: -4px; bottom: -6px; }
 .map-at { font-size: 7px; left: -3px; top: -3px; }
+
+/* 小地图上"知道那边有块地方、但还没去过"的格子：一个暗色的「?」 */
+.map-room.unknown {
+  background: repeating-linear-gradient(45deg, #14171d, #14171d 5px, #181c23 5px, #181c23 10px);
+  border-color: #262b34;
+  color: #4d5765;
+}
+.map-room.unknown .map-room-name { color: #4d5765; font-size: 11px; }
+
+/* 场景里的门与楼梯：门写下一个地点的名字，上楼 / 下楼写绿字（一眼分得出上下） */
+.scene-cell .item-chip.chip-door { border-color: #6b6152; color: #d9cfba; }
+.scene-cell .item-chip.chip-stairs { border-color: #3d6b46; color: #86df95; }
+
+/* 系统里的声音：音效 / 音乐两条滑条 + 选曲 */
+.audio-box { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 4px; }
+.audio-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--dim); margin-top: 6px; }
+.audio-label { flex: 0 0 28px; }
+.audio-value { flex: 0 0 22px; text-align: right; color: var(--dim-2); }
+input[type="range"].audio-range {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #2f6f8f, #4aa7c9);
+  outline: none;
+}
+input[type="range"].audio-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #e8eef4;
+  border: 2px solid #2f6f8f;
+  cursor: pointer;
+}
+input[type="range"].audio-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #e8eef4;
+  border: 2px solid #2f6f8f;
+  cursor: pointer;
+}
+.audio-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: #191d24;
+  color: inherit;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 11px;
+}

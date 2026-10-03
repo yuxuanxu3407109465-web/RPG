@@ -20,6 +20,7 @@ from character import Character, format_sheet
 from combat import CombatMixin, distance
 from enemies import Enemy, EnemyBook, format_enemy
 from map_view import render_map
+from outdoor import OutdoorMixin
 
 # 各种写法 -> 内部方向名
 DIRECTIONS = {
@@ -170,6 +171,8 @@ class World:
                 self.items[item_id] = item
         self.npcs = data["npcs"]
         self.map_areas = data.get("map_areas", [])
+        # 室外街区的生成规则（每局随机生成，见 outdoor.py）
+        self.outdoor = data.get("outdoor", {})
         # 随机物资池：好几处地方可以共用一份「第一次进来扔什么」的清单（见 world.json 的 spawn_pools）
         self.spawn_pools = data.get("spawn_pools", {})
         self.weapon_types = data.get("weapon_types", {})  # 武器类型 id -> 显示名
@@ -244,7 +247,7 @@ class World:
         return []
 
 
-class Game(CombatMixin):
+class Game(CombatMixin, OutdoorMixin):
     """一局游戏的可变状态，以及所有玩家指令。"""
 
     def __init__(self, world, options, skill_trees, dice, save_path):
@@ -312,6 +315,11 @@ class Game(CombatMixin):
 
     def reset(self):
         self.current_room = self.world.start_room
+        # 室外街区（street_x_y 这些房间）每局重新生成一次；迷雾 / 随机街道地形跟着这一局走
+        self.outdoor_seed = 0
+        self.outdoor_seen = set()
+        self.gen_grids = {}
+        self.build_outdoor()
         # 背包里每一项都是一“堆”，见下面「背包：一格一堆」那一段
         self.inventory = []
         self.next_stack_id = 1  # 每堆东西的编号，界面靠它指定具体哪一堆
@@ -327,6 +335,7 @@ class Game(CombatMixin):
         self.need_minutes = {"food": 0, "water": 0}  # 距离下一次食物 / 水源 −1 已经过了多少分钟
         self.stamina_carry = Fraction(0)  # 体力消耗乘上饥饿 / 口渴倍率后的小数部分，攒满 1 才扣
         self.pending_notes = []  # 这一步里自动发生的事（例如开始饿了），附在指令输出后面
+        self.sfx_events = []  # 这一步要放哪些音效（见 sfx / webui 的 sfx 字段）
         self.death_cause = None  # 死了就记下死因（stats.DEATH_CAUSES 的 id），读档后清掉
         self.starving_drain = 0  # 这一步里饿 / 渴掉了多少血（攒起来一次提示）
         self.day = stats.START_DAY  # 计时器：第几天
@@ -445,6 +454,7 @@ class Game(CombatMixin):
 
     def handle(self, text):
         """处理一行玩家输入，返回要显示的文字。"""
+        self.sfx_events = []  # 这一步要放哪些音效（网页版读完就放，见 sfx）
         text = text.strip().lower()
         if not text:
             return ""
@@ -455,6 +465,11 @@ class Game(CombatMixin):
         if self.death_cause and fn not in (self.cmd_load, self.cmd_help, self.cmd_quit):
             return self.death_text() + "\n（只能读档、查看帮助或退出）"
         return self._with_notes(fn(arg))
+
+    def sfx(self, name):
+        """记一个音效事件（网页版放声音用的）。同一步里同一种只记一次，免得叠成噪音。"""
+        if name not in self.sfx_events:
+            self.sfx_events.append(name)
 
     def _resolve(self, text):
         """把一行输入解析成 (指令函数, 参数)；认不出来返回 (None, None)。"""
@@ -504,8 +519,21 @@ class Game(CombatMixin):
     # 没写 grid 的房间自动退回老做法（走一步 = 直接换房间），所以旧数据也能跑。
 
     def room_grid(self, room_id=None):
-        """这个房间的格子场景；没写就返回 None。"""
-        room = self.world.rooms[room_id or self.current_room]
+        """这个房间的格子场景；没写就返回 None。
+
+        街道这类房间的地形是每局随机生成的（房间里写的是 random_grid），
+        第一次问起的时候才生成，生成结果记进 gen_grids（存进存档，同一局不会变）。
+        """
+        room_id = room_id or self.current_room
+        room = self.world.rooms.get(room_id)
+        if not room:
+            return None
+        if room.get("random_grid"):
+            grid = self.gen_grids.get(room_id)
+            if grid is None:
+                grid = self.street_grid(room_id)
+                self.gen_grids[room_id] = grid
+            return grid
         grid = room.get("grid")
         if not grid or not grid.get("tiles"):
             return None
@@ -677,13 +705,21 @@ class Game(CombatMixin):
             return None
         width, height = self.grid_size(grid)
         coords = self.ground_positions_in()
-        things = [
-            {"id": f"g{index}", "name": self.world.items[item_id]["name"],
-             "kind": "item", "x": coord[0], "y": coord[1]}
-            for index, (item_id, coord)
-            in enumerate(zip(self.room_items[self.current_room], coords))
-            if coord
-        ]
+        # 同一种东西落在同一格就是一"摞"：合成一件，带上件数（网页版写「罐头 ×3」）
+        things = []
+        stacks = {}
+        for index, (item_id, coord) in enumerate(zip(self.room_items[self.current_room], coords)):
+            if not coord:
+                continue
+            key = (coord[0], coord[1], item_id)
+            found = stacks.get(key)
+            if found:
+                found["count"] += 1
+                continue
+            thing = {"id": f"g{index}", "name": self.world.items[item_id]["name"],
+                     "kind": "item", "x": coord[0], "y": coord[1], "count": 1}
+            stacks[key] = thing
+            things.append(thing)
         objects = grid.get("objects") or {}
         for npc_id in self.world.rooms[self.current_room].get("npcs", []):
             coord = objects.get(npc_id)
@@ -699,9 +735,24 @@ class Game(CombatMixin):
             "height": height,
             "tiles": list(grid["tiles"]),
             "doors": {d: list(c) for d, c in (grid.get("doors") or {}).items()},
+            # 每扇门通向哪儿：门格上直接写下一个地点的名字（没用方向名糊弄玩家）
+            "door_names": self.door_names(grid),
             "things": things,
             "player": [x, y],
         }
+
+    def door_names(self, grid=None):
+        """{出口方向: 下一处地点的名字}：只写真的通到别处去的那些门。"""
+        grid = grid or self.room_grid()
+        if not grid:
+            return {}
+        names = {}
+        for direction in (grid.get("doors") or {}):
+            exit_ = (self.world.rooms.get(self.current_room) or {}).get("exits", {}).get(direction)
+            target = exit_.get("to") if isinstance(exit_, dict) else exit_
+            if isinstance(target, str) and target in self.world.rooms:
+                names[direction] = self.world.rooms[target]["name"]
+        return names
 
     def _drop_tile(self, grid):
         """丢在脚下：优先玩家自己这一格，被占了就找最近的空格子。"""
@@ -802,6 +853,7 @@ class Game(CombatMixin):
         if error:
             return error
         self.set_pos(target)
+        self.reveal_outdoor()  # 走过的地方在地图上就"已知"了（室外迷雾）
         cost_note, notes = self._pay_move(overweight, cost)
         self.check_enemies()
         text = f"移动至（第 {target[0] + 1} 列，第 {target[1] + 1} 行）"
@@ -900,6 +952,8 @@ class Game(CombatMixin):
         entry = self.entry_tile(exit_, direction)
         if entry:
             self.set_pos(entry)
+        self.reveal_outdoor()   # 进了一格新地方：这一格和周围一圈在地图上就"已知"了
+        self.sfx("door")        # 开门 / 换地方：门轴响一声
         self.seen_enemy_ids = []  # 换了场景：新场景里的敌人都算“刚出现”
         cost_note, notes = self._pay_move(overweight, cost)
         self.check_enemies()
@@ -935,27 +989,90 @@ class Game(CombatMixin):
         """从第 START_DAY 天 0 点算起的绝对分钟数：算时限（饱腹、进食窗口）用它。"""
         return (self.day - stats.START_DAY) * stats.MINUTES_PER_DAY + self.minutes
 
-    def roll_room_spawns(self, room_id):
-        """第一次走进某个地点时，按世界数据里的随机物资掷一次。
+    def room_spawn_specs(self, room_id):
+        """这个地点第一次进来能刷出哪些东西：[{id, min, max, weight}, ...]。
 
-        清单有两处来源（两份都会掷）：
+        清单有两处来源（两份都算）：
           · 这个地点自己的 random_items
           · random_pool 指向的公共物资池（spawn_pools），min / max 写在这边，好几处地方能共用一份
-        只在第一次进入时生成：之后再来（或者从存档读回来）都不会重新生成，
-        免得反复进出刷物资。
+        min / max 是这一摞能有几件（堆叠上限），weight 是被挑中的相对权重（默认 1）。
         """
         room = self.world.rooms[room_id]
-        specs = list(room.get("random_items") or [])
+        specs = [dict(spec) for spec in (room.get("random_items") or [])]
         for spec in room.get("random_pool") or []:
             for one in self.world.spawn_pools.get(spec.get("name"), []):
-                specs.append(dict(one, min=spec.get("min", 1), max=spec.get("max", 1)))
+                merged = dict(one)
+                merged["min"] = spec.get("min", one.get("min", 1))
+                merged["max"] = spec.get("max", one.get("max", 1))
+                specs.append(merged)
+        return specs
+
+    def roll_room_spawns(self, room_id):
+        """第一次走进某个地点时掷随机物资：**一张地图最多 5 堆**，一堆占一格。
+
+        掷两次：
+          · 先按 stats.SPAWN_GROUP_WEIGHTS 掷"这一处有几堆"（1 个 30%、2 个 25%……0 个 15%）
+          · 每一堆按 stats.SPAWN_STACK_WEIGHTS 掷"这一摞几件"（1 件 50%、2 件 20%……），
+            再压进这件东西自己的 min / max 里；不能堆叠的东西（武器、护甲）永远 1 件
+        同一种东西同格摞起来（网页版写成「罐头 ×3」），拿的时候一次拿一件。
+        只在第一次进入时生成：之后再来（或者从存档读回来）都不会重新生成，免得反复进出刷物资。
+        """
+        specs = self.room_spawn_specs(room_id)
+        if not specs:
+            return
+        groups = stats.roll_weighted(self.dice.rng, stats.SPAWN_GROUP_WEIGHTS)
+        if not groups:
+            return
+        for _ in range(groups):
+            spec = self._pick_spawn_spec(specs)
+            size = stats.roll_weighted(self.dice.rng, stats.SPAWN_STACK_WEIGHTS)
+            size = max(int(spec.get("min", 1)), min(size, int(spec.get("max", 1))))
+            if not self.world.items.get(spec["id"], {}).get("stack"):
+                size = 1  # 不能堆叠的东西（刀、护甲……）就是一摞一件
+            self.place_stack(room_id, spec["id"], size)
+
+    def _pick_spawn_spec(self, specs):
+        """按 weight 从候选清单里挑一样东西。"""
+        total = sum(max(0, int(spec.get("weight", 1))) for spec in specs)
+        if total <= 0:
+            return specs[0]
+        roll = self.dice.rng.randrange(total)
         for spec in specs:
-            count = self.dice.rng.randint(int(spec.get("min", 1)), int(spec.get("max", 1)))
-            self.room_items[room_id] += [spec["id"]] * count
+            roll -= max(0, int(spec.get("weight", 1)))
+            if roll < 0:
+                return spec
+        return specs[-1]
+
+    def place_stack(self, room_id, item_id, count, at=None):
+        """把一摞东西放在某一格（默认随便找一格空的），一摞占一格。"""
+        self.room_items.setdefault(room_id, [])
+        if not self.room_grid(room_id):
+            self.room_items[room_id] += [item_id] * count
+            return
+        positions = self.ground_positions_in(room_id)   # 先把已有物品的格子补齐
+        grid = self.room_grid(room_id)
+        occupied = {tuple(c) for c in positions if c} | self._npc_tiles(room_id, grid)
+        spot = tuple(at) if at else self._spawn_tile(grid, occupied)
+        if spot and tuple(spot) in occupied:
+            spot = self._spawn_tile(grid, occupied)
+        table = self.ground_positions.setdefault(room_id, [])
+        self.room_items[room_id] += [item_id] * count
+        table += ([list(spot)] * count) if spot else ([None] * count)
+
+    def _spawn_tile(self, grid, occupied):
+        """随便挑一格能站人、又没被占用的格子（东西可以放在门口那格旁边）。"""
+        width, height = self.grid_size(grid)
+        free = [(x, y) for y in range(height) for x in range(width)
+                if self.tile_walkable(grid, x, y) and not self.tile_is_door(grid, x, y)
+                and (x, y) not in occupied]
+        if not free:
+            return None
+        return self.dice.rng.choice(free)
 
     def _no_path(self, room, direction):
         """那个方向走不通：普通房间说墙壁，走廊和室外说有障碍物。"""
         name = DIRECTION_NAMES.get(direction, direction)
+        self.sfx("fail")  # 撞墙 / 走不通：来一声钝响
         if room.get("blocked") == "障碍物":
             return f"{name}边有障碍物，过不去。"
         return f"{name}边是墙壁，没有路。"
@@ -1615,6 +1732,7 @@ class Game(CombatMixin):
         if index < len(table):
             table.pop(index)  # 坐标和物品一一对应，删东西要连它的那一格一起删
         self.add_item(item_id)  # 进背包就自动摞进同种的那一堆
+        self.sfx("pickup")
         return (f"你拿起了{name}。" + self._load_change_note(before)
                 + self.spend_ap(stats.PICKUP_AP_COST))
 
@@ -2610,6 +2728,10 @@ class Game(CombatMixin):
             "dialogue_index": self.dialogue_index,
             "pos": self.pos,
             "ground_positions": self.ground_positions,  # 每件地面物品一个格子，和 room_items 一一对应
+            # 室外街区：这一局的地图种子、已知的格子（迷雾）、随机生成的街道地形
+            "outdoor_seed": self.outdoor_seed,
+            "outdoor_seen": sorted(self.outdoor_seen),
+            "gen_grids": self.gen_grids,
         }
         # 写盘成功之后才切换当前槽：写失败时至少不会连"当前用的是哪个槽"都改掉
         try:
@@ -2639,6 +2761,15 @@ class Game(CombatMixin):
         if "current_room" not in state:
             return f"{slot} 号存档缺少地点信息，读不了。"
         self.use_slot(slot)
+        # 室外街区按存档里的种子重建：同一局读回来地图还是那一张
+        self.build_outdoor(state.get("outdoor_seed"))
+        self.outdoor_seen = set(state.get("outdoor_seen") or [])
+        self.reveal_outdoor("apartment_gate")     # 自家楼下那格总是认识
+        self.gen_grids = {rid: grid for rid, grid in (state.get("gen_grids") or {}).items()
+                          if rid in self.world.rooms}
+        early_notes = []
+        if not state.get("outdoor_seed"):
+            early_notes.append("室外地图换成了每局随机生成的版本，这一局重新生成了一张")
         if state.get("character"):
             self.character = Character.from_dict(state["character"])
             # 旧存档没有属性，按默认值补上
@@ -2658,6 +2789,10 @@ class Game(CombatMixin):
             c.hp = min(c.hp, self.options.max_hp(c))
             c.stamina = min(c.stamina, stats.stamina_max(c.attributes))
         self.current_room = state["current_room"]
+        if self.current_room not in self.world.rooms:
+            # 地图改成每局随机生成之后，老存档里那个房间可能已经不存在了
+            early_notes.append("存档里那个地点在当前这张地图上没有，先把你放回%s" % self.world.start_room)
+            self.current_room = self.world.start_room
         self.turns = state["turns"]
         self._reset_combat()
         self.room_enemies = {r: [Enemy.from_dict(d) for d in es]
@@ -2680,13 +2815,15 @@ class Game(CombatMixin):
         self.day = state.get("day", stats.START_DAY)
         self.minutes = state.get("minutes", stats.START_MINUTES)
         self.visited = set(state.get("visited", [self.current_room]))
+        for room_id in list(self.visited):        # 去过的地方，周围一圈也算已知（老存档没存迷雾）
+            self.reveal_outdoor(room_id)
         self.stance = state.get("stance")
         # 场景格子：玩家站在哪一格，以及地面物品的坐标
         self.pos = state.get("pos")
         if not isinstance(self.pos, (list, tuple)) or len(self.pos) != 2:
             self.pos = None
         # 三张表都要按当前世界数据重建，顺序不能换：装备栏依赖清理后的背包
-        notes = self._load_room_items(state.get("room_items", {}),
+        notes = early_notes + self._load_room_items(state.get("room_items", {}),
                                       state.get("ground_positions"),
                                       state.get("item_positions"))
         notes += self._load_inventory(state.get("inventory", []))

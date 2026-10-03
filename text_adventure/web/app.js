@@ -78,6 +78,8 @@
   var itemMenuSid = null;  // 背包里点开的那一堆（弹出查看 / 使用 / 拆分…）
   var splitSid = null;     // 正在拆分的那一堆
   var thingMenuId = null;  // 场景里点开的那件东西（地上的物品 / 人物，弹出拿取 / 查看 / 说话）
+  var lastMusicScene = null;   // 上一次换过的背景音乐场景（没变就不重开曲目）
+  var audioUnlocked = false;   // 声音要等第一次点击才能出声（浏览器规矩，见 GameAudio.unlock）
 
   // 这一次打开页面的身份：心跳和每条请求都带着它，服务端据此知道“还有哪个页面在看”。
   // 关标签页时也用它报一声，所以关掉一个页面不会把另一个页面也结束掉。
@@ -1286,6 +1288,7 @@
     renderView(state);   // 视图栏：场景 / 背包 / 技能树（三个页签）
     renderSlotsPanel(state);   // 技能栏：10 页 × 9 格
     renderDeath(state);
+    updateMusic(state);        // 背景音乐跟着场景走（看得见敌人 / 楼里 / 夜里）
   }
 
   /* ---------- 可折叠的分区（左侧栏） ---------- */
@@ -1710,6 +1713,9 @@
   var mapAreaWanted = null;      // 手动看哪一层（点楼层条时记下来）
   var mapFollowKey = null;       // 上一次自动跟到哪个房间（人物一换房间就把地图挪过去）
   var mapCenterRoom = null;      // 下一次重画要把哪间房摆到窗口中间（重画完清掉）
+  var mapRooms = [];             // 当前画的是哪一层 / 哪一片的房间
+  var mapOutdoor = false;        // 画的是室外那一片（有迷雾）
+  var MAP_WINDOW = 6;            // 拖动范围：以人物为中心最多能看 6×6 格
 
   // 下次重画时把某间房摆到窗口中间；room 为空就只把它所属的那一栋切过去
   function lookAtRoom(groupName, room) {
@@ -1734,7 +1740,12 @@
   var MAP_ARROW = { north: '↑', south: '↓', east: '→', west: '←', up: '↑', down: '↓' };
 
   // 一个地点（方框）：名字 + 出口。出口直接写下一个场景的名字，不用「门」这种符号。
+  // 室外没去过的格子只画一个「?」：知道那边有块地方，但不知道是什么。
   function mapRoomBlock(room) {
+    if (mapOutdoor && !room.visited) {
+      return '<div class="map-room unknown" title="还没去过的地方（走过去看看）">' +
+        '<span class="map-room-name">？</span></div>';
+    }
     var cls = 'map-room';
     if (room.visited) cls += ' visited';
     if (room.current) cls += ' current';
@@ -1791,13 +1802,41 @@
     if (w > 0 && h > 0) mapViewportSize = { w: w, h: h };
   }
 
-  // 平移的范围：地图最边上的那间房也能被摆到窗口正中（所以人物所在的房间永远可以居中），
-  // 再往外就不让拖了，免得整张地图被拖丢
+  // 拖动范围：以人物所在的那一格为中心，最多看 6×6 格（整座城不用一次装下），
+  // 窗口比这 6×6 还小就把它居中。人物不在当前显示的这一层时，退回"整层都能拖"。
+  function mapWindowBox() {
+    var focus = null;
+    for (var i = 0; i < mapRooms.length; i++) {
+      if (mapRooms[i].current) { focus = mapRooms[i]; break; }
+    }
+    var scale = mapScaleOf();
+    var cw = MAP_CELL * scale, chh = MAP_CELL_H * scale;
+    var lo = { x: mapBounds.min_x, y: mapBounds.min_y };
+    var hi = { x: mapBounds.min_x + mapSpan.w - 1, y: mapBounds.min_y + mapSpan.h - 1 };
+    if (focus) {
+      var half = Math.floor((MAP_WINDOW - 1) / 2);
+      lo.x = Math.max(lo.x, focus.x - half);
+      lo.y = Math.max(lo.y, focus.y - half);
+      hi.x = Math.min(hi.x, focus.x + half);
+      hi.y = Math.min(hi.y, focus.y + half);
+    }
+    var left = mapStep() * ((lo.x - mapBounds.min_x) + 0.5) - cw / 2;
+    var top = mapStepY() * ((lo.y - mapBounds.min_y) + 0.5) - chh / 2;
+    var right = mapStep() * ((hi.x - mapBounds.min_x) + 0.5) + cw / 2;
+    var bottom = mapStepY() * ((hi.y - mapBounds.min_y) + 0.5) + chh / 2;
+    return { left: left, top: top, right: right, bottom: bottom };
+  }
+
+  // 平移的范围：不许拖出"人物周围那 6×6"；范围比窗口还窄就把它摆正中间
   function clampMapPan() {
     var vp = mapViewportSize;
-    var size = mapContentSize();
-    var x = Math.min(vp.w / 2, Math.max(vp.w / 2 - size.w, mapPan.x));
-    var y = Math.min(vp.h / 2, Math.max(vp.h / 2 - size.h, mapPan.y));
+    var box = mapWindowBox();
+    var x = (box.right - box.left <= vp.w)
+      ? (vp.w - box.left - box.right) / 2
+      : Math.min(-box.left, Math.max(vp.w - box.right, mapPan.x));
+    var y = (box.bottom - box.top <= vp.h)
+      ? (vp.h - box.top - box.bottom) / 2
+      : Math.min(-box.top, Math.max(vp.h - box.bottom, mapPan.y));
     mapPan.x = Math.round(x);
     mapPan.y = Math.round(y);
   }
@@ -1819,8 +1858,6 @@
       return;
     }
     el.viewMap.classList.remove('hidden');
-    mapBounds = map.bounds || { min_x: 0, min_y: 0, w: 1, h: 1 };
-    mapSpan = { w: Math.max(1, mapBounds.w || 1), h: Math.max(1, mapBounds.h || 1) };
 
     // 人物换了一栋楼，就把地图跟过去（手动看别栋的让位给当前这栋）。
     // 注意：这里比的是「上一次人物所在的楼层」，不能跟当前显示的那一层混着用，
@@ -1871,12 +1908,23 @@
     }
 
     var scale = mapScaleOf();
+    // 每一组（一栋楼 / 室外那一片）有自己的范围：楼里只有一两格，不能跟着 10×10 的街区一起放大。
+    // 同一组里换楼层尺寸不变，所以上下楼的时候地图窗口大小不会跳。
+    mapBounds = group.bounds || map.bounds || { min_x: 0, min_y: 0, w: 1, h: 1 };
+    if (!mapBounds.w) mapBounds = map.bounds || { min_x: 0, min_y: 0, w: 1, h: 1 };
+    mapSpan = { w: Math.max(1, mapBounds.w || 1), h: Math.max(1, mapBounds.h || 1) };
+    mapRooms = area.rooms || [];
+    mapOutdoor = !!area.outdoor;
     var grid = {};
     (area.rooms || []).forEach(function (r) { grid[r.x + ',' + r.y] = r; });
 
     var html = '';
+    // 室外有迷雾：没探索过的格子连画都不画；只知道"那边有块地方"的画一个「?」
+    var shown = (area.rooms || []).filter(function (r) {
+      return !mapOutdoor || r.seen !== false;
+    });
     (area.links || []).forEach(function (l) { html += mapLine(grid, l[0], l[1], l[2]); });
-    (area.rooms || []).forEach(function (r) {
+    shown.forEach(function (r) {
       var left = mapStep() * ((r.x - mapBounds.min_x) + 0.5) - (MAP_CELL * scale) / 2;
       var top = mapStepY() * ((r.y - mapBounds.min_y) + 0.5) - (MAP_CELL_H * scale) / 2;
       html += '<div class="map-cell" style="left:' + left.toFixed(1) + 'px;top:' + top.toFixed(1) +
@@ -2220,6 +2268,7 @@
         else if (ch === '.') cls += ' floor';
 
         var title = '';
+        var doorDir = null;   // 这一格是门 / 楼梯的话，记下是哪个方向（给格子加 data-door）
         if (x === px && y === py) {
           cls += ' player-here';
           if (here) {
@@ -2237,22 +2286,32 @@
           title = '敌人：' + here.name + '（生命 ' + here.hp + '/' + here.max_hp + (here.aware ? '' : '，还没发现你') + '；点一下出菜单）';
         } else if (here) {
           thing = here;
-          inner = chip(here.name, '', here.kind === 'npc' ? 'chip-npc' : '');
-          title = (here.kind === 'npc' ? '人物：' : '物品：') + here.name + '（点一下出菜单）';
+          // 同一种东西摞在一格时写成「罐头 ×3」（拿的时候一次拿一件）
+          var many = here.count > 1 ? '×' + here.count : '';
+          inner = chip(here.name, many, here.kind === 'npc' ? 'chip-npc' : '');
+          title = (here.kind === 'npc' ? '人物：' : '物品：') + here.name +
+            (many ? ' ' + many : '') + '（点一下出菜单）';
         } else {
           var dir = doorTiles[key];
+          var stair = (ch === '<' || ch === '>');
           if (dir) {
+            doorDir = dir;
             var exit = doors[dir] || {};
-            var label = exit.target ? exit.target : sceneDirName(dir);
-            inner = chip((ch === '<' ? '上楼 ' : ch === '>' ? '下楼 ' : '门 ') + label, '', 'chip-stairs');
-            title = '出口：' + sceneDirName(dir) + (exit.target ? ' → ' + exit.target : '');
+            // 门上的名字就是下一个地点的名字（引擎给的 sc.door_names，不用走到跟前才显示）；
+            // 楼梯只写「上楼 / 下楼」
+            var gate = (sc.door_names && sc.door_names[dir]) || exit.target || sceneDirName(dir);
+            inner = chip(stair ? (ch === '<' ? '上楼' : '下楼') : gate, '',
+                         stair ? 'chip-stairs' : 'chip-door');
+            title = stair ? (ch === '<' ? '上楼' : '下楼') : '门：通往 ' + gate;
+            if (stair && exit.target) title += '：' + exit.target;
             if (exit.danger) title += '（' + exit.danger + '）';
-          } else if (ch === '<' || ch === '>') {
+          } else if (stair) {
             inner = chip(ch === '<' ? '上楼' : '下楼', '', 'chip-stairs');
           }
         }
         if (title) title = title.replace(/"/g, '');
         var attrs = ' data-x="' + x + '" data-y="' + y + '"';
+        if (doorDir) attrs += ' data-door="' + esc(doorDir) + '"';   // 这一格是哪个方向的出口
         if (thing) {
           cls += ' has-thing' + (thingMenuId === thing.id ? ' thing-sel' : '');
           attrs += ' data-thing="' + esc(thing.id) + '"';
@@ -2570,7 +2629,110 @@
       icon('person') + '<span>新游戏</span></button>' +
       '<button type="button" class="btn small danger" data-quit="1">' +
       icon('exit') + '<span>退出游戏</span></button>' +
+      '</div>' + audioSection() + '</div>';
+  }
+
+  /* ---------- 系统里的声音：打击音效音量 / 背景音乐音量 / 选曲 ---------- */
+  // 声音全部由 web/audio.js 现场合成（GameAudio），这里只管摆控件、存偏好
+
+  function audioReady() {
+    return typeof GameAudio !== 'undefined' && GameAudio && GameAudio.music;
+  }
+
+  function audioSection() {
+    if (!audioReady()) return '';
+    var sfx = Math.round(GameAudio.getSfxVolume() * 100);
+    var music = Math.round(GameAudio.music.getVolume() * 100);
+    var auto = GameAudio.music.auto();
+    var now = GameAudio.music.current();
+    var tracks = GameAudio.music.list() || [];
+    var html = '<div class="audio-box"><div class="audio-row">' +
+      '<span class="audio-label">音效</span>' +
+      '<input type="range" class="audio-range" id="sfx-volume" min="0" max="100" step="1" value="' + sfx +
+      '" title="打击音效的音量">' +
+      '<span class="audio-value" id="sfx-value">' + sfx + '</span></div>' +
+      '<div class="audio-row">' +
+      '<span class="audio-label">音乐</span>' +
+      '<input type="range" class="audio-range" id="music-volume" min="0" max="100" step="1" value="' + music +
+      '" title="背景音乐的音量">' +
+      '<span class="audio-value" id="music-value">' + music + '</span></div>' +
+      '<div class="audio-row"><span class="audio-label">曲目</span>' +
+      '<select class="audio-select" id="music-track" title="单曲循环；选「自动」的时候按场景换曲">' +
+      '<option value="auto"' + (auto ? ' selected' : '') + '>自动（按场景）</option>';
+    tracks.forEach(function (t) {
+      var on = (!auto && t.id === now) ? ' selected' : '';
+      html += '<option value="' + esc(t.id) + '"' + on + ' title="' + esc(t.desc || '') + '">' +
+        esc(t.name) + '</option>';
+    });
+    return html + '</select>' +
+      '<button type="button" class="btn small" id="music-toggle" title="关掉 / 打开背景音乐">' +
+      icon('rest') + '<span>' + (music > 0 ? '静音' : '开声音') + '</span></button>' +
       '</div></div>';
+  }
+
+  // 控件是重绘出来的，每次渲染后重新挂事件
+  function bindAudioControls() {
+    if (!audioReady()) return;
+    var sfx = document.getElementById('sfx-volume');
+    if (sfx) {
+      sfx.addEventListener('input', function () {
+        GameAudio.setSfxVolume(sfx.value / 100);
+        var label = document.getElementById('sfx-value');
+        if (label) label.textContent = sfx.value;
+      });
+      sfx.addEventListener('change', function () { GameAudio.play('ui'); });
+    }
+    var music = document.getElementById('music-volume');
+    if (music) {
+      music.addEventListener('input', function () {
+        GameAudio.music.setVolume(music.value / 100);
+        var label = document.getElementById('music-value');
+        if (label) label.textContent = music.value;
+      });
+    }
+    var pick = document.getElementById('music-track');
+    if (pick) {
+      pick.addEventListener('change', function () {
+        if (pick.value === 'auto') {
+          GameAudio.music.setAuto(true);
+          updateMusic(lastState, true);
+        } else {
+          GameAudio.music.setAuto(false);
+          GameAudio.music.play(pick.value);
+        }
+      });
+    }
+    var toggle = document.getElementById('music-toggle');
+    if (toggle) {
+      toggle.addEventListener('click', function () {
+        var level = GameAudio.music.getVolume() > 0 ? 0 : 0.5;
+        GameAudio.music.setVolume(level);
+        var label = document.getElementById('music-value');
+        if (label) label.textContent = Math.round(level * 100);
+      });
+    }
+  }
+
+  // 这一步要放哪些音效（引擎给的，见 engine.Game.sfx / webui 的 sfx 字段）
+  function playSfx(list) {
+    if (!audioReady() || !list) return;
+    for (var i = 0; i < list.length; i++) GameAudio.play(list[i]);
+  }
+
+  // 背景音乐跟着场景走：看得见敌人 → 紧张；楼里 → 室内；夜里在外面 → 夜色；不然就是白天街道
+  function updateMusic(state, force) {
+    if (!audioReady() || !state || !GameAudio.music.auto()) return;
+    var enemies = state.enemies || [];
+    var scene = state.scene || null;
+    var key;
+    if (enemies.length) key = 'danger';
+    else if (scene) key = 'interior';
+    else if (state.time && state.time.night) key = 'night';
+    else key = 'street';
+    if (force || key !== lastMusicScene) {
+      lastMusicScene = key;
+      GameAudio.music.scene(key);
+    }
   }
 
   /* ---------- 休息滑条 ---------- */
@@ -2632,6 +2794,7 @@
         return function () { setRestMinutes(parseInt(node.getAttribute('data-rest-preset'), 10)); };
       })(chips[i]));
     }
+    bindAudioControls();
   }
 
   /* ---------- 请求流程 ---------- */
@@ -2657,6 +2820,7 @@
       show('play');
       appendLines(el.log, logLines(data.lines));
       renderState(data.state);
+      playSfx(data.sfx);
       if (data.notice) showToast(data.notice);
       // 在输入框里打“退出”也算退出：把服务和这一局一起结束
       if (data.quit) finishQuit();
@@ -3148,6 +3312,19 @@
   bindScene(); // 说话横幅的「点视图栏继续」也在这儿绑一次
   // 窗口大小变了：地图的可视窗口是按场景大小算的，跟着重算一遍（拖动的偏移会被夹回范围里）
   window.addEventListener('resize', function () { if (lastState) renderMap(lastState); });
+
+  // 浏览器规矩：没跟用户交互过不许出声。第一次点（或敲键盘）的时候解锁音频，
+  // 顺便把当前该放的那首曲子按场景放上。
+  function unlockAudio() {
+    if (audioUnlocked) return;
+    audioUnlocked = true;
+    if (typeof GameAudio !== 'undefined' && GameAudio) {
+      GameAudio.unlock();
+      if (lastState) updateMusic(lastState, true);
+    }
+  }
+  document.addEventListener('pointerdown', unlockAudio, true);
+  document.addEventListener('keydown', unlockAudio, true);
 
   function applyBoot(state) {
     if (!state) { show('menu'); return; }

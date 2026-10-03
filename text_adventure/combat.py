@@ -332,12 +332,14 @@ class CombatMixin:
         """敌人打你一次：命中 → 格挡（持盾）→ 伤害减护甲 → 扣血。返回过程文字。"""
         c = self.character
         result = self.dice.attack(e.accuracy(), self.dodge(), e.crit_range())
+        self.sfx("hurt" if result.hit else "miss")   # 挨打 / 它挥空，声音不一样
         lines = [f"{e.label}用{e.attack['name']}攻击你：" + result.text]
         if result.hit and self.blocks_left > 0:
             self.blocks_left -= 1
             block = self.dice.block(stats.block_modifier(c.attributes), result.total)
             lines.append(block.text)
             if block.success:
+                self.sfx("block")
                 return "\n".join(lines)
         if not result.hit:
             return "\n".join(lines)
@@ -437,6 +439,7 @@ class CombatMixin:
         sneak = not target.aware  # 它还没发现你：这一下算偷袭
         weapon = self._sneak_weapon(weapon) if sneak else dict(weapon)
         result = self.dice.attack(weapon["accuracy"], target.dodge(), weapon["crit_range"])
+        self.sfx("crit" if (result.hit and result.crit) else ("hit" if result.hit else "miss"))
         lines = [f"你用{weapon['name']}{'偷袭' if sneak else '攻击'}{target.label}"
                  f"（闪避 {target.dodge()}、护甲 {target.armor}）：" + result.text]
         if result.hit:
@@ -474,6 +477,7 @@ class CombatMixin:
         e.hp = 0
         room = self.current_room
         self.room_enemies[room] = [x for x in self.room_enemies.get(room, []) if x is not e]
+        self.sfx("kill")
         drops = ([e.weapon] if e.weapon else []) + list(e.armor_items)
         for item_id in drops:
             self._drop_at(item_id, e.pos)

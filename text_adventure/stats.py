@@ -213,6 +213,23 @@ def tick_dots(dots):
     return hurt
 
 
+# 随机物资：一个地点第一次进去最多刷 5 堆（概率递减），每一堆放几件也是概率递减
+SPAWN_GROUP_WEIGHTS = ((0, 15), (1, 30), (2, 25), (3, 15), (4, 10), (5, 5))
+SPAWN_STACK_WEIGHTS = ((1, 50), (2, 20), (3, 15), (4, 10), (5, 5))
+SPAWN_MAX_GROUPS = 5
+
+
+def roll_weighted(rng, weights):
+    """按 [(值, 权重), ...] 掷一个值（权重不必凑成 100）。"""
+    total = sum(weight for _, weight in weights)
+    roll = rng.randrange(total)
+    for value, weight in weights:
+        roll -= weight
+        if roll < 0:
+            return value
+    return weights[-1][0]
+
+
 def shield_bash_accuracy(a, shield):
     """盾击精准 = 体质 × 1.5（向下取整）+ 盾牌等阶加成（精良 +1、传说 +2、破旧 −1）。"""
     return check_modifier(a, SHIELD_BASH_ACCURACY_ATTRIBUTE) + quality_bonus(shield)

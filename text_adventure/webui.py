@@ -80,6 +80,7 @@ STATIC_FILES = {
     "/index.html": ("index.html", "text/html; charset=utf-8"),
     "/style.css": ("style.css", "text/css; charset=utf-8"),
     "/app.js": ("app.js", "application/javascript; charset=utf-8"),
+    "/audio.js": ("audio.js", "application/javascript; charset=utf-8"),
     "/icons.svg": ("icons.svg", "image/svg+xml; charset=utf-8"),
 }
 
@@ -489,8 +490,9 @@ class Session:
                     info["danger"] = danger
                 else:
                     info["state"] = "open"
-                if target in game.visited:
-                    info["target"] = self.world.rooms[target]["name"]
+                if target is not None:
+                    # 门上的名字直接写下一个地点的名字（没去过的也写，玩家照着名字找路）
+                    info["target"] = self.world.rooms[target]["name"] if target in self.world.rooms else None
             if grid:
                 self._grid_direction_info(game, grid, pos, direction, exit_, info)
             result.append(info)
@@ -533,8 +535,10 @@ class Session:
         map_areas 里每一组是一栋建筑（或室外那一片），组里的每个 area 是一层楼；
         一层的房间按 map 的 x / y 摆成方框（跟 map_view.py 的终端地图同一套坐标，
         坐标可以是负的，所以另外给出整张地图的 min_x / min_y / w / h，界面按它定尺寸）。
-        房间之间的连线由这里算好（两个方向任一边通就算连着）；
-        出口用 exits_for() 那一份状态：方向 + 目的地名字（没去过的只报方向，不剧透名字）。
+        房间之间的连线由这里算好（两个方向任一边通、而且两边都真去过才算连着）；
+        出口用 exits_for() 那一份状态：方向 + 目的地名字。
+        室外那一片（街道一带）是每局随机生成的（见 outdoor.py），还带探索迷雾：
+        没去过的格子只报 seen（知道那边有块地方），名字是空的。
         """
         world, game = self.world, self.game
         info = {}
@@ -542,12 +546,18 @@ class Session:
             pos = room.get("map")
             if not pos:
                 continue
+            outdoor = game.is_outdoor(room_id)
+            # 室外有迷雾：去过的格子全公开；只"知道那边有一块地方"的格子只留一个「?」
+            seen = (room_id in game.visited) if outdoor else True
+            known = seen or (outdoor and game.outdoor_known(pos["x"], pos["y"]))
             info[room_id] = {
-                "name": room["name"],
+                "name": room["name"] if seen else "",
                 "area": pos["area"],
                 "x": pos["x"],
                 "y": pos["y"],
                 "visited": room_id in game.visited,
+                "outdoor": outdoor,
+                "seen": known,
             }
 
         def target_of(exit_):
@@ -589,15 +599,21 @@ class Session:
                     "x": x,
                     "y": y,
                     "visited": room["visited"],
+                    "seen": room["seen"],          # 室外：没见过的地方连「?」都不画
+                    "outdoor": room["outdoor"],
                     "current": current,
                     # 出口的 id 跟 state.exits 对齐，前端按同一个 id 找状态
                     "exits": [dict(id=d, **exits[d]) for d in EXIT_ORDER if current and d in exits],
                 })
-                if linked(room_id, grid.get((x + 1, y)), "east"):
+                # 连线只画两个都真去过的格子之间（没去过的连过去会剧透）
+                if room["visited"] and info.get(grid.get((x + 1, y)), {}).get("visited") \
+                        and linked(room_id, grid.get((x + 1, y)), "east"):
                     links.append(("h", x, y))
-                if linked(room_id, grid.get((x, y + 1)), "south"):
+                if room["visited"] and info.get(grid.get((x, y + 1)), {}).get("visited") \
+                        and linked(room_id, grid.get((x, y + 1)), "south"):
                     links.append(("v", x, y))
-            return {"name": area, "rooms": rooms, "links": links}
+            return {"name": area, "rooms": rooms, "links": links,
+                    "outdoor": any(room["outdoor"] for room in rooms)}
 
         # 一层层写在一组里（室外 / 公寓楼 / 社区医院 / 派出所 / 消防站）。
         # 也认老数据里那种平铺的名字列表（那就只有一组）。
@@ -613,13 +629,30 @@ class Session:
         if not groups:
             groups = [{"name": "地图", "areas": []}]
 
-        # 尺寸按整张地图算（所有组、所有层）：人物在一栋楼里上下楼时地图大小不变
-        xs, ys = [], []
-        for group in groups:
-            for area in group["areas"]:
+        def size_of(area_list):
+            """这一组（一栋楼 / 室外那一片）要占几格 × 几格。"""
+            xs, ys = [], []
+            for area in area_list:
                 for room in area["rooms"]:
                     xs.append(room["x"])
                     ys.append(room["y"])
+            if not xs:
+                return {"min_x": 0, "min_y": 0, "w": 0, "h": 0}
+            return {"min_x": min(xs), "min_y": min(ys),
+                    "w": max(xs) - min(xs) + 1, "h": max(ys) - min(ys) + 1}
+
+        # 每栋楼 / 室外那一片各自算尺寸：楼里只有一两格，不能跟着 10×10 的街区一起放大；
+        # 同一栋里换楼层尺寸也不变（一层和五层占一样大）
+        for group in groups:
+            group["bounds"] = size_of(group["areas"])
+
+        # 整体范围留一份（老前端拿它兜底）
+        xs, ys = [], []
+        for group in groups:
+            box = group["bounds"]
+            if box["w"]:
+                xs += [box["min_x"], box["min_x"] + box["w"] - 1]
+                ys += [box["min_y"], box["min_y"] + box["h"] - 1]
         bounds = {"min_x": min(xs) if xs else 0, "min_y": min(ys) if ys else 0}
         bounds["w"] = (max(xs) - bounds["min_x"] + 1) if xs else 0
         bounds["h"] = (max(ys) - bounds["min_y"] + 1) if ys else 0
@@ -842,7 +875,10 @@ class Session:
         stance = game._current_stance()
         snap.update({
             "turns": game.turns,
-            "time": {"day": game.day, "minutes": game.minutes, "text": game.clock_text()},
+            "time": {"day": game.day, "minutes": game.minutes, "text": game.clock_text(),
+                     # 前端按这个换背景音乐（白天 / 夜里）
+                     "hour": game.minutes // 60,
+                     "night": (game.minutes // 60) < 6 or (game.minutes // 60) >= 19},
             "room": {"id": game.current_room, "name": room["name"]},
             "exits": self.exits_for(room),
             # 视图栏左上角那张区域地图（分层：当前楼层 + 还有哪些楼层的切换条）
@@ -1117,6 +1153,7 @@ class Session:
                 "quit": not self.game.running,
                 "notice": notice,
                 "interrupt": interrupt,
+                "sfx": list(getattr(self.game, "sfx_events", ())),  # 这一步要放哪几个音效
             }
 
 

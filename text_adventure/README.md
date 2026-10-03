@@ -88,9 +88,10 @@ python3 main.py
 | `data/items.csv` | **物品表**：所有物品，用 Excel / WPS / Numbers 直接改（说明见 `物品表说明.md`） |
 | `item_table.py` | 读物品表、检查错误 |
 | `combat.py` | 战斗：敌人生成、视野、先攻、回合顺序、敌我攻击、持续伤害 |
+| `outdoor.py` | 室外街区：每局随机生成 10×10 的开放地图（街道 + 地点）、探索迷雾、街道随机地形 |
 | `make_icon.py` | 生成图标 `icon.ico`：纯标准库手写 PNG/ICO 编码，改完配色形状重新运行即可 |
 | `icon.ico` | 游戏图标（桌面快捷方式用的就是它），`icon_preview.png` 是预览图 |
-| `web/` | 网页界面：`index.html`、`style.css`、`app.js`、`icons.svg`（手写 SVG 图标精灵） |
+| `web/` | 网页界面：`index.html`、`style.css`、`app.js`、`audio.js`（音效与背景音乐，全部现场合成、没有音频文件）、`icons.svg`（手写 SVG 图标精灵） |
 | `界面区域.md` | 网页版界面的六个区域（左侧栏 / 视图栏 / 移动栏 / 快捷区域1 / 快捷区域2 / 右侧栏）：位置、代码位置、怎么调尺寸 |
 | `items.py` | 物品的使用效果（效果写在 `data/world.json` 的 `use` 字段里） |
 | `engine.py` | 游戏状态与所有玩家指令 |
