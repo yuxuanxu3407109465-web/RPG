@@ -1931,3 +1931,28 @@ input[type="range"].rest-range::-moz-range-thumb {
 /* 场景里的敌人：红边；还没发现你的敌人边框是虚线 */
 .scene-cell .item-chip.chip-enemy { border-color: #c8453a; color: #f0c9c4; box-shadow: 0 0 0 1px #c8453a inset; }
 .scene-cell .item-chip.chip-enemy.chip-unaware { border-style: dashed; box-shadow: none; }
+
+/* 小地图做小（方块 34×26）：方块正中写名字；出口箭头贴在对应的边上
+   （北在上沿、南在下沿、东在右沿、西在左沿，上下楼在右上 / 右下角），全名和出口去哪儿在鼠标提示里 */
+.map-room { padding: 0 4px; justify-content: center; border-radius: 3px; }
+.map-room-name { text-align: center; flex-shrink: 0; }
+.map-room-exits { position: absolute; inset: 0; display: block; pointer-events: none; }
+.map-exit {
+  position: absolute;
+  pointer-events: auto;
+  padding: 0;
+  width: 10px;
+  height: 10px;
+  justify-content: center;
+  line-height: 1;
+  border-radius: 2px;
+  gap: 0;
+  z-index: 1;
+}
+.map-exit[data-map-go="north"] { top: -6px; left: calc(50% - 5px); }
+.map-exit[data-map-go="south"] { bottom: -6px; left: calc(50% - 5px); }
+.map-exit[data-map-go="east"] { right: -6px; top: calc(50% - 5px); }
+.map-exit[data-map-go="west"] { left: -6px; top: calc(50% - 5px); }
+.map-exit[data-map-go="up"] { right: -4px; top: -6px; }
+.map-exit[data-map-go="down"] { right: -4px; bottom: -6px; }
+.map-at { font-size: 7px; left: -3px; top: -3px; }

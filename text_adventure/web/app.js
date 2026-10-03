@@ -1685,19 +1685,20 @@
   /* ---------- 视图栏左边一列：区域地图（可以拖动平移、滚轮缩放） ---------- */
 
   // 一个方块多大（CSS 里的字号、方块高度都按这个比例缩放）
-  // 名字和出口胶囊都写在方块里，所以方块要够高够宽
-  var MAP_CELL = 78;
-  var MAP_CELL_H = 94;
-  var MAP_GAP = 14;
+  // 方块做小：100% 时一层楼的整体结构就能在小地图里看全。方块里只写名字 + 出口箭头，
+  // 全名和出口去哪儿放在 title 里（鼠标停一下就能看到）
+  var MAP_CELL = 34;
+  var MAP_CELL_H = 26;
+  var MAP_GAP = 8;
   var MAP_PAD = 5;
 
   // 地图那一列多宽多高由 style.css 的 --w-map / --h-map 定死（换楼层 / 换建筑都不变），
   // 这里只读它量出来的可视窗口大小，不再自己按比例算
 
   var MAP_SCALE_STEP = 1.12;
-  // 地图那一列只有 150~210px 宽，最小缩放要够小，整片室外（5 格宽）才装得下
-  var MAP_SCALE_MIN = 0.28;
-  var MAP_SCALE_MAX = 1.8;
+  // 方块本身已经很小（100% 就能看全一层），放大到 3 倍可以看清名字和出口
+  var MAP_SCALE_MIN = 0.6;
+  var MAP_SCALE_MAX = 3;
 
   var mapScale = 1;         // 缩放比例（1 = 方块原大小）
   var mapPan = { x: 0, y: 0 };   // 地图相对窗口左上角平移了多少像素
@@ -1747,11 +1748,12 @@
         html += '<button type="button" class="map-exit ' + state + '"' +
           (e.blocked ? ' disabled' : '') + ' data-map-go="' + esc(e.id) + '"' +
           ' title="' + esc(e.name + (e.blocked ? '：现在过不去' : '：点一下走过去')) + '">' +
-          arrow + '<span class="exit-name">' + esc(e.name) + '</span></button>';
+          arrow + '</button>';
       });
       html += '</span>';
     }
-    return '<div class="' + cls + '"><span class="map-at" title="你现在在这儿">◆</span>' + html + '</div>';
+    return '<div class="' + cls + '" title="' + esc(room.name + (room.current ? '（你在这儿）' : '')) + '">' +
+      '<span class="map-at" title="你现在在这儿">◆</span>' + html + '</div>';
   }
 
   // 房间之间通不通：横的看东西，竖的看南北；连线在两格之间的空隙里
@@ -1759,20 +1761,25 @@
     var ax = x, ay = y, bx = x, by = y;
     if (kind === 'h') bx = x + 1; else by = y + 1;
     if (!grid[ax + ',' + ay] || !grid[bx + ',' + by]) return '';
+    // 连线画在两个方块之间的空隙里（坐标和方块一样，先减掉地图的最小坐标）
+    var scale = mapScaleOf();
+    var cw = MAP_CELL * scale, ch = MAP_CELL_H * scale;
+    var cx = mapStep() * ((x - mapBounds.min_x) + 0.5);    // 这一格方块的中心
+    var cy = mapStepY() * ((y - mapBounds.min_y) + 0.5);
     var left, top, w, h;
     if (kind === 'h') {
-      left = mapStep() * (x + 0.5);
-      top = mapStepY() * (y + 0.5) + mapStepY() * 0.19;
-      w = mapStep() * 0.1;
+      left = cx + cw / 2;
+      top = cy - 1;
+      w = mapStep() - cw;
       h = 2;
     } else {
-      left = mapStep() * (x + 0.5) + mapStep() * 0.19;
-      top = mapStepY() * (y + 0.5);
+      left = cx - 1;
+      top = cy + ch / 2;
       w = 2;
-      h = mapStepY() * 0.1;
+      h = mapStepY() - ch;
     }
     return '<span class="map-link ' + kind + '" style="left:' + left.toFixed(1) + 'px;top:' +
-      top.toFixed(1) + 'px;width:' + w + 'px;height:' + h + 'px"></span>';
+      top.toFixed(1) + 'px;width:' + w.toFixed(1) + 'px;height:' + h.toFixed(1) + 'px"></span>';
   }
 
   // 可视窗口的大小：CSS 定死的（--w-map / --h-map），这里只量一下给夹取用
@@ -1784,12 +1791,13 @@
     if (w > 0 && h > 0) mapViewportSize = { w: w, h: h };
   }
 
-  // 平移：地图比窗口小就居中，不然夹住不让它拖出窗口
+  // 平移的范围：地图最边上的那间房也能被摆到窗口正中（所以人物所在的房间永远可以居中），
+  // 再往外就不让拖了，免得整张地图被拖丢
   function clampMapPan() {
     var vp = mapViewportSize;
     var size = mapContentSize();
-    var x = size.w <= vp.w ? (vp.w - size.w) / 2 : Math.min(0, Math.max(vp.w - size.w, mapPan.x));
-    var y = size.h <= vp.h ? (vp.h - size.h) / 2 : Math.min(0, Math.max(vp.h - size.h, mapPan.y));
+    var x = Math.min(vp.w / 2, Math.max(vp.w / 2 - size.w, mapPan.x));
+    var y = Math.min(vp.h / 2, Math.max(vp.h / 2 - size.h, mapPan.y));
     mapPan.x = Math.round(x);
     mapPan.y = Math.round(y);
   }
@@ -1880,8 +1888,8 @@
     el.mapBody.style.height = size.h + 'px';
     el.mapBody.innerHTML = html;
     el.mapBody.style.setProperty('--map-room-h', (MAP_CELL_H * scale).toFixed(1) + 'px');
-    el.mapBody.style.setProperty('--map-name-size', Math.max(9, 12 * scale).toFixed(1) + 'px');
-    el.mapBody.style.setProperty('--map-exit-size', Math.max(8, 10 * scale).toFixed(1) + 'px');
+    el.mapBody.style.setProperty('--map-name-size', Math.max(6, 8 * scale).toFixed(1) + 'px');
+    el.mapBody.style.setProperty('--map-exit-size', Math.max(6, 7 * scale).toFixed(1) + 'px');
 
     sizeMapViewport();
     if (mapCenterRoom) { centerMapOn(mapCenterRoom); mapCenterRoom = null; }
