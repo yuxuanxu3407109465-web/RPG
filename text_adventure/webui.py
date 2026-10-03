@@ -897,6 +897,7 @@ class Session:
                 "exhausted": stats.is_exhausted(c),
             },
             "ap": {"value": game.ap, "gain": game.ap_gain(), "max": game.ap_cap(), "turn": game.turns},
+            "enemies": game.enemy_state(),   # 看得见的敌人
             "needs": {"food": c.food, "water": c.water, "max": stats.NEED_MAX,
                       "food_stage": game.need_stage("food"), "water_stage": game.need_stage("water")},
             "conditions": game.conditions(),
@@ -1103,12 +1104,18 @@ class Session:
             if talking and output and (output == TALK_END or output.startswith("现在没有")
                                        or output.startswith("这里没有")):
                 notice = output   # 接话接不下去 / 没人可说话：浮层提示一声
+            # 视野里出现了第一个敌人：当前行动被打断（前端停下自动寻路），浮层提示一声
+            interrupt = self.game.interrupted
+            self.game.interrupted = False
+            if interrupt:
+                notice = next((line for line in (output or "").splitlines() if line.startswith("⚠")), notice)
             return {
                 "type": "play",
                 "lines": lines,
                 "state": self.state(),
                 "quit": not self.game.running,
                 "notice": notice,
+                "interrupt": interrupt,
             }
 
 

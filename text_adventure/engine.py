@@ -17,7 +17,8 @@ import skills
 import stances
 import stats
 from character import Character, format_sheet
-from enemies import EnemyBook, format_enemy
+from combat import CombatMixin, distance
+from enemies import Enemy, EnemyBook, format_enemy
 from map_view import render_map
 
 # 各种写法 -> 内部方向名
@@ -243,7 +244,7 @@ class World:
         return []
 
 
-class Game:
+class Game(CombatMixin):
     """一局游戏的可变状态，以及所有玩家指令。"""
 
     def __init__(self, world, options, skill_trees, dice, save_path):
@@ -252,6 +253,10 @@ class Game:
         self.skill_trees = skill_trees
         self.dice = dice
         self.enemies = EnemyBook(world.data_dir / "enemies.json", [a["id"] for a in options.attributes], world.items)
+        for room_id, room in world.rooms.items():
+            for spec in room.get("enemies", []) + room.get("random_enemies", []):
+                if spec.get("id") not in self.enemies.templates:
+                    raise ValueError(f"world.json 里的地点 {room_id}：敌人 {spec.get('id')} 不在 enemies.json 里")
         # 存档分成几个槽：save1.json / save2.json / save3.json
         self.save_dir = Path(save_path).parent
         self.slot = 1
@@ -286,6 +291,8 @@ class Game:
             (["试盾击", "bash test"], self.cmd_bash_test),
             (["试眩晕", "stun test"], self.cmd_stun_test),
             (["试先攻", "initiative test"], self.cmd_initiative_test),
+            (["试刷怪", "spawn test"], self.cmd_spawn_test),
+            (["攻击", "打", "attack"], self.cmd_attack),
             (["使用", "吃", "喝", "use"], self.cmd_use),
             (["休息", "睡", "rest"], self.cmd_rest),
             (["等待", "结束回合", "wait"], self.cmd_wait),
@@ -310,6 +317,7 @@ class Game:
         self.worn = {slot: None for slot in self.world.wear_slot_names}  # 护甲、饰品、披风、背包
         self.stance = None  # 当前姿态 id
         self.turns = 0
+        self._reset_combat()  # 地图上的敌人、先攻、持续伤害（combat.py）
         self.moved_this_turn = False  # 这一回合走过路没有（全垒打：没移动过伤害 +60%）
         self.step_credit = Fraction(0)  # 灵动步伐多付的半格行动点（回合结束清零）
         self.ap = 0  # 当前行动点（不分战斗内外，每回合 = 1 分钟开始时获得，见 spend_ap / _pass_turn）
@@ -346,6 +354,7 @@ class Game:
         character.hp = self.options.max_hp(character)
         character.stamina = stats.stamina_max(character.attributes)
         self.ap = self.ap_gain()  # 第一回合的行动点
+        self.blocks_left = self.blocks_per_turn()
 
     # ---------- 存档槽位 ----------
 
@@ -679,6 +688,9 @@ class Game:
             if coord:
                 things.append({"id": npc_id, "name": self.world.npcs[npc_id]["name"],
                                "kind": "npc", "x": coord[0], "y": coord[1]})
+        for e in self.visible_enemies():
+            things.append({"id": f"e{e.uid}", "name": e.label, "kind": "enemy", "x": e.pos[0], "y": e.pos[1],
+                           "hp": e.hp, "max_hp": e.max_hp, "aware": e.aware})
         x, y = self.player_pos(grid)
         return {
             "width": width,
@@ -708,6 +720,11 @@ class Game:
         npcs = room.get("npcs", [])
         if npcs:
             lines.append("这里有：" + "、".join(self.world.npcs[n]["name"] for n in npcs))
+        enemies = self.visible_enemies() if self.character else []
+        if enemies:
+            here = self.player_pos()
+            lines.append("敌人：" + "、".join(f"{e.label}（{distance(e.pos, here)} 格外，生命 {e.hp}/{e.max_hp}）"
+                                             for e in enemies))
         if self.character and self.character.companions:
             names = "、".join(c.name for c in self.character.companions)
             lines.append(f"{names}跟在你身边。")
@@ -725,6 +742,23 @@ class Game:
     def cmd_examine(self, arg):
         if not arg:
             return "你想查看什么？"
+        enemy = self.find_enemy(arg)
+        if enemy:
+            here = self.player_pos()
+            status = []
+            if not enemy.aware:
+                status.append("还没发现你")
+            if enemy.knocked_down:
+                status.append("倒地")
+            if enemy.stun:
+                status.append(stats.STUN_CONDITIONS[enemy.stun])
+            for kind, (name, _) in stats.DOT_KINDS.items():
+                n = sum(1 for d in enemy.dots if d["kind"] == kind)
+                if n:
+                    status.append(f"{name} {n} 层")
+            return (f"{enemy.label}：第 {enemy.pos[0] + 1} 列，第 {enemy.pos[1] + 1} 行，离你 {distance(enemy.pos, here)} 格"
+                    + (f"（{'、'.join(status)}）" if status else "") + "\n"
+                    + format_enemy(enemy, self.options, self.world.weapon_types, self.world.items, self.enemies))
         visible_items = self.inventory_ids() + self.room_items[self.current_room]
         item_id = self._match(arg, visible_items, self.world.items)
         if item_id:
@@ -755,6 +789,9 @@ class Game:
         if not self.tile_walkable(grid, target[0], target[1]):
             return self._no_path(room, direction)
         # 踩到门 / 楼梯格上就换房间，走过去的那一格由目标房间的“门里那格”决定
+        blocker = self.enemy_at(target)
+        if blocker:
+            return f"{blocker.label}挡在那一格，过不去。"
         door_dir = self.door_direction(grid, target)
         if door_dir:
             return self._travel(door_dir, room)
@@ -764,6 +801,7 @@ class Game:
             return error
         self.set_pos(target)
         cost_note, notes = self._pay_move(overweight, cost)
+        self.check_enemies()
         text = f"移动至（第 {target[0] + 1} 列，第 {target[1] + 1} 行）"
         text += ("，" + cost_note if cost_note else "") + "。"
         if notes:
@@ -856,10 +894,13 @@ class Game:
         # 第一次进某个地点才掷一次随机物资（见 roll_room_spawns），之后再来不会再生成
         if first_visit and self.character:
             self.roll_room_spawns(exit_)
-        cost_note, notes = self._pay_move(overweight, cost)
+            self.spawn_room_enemies(exit_)
         entry = self.entry_tile(exit_, direction)
         if entry:
             self.set_pos(entry)
+        self.enemies_seen = False  # 换了场景：新场景里的敌人都算“刚出现”
+        cost_note, notes = self._pay_move(overweight, cost)
+        self.check_enemies()
         text = self.describe_room()
         if cost_note:
             text += "\n" + cost_note + "。"
@@ -960,16 +1001,22 @@ class Game:
             minutes = REST_MINUTES_MAX
             clamped = f"（一次最多休息 {format_duration(REST_MINUTES_MAX)}）\n"
 
+        visible = self.visible_enemies()
+        if visible:
+            return f"附近有敌人（{'、'.join(e.label for e in visible)}），这时候可没法休息。"
         before = c.stamina
         rested = 0
         for _ in range(minutes):  # 1 回合 = 1 分钟：逐回合推进（快进，不花行动点）
             self._pass_turn()
             rested += 1
-            if self.death_cause:
+            if self.death_cause or self.interrupted:
                 break
         c.stamina = min(cap, before + stats.rest_recovery(c.attributes, rested))
-        if rested < minutes:
+        if self.death_cause and rested < minutes:
             return f"你休息了 {format_duration(rested)}，再也没能醒来。"
+        if rested < minutes:
+            return (f"你才休息了 {format_duration(rested)} 就被打断了，现在是 {self.clock_text()}。"
+                    f"体力 {before} → {c.stamina}/{cap}。")
 
         lines = [
             clamped + f"你休息了 {format_duration(minutes)}，现在是 {self.clock_text()}。",
@@ -1010,6 +1057,7 @@ class Game:
             cond = self._need_condition(need)
             if cond:
                 active.append(cond)
+        active += self.dot_conditions()  # 流血、灼烧、强酸腐蚀（combat.py）
         return active
 
     def _purge_conditions(self):
@@ -1130,6 +1178,9 @@ class Game:
             return "还没有创建角色。"
         if condition_id == "exhausted" and stats.is_exhausted(c):
             return "这种力竭是体力耗尽引起的，清除异常状态的道具不管用，得先恢复体力。"
+        cleared = self.clear_dot(condition_id)  # 持续伤害（例如绷带止血）
+        if cleared:
+            return cleared
         self._purge_conditions()
         found = next((x for x in c.conditions if x.get("id") == condition_id), None)
         if not found:
@@ -1192,17 +1243,24 @@ class Game:
         return stats.ap_cap(self.character.attributes, self.armor_ap_penalty())
 
     def _pass_turn(self):
-        """回合结束：过 1 分钟（饿 / 渴、回血、掉血都在这里），然后获得新回合的行动点。
+        """你的回合结束：先攻比你低的敌人行动 → 过 1 分钟（饿 / 渴、回血、掉血）→ 新一轮：
+        大家补行动点 → 先攻比你高的敌人行动 → 你身上的持续伤害结算 → 轮到你。
         被震慑的话，新的这一回合照样获得行动点，但不能行动，直接跳过（再过 1 分钟）。"""
+        self._enemy_phase(before_player=False)
         self.turns += 1
         self.moved_this_turn = False
         self.step_credit = Fraction(0)
         self.advance_time(1)
         self._regenerate()
-        if not self.character:
+        if not self.character or self.death_cause:
             return
         self.ap = min(self.ap_cap(), self.ap + self.ap_gain())
-        if self._tick_stun():
+        self._new_round()
+        skipped = self._tick_stun()
+        self._enemy_phase(before_player=True)
+        self._tick_player_dots()
+        self.check_enemies()
+        if skipped and not self.death_cause:
             self.pending_notes.append("（你被震慑了，跳过了这一回合，行动点照样攒下）")
             self._pass_turn()
 
@@ -2530,6 +2588,12 @@ class Game:
             "inventory": self.inventory,   # 一格一堆：[{"sid":1,"id":"water","count":3,"auto":true}]
             "next_stack_id": self.next_stack_id,
             "turns": self.turns,
+            "room_enemies": {r: [e.to_dict() for e in es] for r, es in self.room_enemies.items() if es},
+            "next_enemy_uid": self.next_enemy_uid,
+            "player_dots": self.player_dots,
+            "player_init": self.player_init,
+            "enemies_seen": self.enemies_seen,
+            "blocks_left": self.blocks_left,
             "ap": self.ap,
             "indoor_steps": self.indoor_steps,
             "need_minutes": self.need_minutes,  # 食物 / 水源下一次 −1 前已过的分钟
@@ -2593,6 +2657,14 @@ class Game:
             c.stamina = min(c.stamina, stats.stamina_max(c.attributes))
         self.current_room = state["current_room"]
         self.turns = state["turns"]
+        self._reset_combat()
+        self.room_enemies = {r: [Enemy.from_dict(d) for d in es]
+                             for r, es in (state.get("room_enemies") or {}).items()}
+        self.next_enemy_uid = state.get("next_enemy_uid", 1)
+        self.player_dots = state.get("player_dots", [])
+        self.player_init = state.get("player_init")
+        self.enemies_seen = state.get("enemies_seen", False)
+        self.blocks_left = state.get("blocks_left", 0)
         # 老存档没有行动点：给满一回合的量
         self.ap = min(state.get("ap", self.ap_gain()), self.ap_cap()) if self.character else 0
         self.indoor_steps = state.get("indoor_steps", 0)
@@ -2819,6 +2891,8 @@ class Game:
             "                          末尾加“劣势”模拟敌人处于劣势，例如：试受击 疾尸 精英 劣势\n"
             "  试盾击 <敌人> <等阶> [次数] 持盾时对敌人试盾击，例如：试盾击 壮尸 精英；末尾写 2 演示同回合眩晕升级为震慑\n"
             "  试先攻 <敌人> <等阶>       和敌人各掷一次先攻检定，例如：试先攻 疾尸\n"
+            "  攻击 <敌人> [副手]         打一个够得着的敌人（6 行动点），例如：攻击 行尸A；不写目标就打最近的\n"
+            "  试刷怪 <敌人> [等级] [等阶] 在当前场景随机放一只敌人（测试用），例如：试刷怪 行尸 2\n"
             "  等待 / wait             原地等一回合（战斗外 1 分钟，也算生命恢复的回合）\n"
             "  休息 <时长>             恢复体力并推进时间，例如：休息 30、休息 2小时（1~480 分钟）\n"
             "                          体力满了也能休息，只是时间照样过去\n"

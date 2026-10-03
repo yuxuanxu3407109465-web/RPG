@@ -2223,6 +2223,10 @@
             inner = chip('我', '', 'chip-player');
             title = '你现在站在这里';
           }
+        } else if (here && here.kind === 'enemy') {
+          thing = here;
+          inner = chip(here.name, here.hp + '/' + here.max_hp, 'chip-enemy' + (here.aware ? '' : ' chip-unaware'));
+          title = '敌人：' + here.name + '（生命 ' + here.hp + '/' + here.max_hp + (here.aware ? '' : '，还没发现你') + '；点一下出菜单）';
         } else if (here) {
           thing = here;
           inner = chip(here.name, '', here.kind === 'npc' ? 'chip-npc' : '');
@@ -2280,6 +2284,15 @@
   function thingMenu(state) {
     var t = sceneThing(state, thingMenuId);
     if (!t) return '';
+    if (t.kind === 'enemy') {
+      return '<div class="bag-menu scene-menu" id="scene-menu">' +
+        '<div class="menu-title">' + esc(t.name) + '<br><small>敌人 · 生命 ' + t.hp + '/' + t.max_hp +
+        (t.aware ? '' : ' · 还没发现你') + '</small></div>' +
+        '<button type="button" data-scene-act="attack" data-scene-name="' + esc(t.name) + '">' +
+        icon('stance') + '<span>' + (t.aware ? '攻击' : '偷袭') + '</span></button>' +
+        '<button type="button" data-scene-act="look" data-scene-name="' + esc(t.name) + '">' +
+        icon('look') + '<span>查看</span></button></div>';
+    }
     var html = '<div class="bag-menu scene-menu" id="scene-menu">' +
       '<div class="menu-title">' + esc(t.name) + '<br><small>' +
       (t.kind === 'npc' ? '这里的人' : '地上的东西') + '</small></div>';
@@ -2471,7 +2484,11 @@
       return ch === '+' || ch === '<' || ch === '>' || !!doorKeys[key(p)];
     };
     var isTo = function (p) { return p[0] === to[0] && p[1] === to[1]; };
-    if (blocked(to)) return null;
+    var foes = {};
+    (sc.things || []).forEach(function (t) { if (t.kind === 'enemy') foes[t.x + ',' + t.y] = true; });
+    var baseBlocked = blocked;
+    blocked = function (p) { return baseBlocked(p) || (!!foes[key(p)] && !isTo(p)); };   // 敌人挡路（终点除外）
+    if (baseBlocked(to)) return null;
     var seen = {}, prev = {}, queue = [from];
     seen[key(from)] = true;
     while (queue.length) {
@@ -2502,7 +2519,9 @@
   function walkAlong(steps, after) {
     var roomId = lastState && lastState.room ? lastState.room.id : null;
     var i = 0;
+    lastInterrupt = false;
     function step() {
+      if (lastInterrupt) return;   // 发现敌人：强制中断，等玩家下一步指示（后面的动作也不做了）
       if (i >= steps.length) {
         if (after) after();
         return;
@@ -2773,11 +2792,13 @@
     if (event.persisted) { heartbeatFails = 0; startHeartbeat(); }
   });
 
+  var lastInterrupt = false;   // 上一句指令被“视野里出现敌人”打断了：自动寻路到此为止
   function sendCommand(text) {
     if (busy || !text) return null;
     setBusy(true);
     var done = post('/api/command', { text: text }).then(function (res) {
       setBusy(false);
+      lastInterrupt = !!(res && res.interrupt);
       handlePayload(res);
     }).catch(function (err) { setBusy(false); fail(err); });
     return done;  // 场景里连走几格时要等这一句处理完
@@ -2830,6 +2851,15 @@
       var move = scenePath(sc.player, [t.x, t.y], sc);
       if (!move) { showToast('那边走不过去'); return; }
       walkAlong(move);
+      return;
+    }
+    if (act === 'attack') {
+      // 够得着（相邻一格）就直接打；够不着先走到它旁边再打
+      var hit = '攻击 ' + name;
+      if (!sc || !t || nearThing(sc.player, t)) { sendCommand(hit); return; }
+      var path = scenePath(sc.player, [t.x, t.y], sc);
+      if (!path || path.length < 2) { showToast('那边走不过去'); return; }
+      walkAlong(path.slice(0, -1), function () { sendCommand(hit); });
       return;
     }
     if (act === 'take' || act === 'talk') {

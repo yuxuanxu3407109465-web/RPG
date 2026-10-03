@@ -180,6 +180,37 @@ BLOCKS_PER_TURN = 1  # 持盾时每回合默认能格挡几次
 SHIELD_BASH_DAMAGE = "1d4"  # 盾击伤害（近战，吃力量修正；盾牌等阶 ± 伤害）
 SHIELD_BASH_ACCURACY_ATTRIBUTE = "constitution"  # 盾击命中看体质
 GET_UP_AP_COST = 9  # 倒地后爬起来要花的行动点（会引发借机攻击）
+KNOCKDOWN_DODGE_PENALTY = 6  # 倒地：闪避 −6
+
+# 持续伤害的种类：名字、这类伤害打死人时记的死因
+DOT_KINDS = {
+    "bleed": ("流血", "bleeding"),
+    "burn": ("灼烧", "zombie"),
+    "acid": ("强酸腐蚀", "zombie"),
+}
+
+
+def add_dot(dots, kind, damage, turns):
+    """给目标叠一层持续伤害（dots 是一串 {"kind", "damage", "turns"}，最老的在前）。
+    同种已经满 5 层：最老的那层按 50% 立刻结算剩下的伤害，再被新层顶替。返回立刻结算的伤害。"""
+    same = [d for d in dots if d["kind"] == kind]
+    burst = 0
+    if len(same) >= DOT_MAX_STACKS:
+        oldest = same[0]
+        burst = dot_overflow_damage(oldest["damage"], oldest["turns"])
+        dots.remove(oldest)
+    dots.append({"kind": kind, "damage": damage, "turns": turns})
+    return burst
+
+
+def tick_dots(dots):
+    """回合开始结算持续伤害：返回 {种类: 伤害}，并把每层的剩余回合减 1、到期的去掉。"""
+    hurt = {}
+    for d in dots:
+        hurt[d["kind"]] = hurt.get(d["kind"], 0) + d["damage"]
+        d["turns"] -= 1
+    dots[:] = [d for d in dots if d["turns"] > 0]
+    return hurt
 
 
 def shield_bash_accuracy(a, shield):

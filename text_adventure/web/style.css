@@ -1927,3 +1927,7 @@ input[type="range"].rest-range::-moz-range-thumb {
   grid-template-rows: repeat(3, minmax(0, 1fr));
 }
 .skill-slots-body .slot-cell { min-width: 0; min-height: 0; box-sizing: border-box; margin: 0; }
+
+/* 场景里的敌人：红边；还没发现你的敌人边框是虚线 */
+.scene-cell .item-chip.chip-enemy { border-color: #c8453a; color: #f0c9c4; box-shadow: 0 0 0 1px #c8453a inset; }
+.scene-cell .item-chip.chip-enemy.chip-unaware { border-style: dashed; box-shadow: none; }

@@ -14,7 +14,7 @@
 """
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import dice as dice_rules
@@ -44,6 +44,28 @@ class Enemy:
     stun_turn: int = -1  # 最近一次被眩晕是在第几回合
     stun_count: int = 0  # 那一回合里被眩晕了几次（同一回合第 2 次升级为震慑）
     stun: str = None  # 当前的眩晕类状态：stunned（眩晕）/ dazed（震慑）/ None
+    # ---- 放在地图上以后才用得到的状态（见 combat.py）----
+    uid: int = 0  # 这一局里的编号
+    label: str = ""  # 场景里的称呼，例如“行尸A”（同名的按字母区分）
+    pos: list = None  # 在房间里的格子 [x, y]
+    ap: int = 0  # 当前行动点
+    aware: bool = False  # 发现玩家没有（没发现就站着不动；没发现你时你打它算偷袭）
+    init_roll: int = None  # 这一次遭遇的先攻检定结果；None = 还没掷（排在玩家后面）
+    acted: bool = False  # 这一轮行动过没有
+    dots: list = field(default_factory=list)  # 持续伤害：[{"kind", "damage", "turns"}]，最老的在前
+    knocked_down: bool = False  # 倒地：闪避 −6，要花 9 行动点爬起来
+
+    def attack_range(self):
+        """攻击距离（格）：近战 1，长柄 2。"""
+        return stats.REACH_RANGE if "reach" in self.attack.get("tags", []) else stats.MELEE_RANGE
+
+    def to_dict(self):
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data):
+        known = {f for f in cls.__dataclass_fields__}
+        return cls(**{k: v for k, v in data.items() if k in known})
 
     def apply_stun(self, turn):
         """被眩晕一次：同一回合里第 2 次起升级为震慑。返回现在的状态 id。"""
@@ -64,7 +86,7 @@ class Enemy:
         return base + self.attack.get("accuracy_bonus", 0) + heavy  # 武器等阶、沉重标签
 
     def dodge(self):
-        return stats.dodge(self.attributes)
+        return stats.dodge(self.attributes) - (stats.KNOCKDOWN_DODGE_PENALTY if self.knocked_down else 0)
 
     def initiative(self):
         return stats.initiative(self.attributes)
